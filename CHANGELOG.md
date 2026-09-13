@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Upgrade notes
 
+- New principal-key writes must provide an expiry. The database now checks
+  that unrevoked principal keys have deadlines, preserving existing deadlines
+  and revoked history (#2103). The old-writer trigger remains during rollout;
+  its removal requires evidence that every writer supplies an expiry.
+
 - ChatGPT `auth.json` imports now require explicit `"auth_mode": "chatgpt"`
   (#2106). Use Codex 0.93.0 or newer to sign in again with file storage,
   then paste the fresh file. Files with missing or null mode are rejected.

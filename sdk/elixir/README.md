@@ -8,7 +8,7 @@ Add `fountain_sdk` to `mix.exs`:
 
 ```elixir
 def deps do
-  [{:fountain_sdk, "~> 0.1.0"}]
+  [{:fountain_sdk, "~> 0.3.0"}]
 end
 ```
 
@@ -154,3 +154,16 @@ A client resolver cache, conversation cursor, and run server are lightweight pro
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Credit error migration (0.3.0)
+
+Replace `%Fountain.Error{kind: :subscription_required}` patterns with
+`%Fountain.Error{kind: :insufficient_credits}`. Read `Fountain.Error.upgrade_url(error)`
+to offer the credit-purchase page; do not retry a 402 without adding credit.
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.

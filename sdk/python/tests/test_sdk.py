@@ -246,6 +246,12 @@ class FakeFountain:
 
 
 class ConfigTests(unittest.TestCase):
+    def test_public_credit_error_replaces_subscription_export(self):
+        self.assertIn("InsufficientCreditsError", fountain.__all__)
+        self.assertTrue(issubclass(fountain.InsufficientCreditsError, fountain.FountainError))
+        self.assertNotIn("SubscriptionRequiredError", fountain.__all__)
+        self.assertFalse(hasattr(fountain, "SubscriptionRequiredError"))
+
     def test_version_tokens_match_package_metadata(self):
         metadata = (Path(__file__).parents[1] / "pyproject.toml").read_text()
         version = re.search(r'^version = "([^"]+)"$', metadata, re.MULTILINE)

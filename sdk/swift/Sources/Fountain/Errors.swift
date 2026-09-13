@@ -2,7 +2,7 @@ import Foundation
 
 public struct FountainError: Error, CustomStringConvertible, LocalizedError, Sendable {
   public enum Kind: String, Sendable {
-    case api, authentication, subscriptionRequired, notFound, validation
+    case api, authentication, insufficientCredits, notFound, validation
     case rateLimit, conversationBusy, notReady, quotaExceeded
     case connection, resolution, timeout
   }
@@ -72,11 +72,11 @@ func fountainError(
   case "conversation_busy": kind = .conversationBusy
   case "provisioning", "sprite_probe_failed", "fleet_full", "sandbox_unavailable": kind = .notReady
   case "sandbox_quota_exceeded": kind = .quotaExceeded
-  case "subscription_required", "insufficient_credits": kind = .subscriptionRequired
+  case "insufficient_credits": kind = .insufficientCredits
   default:
     switch status {
     case 401: kind = .authentication
-    case 402: kind = .subscriptionRequired
+    case 402: kind = .insufficientCredits
     case 404: kind = .notFound
     case 422: kind = .validation
     case 429: kind = .rateLimit

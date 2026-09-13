@@ -21,7 +21,6 @@ export type FountainErrorCode =
   | "sandbox_runtime_mismatch"
   | "insufficient_credits"
   | "fleet_full"
-  | "subscription_required"
   | "rate_limited"
   | "account_suspended"
   | "environment_not_allowed"
@@ -99,10 +98,9 @@ export class AuthError extends FountainError {}
 
 /**
  * The account is out of credit (`insufficient_credits`, 402). `upgradeUrl` is
- * the billing page, where credit is bought. The class keeps its old name so
- * callers written against the subscription era still catch it.
+ * the billing page, where credit is bought. A bare HTTP 402 uses this class too.
  */
-export class SubscriptionRequiredError extends FountainError {
+export class InsufficientCreditsError extends FountainError {
   get upgradeUrl(): string | undefined {
     const url = (this.body as { upgrade_url?: unknown } | null)?.upgrade_url;
     return typeof url === "string" ? url : undefined;
@@ -218,9 +216,8 @@ export function errorForStatus(
       return new NotReadyError(message, init);
     case "sandbox_quota_exceeded":
       return new QuotaExceededError(message, init);
-    case "subscription_required":
     case "insufficient_credits":
-      return new SubscriptionRequiredError(message, init);
+      return new InsufficientCreditsError(message, init);
     case "fleet_full":
       return new NotReadyError(message, init);
   }
@@ -229,7 +226,7 @@ export function errorForStatus(
     case 401:
       return new AuthError(message, init);
     case 402:
-      return new SubscriptionRequiredError(message, init);
+      return new InsufficientCreditsError(message, init);
     case 404:
       return new NotFoundError(message, init);
     case 422:
