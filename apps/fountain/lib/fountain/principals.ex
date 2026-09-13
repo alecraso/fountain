@@ -567,12 +567,15 @@ defmodule Fountain.Principals do
   defp check_claimer_eligible(%User{} = claimer) do
     cond do
       claimer.principal -> {:error, :ineligible}
-      is_nil(claimer.email_verified_at) -> {:error, :ineligible}
-      not is_nil(claimer.suspended_at) -> {:error, :ineligible}
+      not account_eligible?(claimer) -> {:error, :ineligible}
       # By id, for the reason `check_application_allowed/2` gives.
       Fountain.Billing.check_spend(claimer.id) != :ok -> {:error, :ineligible}
       true -> :ok
     end
+  end
+
+  defp account_eligible?(%User{} = user) do
+    not is_nil(user.email_verified_at) and is_nil(user.suspended_at)
   end
 
   # One transaction, one row lock. The expirer takes the same lock, so a claim
@@ -596,12 +599,21 @@ defmodule Fountain.Principals do
   expiry or revocation. The claim lock serializes renewal with claim replay.
   Revocation and minting commit together; runtime callback keys are untouched.
   Returns `:not_found` for a principal the account does not own.
+  Returns `:ineligible` for a suspended or unverified owner. Renewal does not
+  require a spending balance; spending remains gated on the owner's ledger.
   """
   @spec renew_owned_credential(binary(), binary(), keyword()) ::
           {:ok, {ApiKey.t(), String.t()}} | {:error, term()}
   def renew_owned_credential(owner_user_id, principal_user_id, opts \\ []) do
     result =
       Repo.transaction(fn ->
+        # Lock the current account before the claim row, matching account
+        # deletion's user -> dependent-row order. Keep eligibility stable until
+        # revoke + mint commits, including against a concurrent suspension.
+        owner =
+          Repo.one(from u in User, where: u.id == ^owner_user_id, lock: "FOR SHARE") ||
+            Repo.rollback(:not_found)
+
         owned =
           from o in Owner,
             where: o.owner_user_id == ^owner_user_id,
@@ -615,6 +627,8 @@ defmodule Fountain.Principals do
                   c.status == "claimed",
               lock: "FOR UPDATE"
           ) || Repo.rollback(:not_found)
+
+        unless account_eligible?(owner), do: Repo.rollback(:ineligible)
 
         revoked = revoke_claimed_credentials(claimable.user_id)
         {key, raw} = insert_principal_key(claimable, opts)
