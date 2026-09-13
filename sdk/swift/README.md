@@ -153,3 +153,25 @@ Run from the repository root:
 swift test
 swift build -Xswiftc -warnings-as-errors
 ```
+
+## Credit error migration
+
+Replace `FountainError.Kind.subscriptionRequired` with
+`FountainError.Kind.insufficientCredits` in the `Fountain` product, including
+switches and stored raw kind strings. The raw value is now `insufficientCredits`.
+Read `error.upgradeURL` for the purchase page. `FountainKit` already uses
+`.insufficientCredits(body, upgradeURL:)`; its case and associated URL remain unchanged.
+Both products retire the special `subscription_required` wire mapping.
+
+This is the source API boundary introduced by #2104. The next Swift package
+tag containing this change must be a breaking minor release while the package
+is 0.x, not a patch to an existing tag. Until that tag exists, pin a reviewed
+commit containing this change to adopt these names. No tag is published by
+this cleanup, and the Fountain server version is unchanged.
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.
