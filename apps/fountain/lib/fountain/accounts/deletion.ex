@@ -119,7 +119,21 @@ defmodule Fountain.Accounts.Deletion do
       }
     })
 
-    case Fountain.InferenceCredentials.with_source_lock(user.id, fn -> Repo.delete(user) end) do
+    # Cascading personal ChatGPT grants and nilifying platform-key attribution
+    # both invoke platform source triggers. Take exclusive platform before
+    # tenant so those triggers never upgrade shared while another reader waits
+    # on our tenant lock. Teardown and audit remain outside this transaction.
+    result =
+      Fountain.InferenceCredentials.with_platform_source_lock(fn ->
+        Fountain.InferenceCredentials.lock_source(user.id)
+
+        case Repo.delete(user) do
+          {:error, reason} -> Repo.rollback(reason)
+          result -> result
+        end
+      end)
+
+    case result do
       {:ok, _} ->
         Logger.info("account deleted: #{user.id} (#{sprites} sprite(s) destroyed)")
 
