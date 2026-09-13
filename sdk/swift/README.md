@@ -82,6 +82,23 @@ turn once, so a window and a menu-bar item can watch the same run without
 opening a second stream. A failed *turn* is a `RunResult` with a non-`done`
 state; only client-side failures throw.
 
+Transcript links in `Run.url`, conversation events, and `RunResult.url` use
+`FountainConfig.appURL`. Without it, they open the deployment's `/dashboard`;
+the retired `/conversations/:id` browser route is no longer used. To configure
+run links from the server's catalog before starting a run:
+
+```swift
+let catalog = try await client.catalog()
+var config = client.config
+config.appURL = catalog.apps?.conversations.flatMap { $0.isEmpty ? nil : URL(string: $0) }
+let linkedClient = FountainClient(config: config)
+let linkedRun = try await linkedClient.run("Review this repository", agent: agent.id)
+```
+
+For an existing conversation, `client.conversationURL(id, apps: catalog.apps)`
+uses the catalog app first, then `config.appURL`, then `/dashboard`. The dashboard
+is a navigation fallback; it does not display the transcript.
+
 It wraps more of the API than `Fountain` does — admin, audit, runners, API
 keys, `apply`, agent avatars, turn images — and reaches anything unwrapped
 through `client.request(_:_:)`. See

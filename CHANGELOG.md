@@ -25,7 +25,10 @@ upgrade, is in
   use `/dashboard` for the old onboarding pages. Links in historical emails
   need the same migration. See [Retired browser URLs](https://managoat.com/docs/concepts/surfaces#retired-browser-urls)
   for the destination map and deployments with no app. The separate
-  `/api/account/onboarding` API remains available.
+  `/api/account/onboarding` API remains available. FountainKit transcript links
+  use `FountainConfig.appURL`, or `/dashboard` when unset. Set `appURL` from the
+  catalog's Conversations app for direct run links. The catalog-aware URL helper
+  uses that app first, then `appURL`, then `/dashboard`.
 
 - `fountain apply` now requires Fountain server v0.3.0 or later (#2098).
   The fallback for servers without `POST /api/apply` is removed. If the

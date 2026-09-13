@@ -63,7 +63,7 @@ import Testing
 
   @Test func conversationURLPrefersTheConversationsApp() {
     let bare = FountainConfig(baseURL: URL(string: "https://fountain.test")!)
-    #expect(bare.conversationURL("c1").absoluteString == "https://fountain.test/conversations/c1")
+    #expect(bare.conversationURL("c1").absoluteString == "https://fountain.test/dashboard")
 
     let withApp = FountainConfig(
       baseURL: URL(string: "https://fountain.test")!,
@@ -71,4 +71,49 @@ import Testing
     )
     #expect(withApp.conversationURL("c1").absoluteString == "https://talk.fountain.test/#/c/c1")
   }
+
+  @Test func defaultConversationURLUsesTheDashboard() {
+    #expect(
+      FountainConfig().conversationURL("c1").absoluteString == "https://managoat.com/dashboard")
+  }
+
+  @Test(arguments: [
+    ("https://talk.fountain.test", "https://talk.fountain.test/#/c/c1"),
+    ("https://talk.fountain.test/base/", "https://talk.fountain.test/base/#/c/c1"),
+  ])
+  func conversationURLUsesTheCatalogApp(_ app: String, expected: String) async throws {
+    let transport = FakeTransport(json: "{\"data\": {\"apps\": {\"conversations\": \"\(app)\"}}}")
+    let client = FountainClient(
+      config: FountainConfig(
+        baseURL: URL(string: "https://fountain.test")!, apiKey: "ftn_live_test",
+        appURL: URL(string: "https://configured.fountain.test")!),
+      transport: transport)
+    let catalog = try await client.catalog()
+
+    #expect(
+      client.conversationURL("c1", apps: catalog.apps).absoluteString
+        == expected)
+  }
+
+  @Test(
+    arguments: [
+      "{}", "{\"apps\": null}", "{\"apps\": {}}",
+      "{\"apps\": {\"conversations\": null}}", "{\"apps\": {\"conversations\": \"\"}}",
+    ],
+    [false, true])
+  func conversationURLWithoutACatalogAppUsesConfig(_ data: String, configured: Bool) async throws {
+    let config = FountainConfig(
+      baseURL: URL(string: "https://fountain.test/base/")!, apiKey: "ftn_live_test",
+      appURL: configured ? URL(string: "https://configured.fountain.test/")! : nil)
+    let client = FountainClient(
+      config: config, transport: FakeTransport(json: "{\"data\": \(data)}"))
+    let catalog = try await client.catalog()
+    let expected =
+      configured
+      ? "https://configured.fountain.test/#/c/c1" : "https://fountain.test/base/dashboard"
+
+    #expect(client.conversationURL("c1", apps: catalog.apps).absoluteString == expected)
+    #expect(client.conversationURL("c1", apps: nil).absoluteString == expected)
+  }
+
 }
