@@ -380,6 +380,17 @@ defmodule Fountain.ConversationsStartTest do
       assert conv.vault_id == vault.id
     end
 
+    test "a foreign vault is refused even when unrestricted or explicitly allowlisted", %{} do
+      user = insert_active_user()
+      foreign = insert_vault(user_id: insert_verified_user().id)
+
+      for ids <- [nil, [foreign.id]] do
+        agent = insert_agent(user_id: user.id, allowed_vault_ids: ids)
+        attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => foreign.id}
+        assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+      end
+    end
+
     test "allows a vault on the agent's allowed_vault_ids list", %{} do
       user = insert_active_user()
       vault = insert_vault(user_id: user.id)
