@@ -8,6 +8,9 @@ defmodule FountainWeb.DeviceLive do
   use FountainWeb, :live_view
 
   alias Fountain.OAuth
+  alias FountainWeb.Plugs.RateLimit
+
+  @lookup_limit %{max: 20, window_ms: 60_000}
 
   @impl true
   def mount(params, _session, socket) do
@@ -19,11 +22,16 @@ defmodule FountainWeb.DeviceLive do
       |> assign(:code_value, params["code"] || "")
 
     # A ?code= arrival (verification_uri_complete) skips the typing but not
-    # the decision: look it up now so the user lands on approve/deny.
+    # the decision. Only the connected mount looks up the code, so the static
+    # render neither exposes code validity nor charges a second lookup.
     socket =
-      case params["code"] do
-        code when is_binary(code) and code != "" -> lookup(socket, code)
-        _ -> socket
+      if connected?(socket) do
+        case params["code"] do
+          code when is_binary(code) and code != "" -> lookup(socket, code)
+          _ -> socket
+        end
+      else
+        socket
       end
 
     {:ok, socket}
@@ -76,6 +84,25 @@ defmodule FountainWeb.DeviceLive do
   end
 
   defp lookup(socket, code) do
+    RateLimit.ensure_table()
+
+    # Audited assigns the trusted peer/proxy address in the authentication hook.
+    # Keep one bucket across accounts, sessions, and LiveView reconnects.
+    key = {"device-lookup", socket.assigns[:client_ip] || "unknown"}
+
+    case RateLimit.bump(key, @lookup_limit) do
+      :ok ->
+        lookup_grant(socket, code)
+
+      {:limited, retry_after} ->
+        socket
+        |> assign(:stage, :enter)
+        |> assign(:grant, nil)
+        |> put_flash(:error, "Too many code lookups. Try again in #{retry_after} seconds.")
+    end
+  end
+
+  defp lookup_grant(socket, code) do
     case OAuth.get_device_grant_for_approval(code) do
       {:ok, grant} ->
         socket |> assign(:stage, :confirm) |> assign(:grant, grant)

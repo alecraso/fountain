@@ -4,6 +4,17 @@ defmodule FountainWeb.DeviceLiveTest do
   import Phoenix.LiveViewTest
 
   alias Fountain.OAuth
+  alias FountainWeb.Plugs.RateLimit
+
+  setup %{conn: conn} do
+    unique = System.unique_integer([:positive, :monotonic])
+    ip = {0x2001, 0xDB8, 0, 0, 0, 0, div(unique, 65_536), rem(unique, 65_536)}
+    ip_string = ip |> :inet.ntoa() |> to_string()
+    info = %{peer_data: %{address: ip}, x_headers: []}
+    RateLimit.ensure_table()
+    on_exit(fn -> :ets.delete(RateLimit.table(), {"device-lookup", ip_string}) end)
+    %{conn: put_private(conn, :live_view_connect_info, info), ip: ip_string}
+  end
 
   describe "/device — the approval half of fountain auth login --device (#1305)" do
     test "unauthenticated user is redirected to login", %{conn: conn} do
@@ -84,6 +95,94 @@ defmodule FountainWeb.DeviceLiveTest do
       html = lv |> element("form") |> render_submit(%{"code" => "WRNG-CODE"})
       assert html =~ "Code not found"
       assert html =~ "Code shown in your terminal"
+    end
+
+    test "static query-code requests prefill without looking up grant validity", ctx do
+      {:ok, %{user_code: code}} = OAuth.start_device_grant()
+      conn = login_user(ctx.conn, insert_verified_user())
+      handler = {__MODULE__, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:fountain, :repo, :query],
+          &__MODULE__.capture_device_lookup/4,
+          self()
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      for candidate <- [code, "WRNG-CODE"] do
+        html = conn |> get(~p"/device?#{[code: candidate]}") |> html_response(200)
+        assert html =~ "Code shown in your terminal"
+        assert html =~ candidate
+        refute html =~ "Code not found"
+        refute html =~ "phx-click=\"approve\""
+      end
+
+      refute_receive :device_lookup, 0
+      assert :ets.lookup(RateLimit.table(), {"device-lookup", ctx.ip}) == []
+
+      assert {:ok, _grant} = OAuth.get_device_grant_for_approval(code)
+      assert_receive :device_lookup
+    end
+
+    test "query-code mounts consume one lookup and reconnects share the IP budget", ctx do
+      {:ok, %{user_code: code}} = OAuth.start_device_grant()
+      conn = login_user(ctx.conn, insert_verified_user())
+      path = ~p"/device?#{[code: code]}"
+
+      {:ok, view, html} = live(conn, path)
+      assert html =~ "Approve"
+
+      assert [{{"device-lookup", _ip}, _started, 1}] =
+               :ets.lookup(RateLimit.table(), {"device-lookup", ctx.ip})
+
+      # A new LiveView process must not create a fresh guessing budget.
+      GenServer.stop(view.pid)
+      for _ <- 1..19, do: RateLimit.bump({"device-lookup", ctx.ip}, %{max: 20, window_ms: 60_000})
+      {:ok, reconnected, html} = live(conn, path)
+      assert html =~ "Too many code lookups"
+      refute has_element?(reconnected, "button", "Approve")
+    end
+
+    test "lookup events share their IP budget across accounts and never retain an old grant",
+         ctx do
+      {:ok, %{user_code: code}} = OAuth.start_device_grant()
+      {:ok, view, _} = ctx.conn |> login_user(insert_verified_user()) |> live(~p"/device")
+
+      for _ <- 1..20 do
+        assert render_submit(view, "lookup", %{"code" => code}) =~ "Approve"
+      end
+
+      html = render_submit(view, "lookup", %{"code" => code})
+      assert html =~ "Too many code lookups"
+      refute has_element?(view, "button", "Approve")
+
+      other_conn =
+        ctx.conn
+        |> login_user(insert_verified_user())
+        |> put_connect_params(%{"client_ip" => "203.0.113.99"})
+
+      {:ok, other, _} = live(other_conn, ~p"/device")
+      assert render_submit(other, "lookup", %{"code" => code}) =~ "Too many code lookups"
+      refute has_element?(other, "button", "Approve")
+
+      # A blocked lookup cannot leave an earlier grant available to a forged event.
+      render_click(view, "approve", %{})
+      assert {:ok, _grant} = OAuth.get_device_grant_for_approval(code)
+
+      # The fixed window expires and the same IP can try again.
+      key = {"device-lookup", ctx.ip}
+      :ets.insert(RateLimit.table(), {key, System.system_time(:millisecond) - 60_001, 20})
+      assert render_submit(other, "lookup", %{"code" => code}) =~ "Approve"
+      assert has_element?(other, "button", "Approve")
+    end
+  end
+
+  def capture_device_lookup(_event, _measurements, metadata, owner) do
+    if self() == owner and metadata[:source] == "oauth_device_grants" do
+      send(owner, :device_lookup)
     end
   end
 end
