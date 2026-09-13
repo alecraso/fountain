@@ -211,6 +211,29 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
     assert Repo.aggregate(Turn, :count) == 1
   end
 
+  test "a reapplied configuration cannot acknowledge a prompt behind an unresolved execution",
+       c do
+    {pid, transport, ref, execution} = start_bounded(c)
+    prompt_id = drive_to_prompt(transport, ref)
+    reply(transport, ref, prompt_id, %{"stopReason" => "end_turn"})
+    before = wait_idle(pid)
+    assert Repo.get!(TurnExecution, execution.id).state == "ready"
+
+    # Reapply committed while this actor still holds the old configuration.
+    # The old ordering acknowledged the prompt, then stopped in provisioning
+    # when it discovered this journal still owed a remote stop (#2009).
+    c.conv
+    |> Ecto.Changeset.change(configuration_revision: before.configuration_revision + 1)
+    |> Repo.update!()
+
+    assert {:error, :execution_fenced} = GenServer.call(pid, {:send_prompt, "again", []})
+    assert Process.alive?(pid)
+    assert :sys.get_state(pid).configuration_revision == before.configuration_revision
+    assert :sys.get_state(pid).handle == before.handle
+    assert Repo.aggregate(Turn, :count) == 1
+    assert Repo.get!(TurnExecution, execution.id).state == "ready"
+  end
+
   test "missing resume recovers under the same journal, command and deadline", c do
     c = with_missing_session(c)
     {pid, transport, ref, execution} = start_bounded(c)
