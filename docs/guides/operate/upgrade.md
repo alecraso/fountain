@@ -96,6 +96,30 @@ Did you move migrations into a Job with `MIGRATE_ON_BOOT=false`? Then the Job
 is the upgrade step. Read
 [Run migrations in a Job](database.md#run-migrations-in-a-job).
 
+## Principal credential expiry
+
+Every unrevoked key with `principal` scope must have an expiry. The database
+CHECK enforces this independently of the issuer. Full and sprite keys can
+still omit expiry. Existing deadlines and revoked keys remain unchanged.
+
+The application now rejects a principal key write without an explicit expiry.
+The database trigger still supplies 30 days for older writers during a rolling
+upgrade. This release installs and validates the permanent CHECK in separate
+migrations, so validation does not hold the installation's exclusive table lock.
+A timeout leaves validation pending; retry after you resolve the contention.
+
+Principal issuance, claim replay and owner renewal supply deadlines starting
+with [commit af1178dd](https://github.com/managoat/fountain/commit/af1178dd2b3462eb7a26e9d655ff3fe09681a0ed).
+This is a verified code boundary, not evidence that every deployed replica
+uses it. No published release floor for trigger removal is established here.
+
+Before a later migration removes the trigger, finish a deployment containing
+that writer change and this validation. Confirm all older replicas, workers
+and release-task processes have stopped. Include any external database writers
+in that check. Boot migrations can run before replacement replicas serve
+requests, so the trigger cannot disappear in the first rollout of new writers.
+[Issue #2103](https://github.com/managoat/fountain/issues/2103) tracks that remaining step.
+
 ## Conversation message compatibility
 
 The server uses the `managoat_acp` peer from its own release. The audited peer

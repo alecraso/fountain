@@ -657,7 +657,7 @@ defmodule Fountain.Accounts do
   Options:
 
     * `:scopes` — defaults to `["full"]`
-    * `:expires_at` — defaults to no expiry
+    * `:expires_at` — required for principal scope; other scopes default to no expiry
     * `:actor` — who minted it, for the audit trail. Defaults to `"self"`;
       pass `FountainWeb.Audited.attribution/2` from a web surface, or a
       `"system:<worker>"` string from a background one.
