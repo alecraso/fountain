@@ -64,6 +64,14 @@ and capacity reservation stay in place until deletion is confirmed. A long
 outage remains eligible for later retries even after a retry job exhausts its
 attempts.
 
+For a persistent machine with a pending reset in `ready` or `suspended`, an
+administrator can choose **Retry reset** on the admin sandbox list. This
+checks the provider first. A confirmed missing machine retires immediately;
+an existing machine gets another delete attempt. A failed probe or delete
+keeps the fence and capacity reserved. The admin audit records the attempt
+and its outcome. The action checks the administrator's current access again,
+so an old browser tab cannot retain revoked authority.
+
 For a manual override, an operator reaps the sandbox from the admin
 sandbox list. That terminates the row and releases the quota slot. The
 machine at the provider is then the operator's to check, because Fountain
