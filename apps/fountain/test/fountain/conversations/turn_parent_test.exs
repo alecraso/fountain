@@ -367,7 +367,9 @@ defmodule Fountain.Conversations.TurnParentTest do
                Fountain.Conversations.Connection.open_autonomous_turn(
                  c.conv.id,
                  c.conv.user_id,
-                 c.sandbox.id
+                 c.sandbox.id,
+                 c.conv.configuration_revision,
+                 c.conv.inference_source
                )
 
       assert Repo.get!(Conversation, c.conv.id).status == status

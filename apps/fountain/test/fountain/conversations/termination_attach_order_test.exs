@@ -5,13 +5,13 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Fountain.{Audit, Conversations}
 
-  for first <- [:termination, :attachment] do
-    test "#{first} wins the race between termination and a new co-tenant" do
-      assert_order(unquote(first))
+  for {first, barrier} <- [termination: :row, attachment: :row, termination: :machine] do
+    test "#{first} wins the race between termination and a new co-tenant at #{barrier} lock" do
+      assert_order(unquote(first), unquote(barrier))
     end
   end
 
-  defp assert_order(first) do
+  defp assert_order(first, barrier) do
     Sandbox.unboxed_run(Repo, fn ->
       user = insert_active_user()
       env = insert_env(user_id: user.id)
@@ -44,7 +44,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
       end
 
       owner = self()
-      winner = independent(first, fn -> operation.(first) end, owner, true)
+      winner = independent(first, fn -> operation.(first) end, owner, barrier)
 
       try do
         assert_receive {:locked, winner_pid}, 5_000
@@ -118,7 +118,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
               handler,
               [:fountain, :repo, :query],
               &__MODULE__.after_query/4,
-              {self(), owner, handler, role}
+              {self(), owner, handler, role, pause?}
             )
         end
 
@@ -133,9 +133,15 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
     end)
   end
 
-  def after_query(_, _, %{query: query}, {worker, owner, handler, role}) do
+  def after_query(_, _, %{query: query}, {worker, owner, handler, role, barrier}) do
+    # Pausing teardown before its row locks catches an attachment that takes
+    # the sandbox row before the advisory lock used by inference reservation.
     target? =
-      query =~ ~s(FROM "sandboxes") and (role == :termination or query =~ "FOR SHARE")
+      if barrier == :machine do
+        query =~ "pg_advisory_xact_lock"
+      else
+        query =~ ~s(FROM "sandboxes") and (role == :termination or query =~ "FOR NO KEY UPDATE")
+      end
 
     if self() == worker and target? do
       :telemetry.detach(handler)

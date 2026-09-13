@@ -281,13 +281,22 @@ defmodule Fountain.Conversations.ConnectionTest do
     end
   end
 
-  describe "open_autonomous_turn/2" do
+  describe "open_autonomous_turn/5" do
     test "opens a real turn row so the budget and the stage events apply", %{
       conv: conv,
       user: user
     } do
-      assert {turn, _span, tracer} = Connection.open_autonomous_turn(conv.id, user.id)
+      assert {turn, _span, tracer} =
+               Connection.open_autonomous_turn(
+                 conv.id,
+                 user.id,
+                 conv.sandbox_id,
+                 conv.configuration_revision,
+                 conv.inference_source
+               )
 
+      assert is_nil(conv.inference_source)
+      assert is_nil(turn.inference_source)
       assert turn.origin == "autonomous"
       assert turn.status == "running"
       assert turn.prompt == "(background task follow-up)"
@@ -301,10 +310,48 @@ defmodule Fountain.Conversations.ConnectionTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "running"
     end
 
+    for initial_source <- [:unbound, :bound] do
+      test "a #{initial_source} caller cannot adopt a changed source at the same revision", %{
+        conv: conv,
+        user: user
+      } do
+        source = Fountain.InferenceCredentials.Source.none()
+
+        old_source =
+          if unquote(initial_source) == :bound,
+            do: Fountain.InferenceCredentials.Source.dump(source)
+
+        current_source = Fountain.InferenceCredentials.Source.dump(%{source | model: "new-model"})
+        conv |> Ecto.Changeset.change(inference_source: current_source) |> Repo.update!()
+
+        assert {:error, :inference_source_changed} =
+                 Connection.open_autonomous_turn(
+                   conv.id,
+                   user.id,
+                   conv.sandbox_id,
+                   conv.configuration_revision,
+                   old_source
+                 )
+
+        assert Conversations._unsafe_list_turns(conv.id) == []
+        assert stages(conv.id, "turn") == []
+        assert Repo.reload!(conv).status == "idle"
+        assert Repo.reload!(conv).inference_source == current_source
+      end
+    end
+
     test "takes the next turn number", %{conv: conv, user: user} do
       insert_turn(conv, status: "completed")
 
-      assert {turn, _span, _tracer} = Connection.open_autonomous_turn(conv.id, user.id)
+      assert {turn, _span, _tracer} =
+               Connection.open_autonomous_turn(
+                 conv.id,
+                 user.id,
+                 conv.sandbox_id,
+                 conv.configuration_revision,
+                 conv.inference_source
+               )
+
       assert turn.turn_number == 2
     end
   end
