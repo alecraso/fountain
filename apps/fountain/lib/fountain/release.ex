@@ -216,6 +216,8 @@ defmodule Fountain.Release do
   """
   def inventory_sandbox_metadata do
     with_repo(fn ->
+      # ownership: an operator-authorized release task inventories every tenant
+      # as a system sweep, outside user-facing request handling.
       report = Fountain.Conversations.SandboxMetadata._unsafe_inventory()
       IO.puts(Jason.encode!(report, pretty: true))
       report
