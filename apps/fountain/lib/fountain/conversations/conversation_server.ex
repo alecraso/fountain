@@ -726,6 +726,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
         dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
 
+      {:error, :configuration_changed} ->
+        # Reapply or reassignment won after this actor read its rows. Its
+        # successor must wake the committed selection, not a failed row.
+        {:stop, :normal, state}
+
       {:error, reason} ->
         Logger.error(
           "ConversationServer could not load tenant credentials for conv #{conv.id} (user #{conv.user_id}): #{inspect(reason)}"
@@ -959,6 +964,14 @@ defmodule Fountain.Conversations.ConversationServer do
           # queue_initial_prompt/3.
           {:noreply, new_state}
         else
+          {:error, :configuration_changed} ->
+            # This fresh attempt owns its handle, not a reassigned machine or
+            # the newer conversation state. Retire only its own resources.
+            _ = Managoat.Sandbox.destroy(handle)
+            Egress.release_prepared(prepared)
+            {:ok, prepared_state} = prepared
+            {:stop, :normal, prepared_state}
+
           {:error, reason} when retired_or_resetting(reason) ->
             # This handle and token belong to this attempt. Do not fail the
             # conversation or release every session: a replacement may own it.

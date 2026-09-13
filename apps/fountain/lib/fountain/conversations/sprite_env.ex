@@ -41,7 +41,7 @@ defmodule Fountain.Conversations.SpriteEnv do
   end
 
   def resolve_inference(conv, agent, env, vault) do
-    InferenceCredentials.with_source_lock(conv.user_id, fn ->
+    Fountain.Conversations.InferenceBinding.with_current(conv, fn conv ->
       with {:ok, dek} <- Crypto.load_tenant_key(conv.user_id),
            {:ok, source, creds} <-
              InferenceCredentials.resolve(conv.user_id, agent && agent.model, conv.runtime,

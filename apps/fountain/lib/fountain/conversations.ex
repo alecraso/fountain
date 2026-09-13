@@ -4659,6 +4659,13 @@ defmodule Fountain.Conversations do
     result =
       Repo.transaction(fn ->
         :ok = InferenceCredentials.lock_source(attrs.user_id)
+        # Reservation re-reads the parent before the Codex sandbox row. Take
+        # the same machine lock before this path's earlier sandbox row lock.
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+          @sandbox_lock_namespace,
+          :erlang.phash2(attrs.sandbox_id)
+        ])
+
         # Deliberately unlocked. `users` is the row every credit posting takes
         # `FOR UPDATE` (`Credits.insert_and_move/3` holds it across a ledger
         # insert, lot consumption and the balance move), so locking it here
