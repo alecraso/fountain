@@ -350,6 +350,35 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
       #expect(error.partialText == "working")
     }
   }
+
+  @Test func runPreservesExplicitSandboxAPIAccessAndOmitsTheDefault() async throws {
+    for access: String? in [nil, "none", "owner"] {
+      let router = RunOutcomeRouter(mode: .failed)
+      MockURLProtocol.handler = { request, protocolInstance in
+        if request.httpMethod == "POST", request.url?.path == "/api/conversations" {
+          var data = request.httpBody ?? Data()
+          if let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+              let count = stream.read(&buffer, maxLength: buffer.count)
+              if count <= 0 { break }
+              data.append(buffer, count: count)
+            }
+          }
+          let body = try? JSONDecoder().decode(JSONObject.self, from: data)
+          #expect(body != nil)
+          #expect(body?["sandbox_api_access"]?.stringValue == access)
+          if access == nil { #expect(body?["sandbox_api_access"] == nil) }
+        }
+        router.handle(request, protocolInstance)
+      }
+      let fountain = try Fountain(
+        apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
+      _ = try await fountain.run("fail", agent: "reviewer", sandboxAPIAccess: access).value()
+    }
+  }
 }
 
 private final class LockedCounter: @unchecked Sendable {

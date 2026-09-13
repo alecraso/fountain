@@ -133,4 +133,33 @@ defmodule FountainWeb.SandboxApiAccessTest do
 
     assert body["error"] == "invalid_sandbox_api_access"
   end
+
+  test "omitting sandbox_api_access on a channel resume retains none and issues no callback", c do
+    sandbox = insert_sandbox(user_id: c.user.id, status: "ready")
+
+    conv =
+      insert_conversation(
+        user_id: c.user.id,
+        agent: c.agent,
+        sandbox: sandbox,
+        status: "idle",
+        channel_id: "isolated",
+        sandbox_api_access: "none"
+      )
+
+    body =
+      c.conn
+      |> authed_with_key(c.raw)
+      |> post_json("/api/conversations", %{
+        "agent_id" => c.agent.id,
+        "channel_id" => "isolated"
+      })
+      |> json_response(200)
+
+    assert body["data"]["id"] == conv.id
+    assert body["data"]["sandbox_api_access"] == "none"
+    resumed = Conversations.get_conversation(conv.id, c.user.id)
+    assert resumed.sandbox_id == sandbox.id
+    assert {:ok, nil, nil, _} = CallbackKey.rotate(resumed, nil)
+  end
 end

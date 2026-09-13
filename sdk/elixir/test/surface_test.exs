@@ -171,7 +171,8 @@ defmodule Fountain.SurfaceTest do
         fresh: true,
         sprite_name: "box",
         sandbox: "s1",
-        sandbox_mode: "persistent"
+        sandbox_mode: "persistent",
+        sandbox_api_access: "owner"
       )
 
     assert {:ok, %{turn_number: 5, state: :done}} = Fountain.Run.await(run)
@@ -188,8 +189,41 @@ defmodule Fountain.SurfaceTest do
              "fresh" => true,
              "sprite_name" => "box",
              "sandbox_id" => "s1",
-             "sandbox_mode" => "persistent"
+             "sandbox_mode" => "persistent",
+             "sandbox_api_access" => "owner"
            }
+  end
+
+  for access <- [nil, "none", "owner"] do
+    test "run preserves sandbox API access #{inspect(access)} without inventing a default" do
+      owner = self()
+
+      server =
+        Fountain.TestServer.start(fn request ->
+          case {request.method, request.path} do
+            {"GET", "/api/agents"} ->
+              json(200, %{"data" => [%{"id" => "a1", "name" => "Alpha"}]})
+
+            {"POST", "/api/conversations"} ->
+              send(owner, {:access_body, Jason.decode!(request.body)})
+              json(201, %{"data" => %{"id" => "run1", "status" => "running"}})
+
+            {"GET", "/api/conversations/run1/stream"} ->
+              {200, [{"content-type", "text/event-stream"}], turn(1)}
+
+            {"GET", "/api/conversations/run1"} ->
+              json(200, %{"data" => %{"id" => "run1", "status" => "done"}})
+          end
+        end)
+
+      on_exit(fn -> Fountain.TestServer.stop(server) end)
+      client = Fountain.new(api_key: "key", base_url: server.url)
+      run = Fountain.run(client, "prompt", agent: "Alpha", sandbox_api_access: unquote(access))
+      assert {:ok, _} = Fountain.Run.await(run)
+      assert_receive {:access_body, body}
+      assert body["sandbox_api_access"] == unquote(access)
+      if is_nil(unquote(access)), do: refute(Map.has_key?(body, "sandbox_api_access"))
+    end
   end
 
   test "conversation send and team message capture cursor and turn before posting" do

@@ -67,6 +67,7 @@ defmodule Fountain do
           |> optional("sprite_name", opts[:sprite_name])
           |> optional("sandbox_id", opts[:sandbox])
           |> optional("sandbox_mode", opts[:sandbox_mode])
+          |> optional("sandbox_api_access", opts[:sandbox_api_access])
 
         conversation = HTTP.data!(client.api, "POST", "/api/conversations", body: body)
 

@@ -60,6 +60,7 @@ public final class Fountain: @unchecked Sendable {
     spriteName: String? = nil,
     sandbox: String? = nil,
     sandboxMode: String? = nil,
+    sandboxAPIAccess: String? = nil,
     timeout: TimeInterval? = nil,
     collectEvents: Bool = false
   ) -> Run {
@@ -87,6 +88,7 @@ public final class Fountain: @unchecked Sendable {
         if let spriteName { body["sprite_name"] = .string(spriteName) }
         if let sandbox { body["sandbox_id"] = .string(sandbox) }
         if let sandboxMode { body["sandbox_mode"] = .string(sandboxMode) }
+        if let sandboxAPIAccess { body["sandbox_api_access"] = .string(sandboxAPIAccess) }
         let conversation = try await api.data("POST", "/api/conversations", body: body)
         var turnNumber = 1
         if channelID != nil, let id = conversation["id"]?.stringValue {

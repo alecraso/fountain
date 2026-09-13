@@ -4,6 +4,16 @@ import Testing
 @testable import FountainKit
 
 @Suite struct RequestBuildingTests {
+  @Test func conversationCreatePreservesSandboxAPIAccessAndOmitsTheDefault() throws {
+    for access: SandboxAPIAccess? in [nil, SandboxAPIAccess.none, .owner] {
+      let request = ConversationCreateRequest(agentID: "agent", sandboxAPIAccess: access)
+      let data = try JSONEncoder().encode(request)
+      let wire = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+      #expect(wire["sandbox_api_access"] as? String == access?.rawValue)
+      if access == nil { #expect(wire["sandbox_api_access"] == nil) }
+    }
+  }
+
   @Test func setsAuthAcceptAndUserAgent() async throws {
     let transport = FakeTransport(json: #"{"data": []}"#)
     let client = FountainClient.fake(transport)
@@ -40,6 +50,13 @@ import Testing
 }
 
 @Suite struct DecodingTests {
+  @Test func decodesSandboxAPIAccess() throws {
+    let data = Data(
+      #"{"id":"c-1","runtime":"claude","status":"idle","sandbox_api_access":"none"}"#.utf8)
+    let conversation = try JSONDecoder().decode(Conversation.self, from: data)
+    #expect(conversation.sandboxAPIAccess == SandboxAPIAccess.none)
+  }
+
   @Test func decodesAccountingWithoutInventingMissingCounts() throws {
     let bytes = Data(
       #"{"accounting":{"version":1,"source":"codex/thread-token-usage-delta","scope":"root_thread_prompt","completeness":"partial"}}"#

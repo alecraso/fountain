@@ -48,6 +48,7 @@ class Fountain:
         sprite_name: Optional[str] = None,
         sandbox: Optional[str] = None,
         sandbox_mode: Optional[str] = None,
+        sandbox_api_access: Optional[str] = None,
         timeout: Optional[float] = None,
         collect_events: bool = False,
     ) -> Run:
@@ -69,6 +70,7 @@ class Fountain:
                 "sprite_name": sprite_name,
                 "sandbox_id": sandbox,
                 "sandbox_mode": sandbox_mode,
+                "sandbox_api_access": sandbox_api_access,
             }
             body.update(
                 {key: value for key, value in optional.items() if value is not None}

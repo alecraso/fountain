@@ -79,6 +79,14 @@ public struct SandboxMode: WireValue {
   public static let persistent: Self = "persistent"
 }
 
+public struct SandboxAPIAccess: WireValue {
+  public let rawValue: String
+  public init(rawValue: String) { self.rawValue = rawValue }
+
+  public static let owner: Self = "owner"
+  public static let none: Self = "none"
+}
+
 public struct SandboxProvider: WireValue {
   public let rawValue: String
   public init(rawValue: String) { self.rawValue = rawValue }

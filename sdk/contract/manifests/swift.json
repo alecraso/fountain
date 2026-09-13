@@ -116,10 +116,10 @@
     "ChangesetError": { "required": ["errors"] },
     "ConnectionListResponse": { "required": ["data"] },
     "ConnectionProviderListResponse": { "required": ["data"] },
-    "Conversation": { "required": ["id"], "fields": ["status"] },
+    "Conversation": { "required": ["id"], "fields": ["sandbox_api_access", "status"] },
     "ConversationCreateRequest": {
       "required": ["agent_id"],
-      "optional": ["channel_id", "environment_id", "fresh", "images", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id"]
+      "optional": ["channel_id", "environment_id", "fresh", "images", "prompt", "sandbox_api_access", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id"]
     },
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },
@@ -165,6 +165,8 @@
     "VaultSecretResponse": { "required": ["data"] }
   },
   "enums": {
+    "ConversationCreateRequest.sandbox_api_access": ["none", "owner"],
+    "Conversation.sandbox_api_access": ["none", "owner"],
     "Block.kind": ["error", "init", "permission_request", "raw", "result", "text", "thinking", "tool_use"],
     "Conversation.status": ["failed", "terminated"],
     "LogEvent.kind": { "values": ["output", "stage"], "exhaustive": true },
