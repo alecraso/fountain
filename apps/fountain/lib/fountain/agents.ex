@@ -166,6 +166,12 @@ defmodule Fountain.Agents do
     result =
       if snapshot_needed?(changeset) do
         Repo.transaction(fn ->
+          # Environment deletion locks the source before the referencing agents.
+          # Match that order before an edit takes the agent row lock and asks
+          # PostgreSQL to validate a new environment FK.
+          if Map.has_key?(changeset.changes, :environment_id),
+            do: Fountain.InferenceCredentials.lock_source(changeset.data.user_id)
+
           # The caller may hold an older struct. RETURNING snapshots the
           # persisted row, including fields changed by another edit, while
           # this update holds the row lock through the version insert.
@@ -495,6 +501,98 @@ defmodule Fountain.Agents do
       merge_metadata(opts, %{"rolled_back_to" => version.version})
     )
   end
+
+  @doc """
+  Delete an owned environment or vault, versioning each agent whose references change.
+
+  Used by the source contexts after their home teardown, never for provider I/O.
+  The source lock, reference cleanup, snapshots and source deletion share a
+  transaction; the agent audit records only committed changes afterwards.
+  """
+  def delete_source_and_version_agents(source, opts \\ [])
+
+  def delete_source_and_version_agents(%Environments.Environment{} = source, opts),
+    do: delete_source_and_version_agents(source, :environment, opts)
+
+  def delete_source_and_version_agents(%Fountain.Vaults.Vault{} = source, opts),
+    do: delete_source_and_version_agents(source, :vault, opts)
+
+  defp delete_source_and_version_agents(source, kind, opts) do
+    result =
+      Fountain.InferenceCredentials.with_source_lock(source.user_id, fn ->
+        # Ownership: the source was fetched scoped by its context's caller.
+        # Lock it before the agent scan so a concurrent new environment FK
+        # either commits before this scan or fails after the source is gone.
+        locked =
+          Repo.one!(
+            from s in source.__struct__,
+              where: s.id == ^source.id and s.user_id == ^source.user_id,
+              lock: "FOR UPDATE"
+          )
+
+        changes =
+          source_referencing_agents(source, kind)
+          |> Repo.all()
+          |> Enum.map(fn agent ->
+            changeset =
+              Ecto.Changeset.change(agent, removed_source_references(agent, source, kind))
+
+            # Narrow cleanup must also work for historical configurations
+            # whose runtime/provider is no longer enabled. RETURNING includes
+            # database-derived authorization fields in the persisted struct.
+            with {:ok, updated} <- Repo.update(changeset, returning: true),
+                 {:ok, _} <-
+                   Repo.insert(version_changeset(updated, next_version_number(updated.id))) do
+              {updated, Audit.changed_fields(changeset)}
+            else
+              {:error, invalid} -> Repo.rollback(invalid)
+            end
+          end)
+
+        with {:ok, deleted} <- Repo.delete(locked), do: {:ok, {deleted, changes}}
+      end)
+
+    case result do
+      {:ok, {deleted, changes}} ->
+        Enum.each(changes, fn {agent, fields} ->
+          audited({:ok, agent}, "agent.updated", merge_metadata(opts, fields))
+        end)
+
+        {:ok, deleted}
+
+      error ->
+        error
+    end
+  end
+
+  defp source_referencing_agents(source, :environment) do
+    from a in Agent,
+      where: a.user_id == ^source.user_id,
+      where: a.environment_id == ^source.id or ^source.id in a.allowed_environment_ids,
+      order_by: a.id,
+      lock: "FOR UPDATE"
+  end
+
+  defp source_referencing_agents(source, :vault) do
+    from a in Agent,
+      where: a.user_id == ^source.user_id and ^source.id in a.allowed_vault_ids,
+      order_by: a.id,
+      lock: "FOR UPDATE"
+  end
+
+  defp removed_source_references(agent, source, :environment) do
+    %{
+      environment_id: if(agent.environment_id == source.id, do: nil, else: agent.environment_id),
+      allowed_environment_ids: without_source(agent.allowed_environment_ids, source.id)
+    }
+  end
+
+  defp removed_source_references(agent, source, :vault),
+    do: %{allowed_vault_ids: without_source(agent.allowed_vault_ids, source.id)}
+
+  # nil permits all tenant sources; an emptied allowlist continues to permit none.
+  defp without_source(nil, _id), do: nil
+  defp without_source(ids, id), do: Enum.reject(ids, &(&1 == id))
 
   defp version_changeset(%Agent{} = agent, number) do
     AgentVersion.changeset(%AgentVersion{}, %{

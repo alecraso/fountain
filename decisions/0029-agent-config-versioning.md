@@ -101,12 +101,13 @@ edit, not per use.
   `[agent_id, version]` turns a concurrent-edit race into a changeset error.
 - The export grows: each agent carries its full version history, values
   included.
-- **Known gap (#1052):** `agents.environment_id` nilifies when its
-  environment is deleted, changing the live config with no version row — the
-  next edit's diff then attributes `environment_id → nil` to the wrong
-  change. Rollback to such a version is correctly refused by re-validation,
-  so nothing breaks; closing the gap (a version written from environment
-  deletion) is tracked in that issue.
+- Deleting an environment or vault removes its references from the tenant's
+  agents and writes a version for each changed configuration in the same
+  transaction as the deletion (#1052). An emptied allowlist stays empty;
+  unrestricted access stays unrestricted. Older snapshots retain their
+  original references, and rollback still revalidates them. Agent updates
+  and deletion serialize on the affected rows, so the newest snapshot
+  describes the persisted configuration.
 - Making a conversation actually *run* its pinned version remains unbuilt and
   is out of scope here; it would mean replacing `ConversationServer`'s live
   agent reads with version-aware ones. Nothing in this ADR should be read as

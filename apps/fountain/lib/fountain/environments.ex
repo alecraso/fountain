@@ -184,7 +184,7 @@ defmodule Fountain.Environments do
     else
       _ = Fountain.Conversations._unsafe_retire_orphaned_homes(homes, "environment_deleted", opts)
 
-      InferenceCredentials.with_source_lock(env.user_id, fn -> Repo.delete(env) end)
+      Fountain.Agents.delete_source_and_version_agents(env, opts)
       |> audited("environment.deleted", opts)
     end
   end

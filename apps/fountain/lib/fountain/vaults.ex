@@ -160,7 +160,7 @@ defmodule Fountain.Vaults do
     else
       _ = Fountain.Conversations._unsafe_retire_orphaned_homes(homes, "vault_deleted", opts)
 
-      InferenceCredentials.with_source_lock(vault.user_id, fn -> Repo.delete(vault) end)
+      Fountain.Agents.delete_source_and_version_agents(vault, opts)
       |> audited("vault.deleted", opts)
     end
   end
