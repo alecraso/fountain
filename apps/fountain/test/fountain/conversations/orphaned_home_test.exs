@@ -62,7 +62,7 @@ defmodule Fountain.Conversations.OrphanedHomeTest do
       assert agent.environment_id == ctx.other_env.id
 
       assert_received {:destroyed, name}
-      assert name == old.sprite_name
+      assert name == old.machine_name
       assert Conversations._unsafe_get_sandbox!(old.id).status == "terminated"
     end
 

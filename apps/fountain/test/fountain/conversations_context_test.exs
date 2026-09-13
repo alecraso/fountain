@@ -19,7 +19,7 @@ defmodule Fountain.ConversationsContextTest do
 
       result = Conversations._unsafe_get_sandbox(sandbox.id)
       assert result.id == sandbox.id
-      assert result.sprite_name == sandbox.sprite_name
+      assert result.machine_name == sandbox.machine_name
     end
 
     test "returns nil when sandbox does not exist" do
@@ -48,13 +48,13 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
 
       attrs = %{
-        sprite_name: "test-sprite-create",
+        machine_name: "test-sprite-create",
         status: "pending",
         user_id: user.id
       }
 
       assert {:ok, sandbox} = Conversations.create_sandbox(attrs)
-      assert sandbox.sprite_name == "test-sprite-create"
+      assert sandbox.machine_name == "test-sprite-create"
       assert sandbox.status == "pending"
       assert sandbox.user_id == user.id
     end
@@ -62,14 +62,14 @@ defmodule Fountain.ConversationsContextTest do
     test "returns error changeset when required fields are missing" do
       assert {:error, changeset} = Conversations.create_sandbox(%{})
       assert changeset.valid? == false
-      assert errors_on(changeset)[:sprite_name]
+      assert errors_on(changeset)[:machine_name]
     end
 
     test "returns error changeset when status is invalid" do
       user = insert_verified_user()
 
       attrs = %{
-        sprite_name: "test-sprite",
+        machine_name: "test-sprite",
         status: "bogus",
         user_id: user.id
       }

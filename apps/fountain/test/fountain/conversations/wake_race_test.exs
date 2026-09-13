@@ -104,7 +104,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
 
       for sandbox <- created do
         assert sandbox.status == "terminated",
-               "a losing wake left #{sandbox.sprite_name} in #{sandbox.status}"
+               "a losing wake left #{sandbox.machine_name} in #{sandbox.status}"
       end
     end
 
@@ -132,7 +132,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
 
       for sandbox <- sandboxes_created_since(before) do
         assert sandbox.status == "terminated",
-               "a failed wake left #{sandbox.sprite_name} in #{sandbox.status}"
+               "a failed wake left #{sandbox.machine_name} in #{sandbox.status}"
       end
     end
   end

@@ -98,7 +98,7 @@ public enum FountainError: Error, Sendable {
   case notReady(APIErrorBody, retryAfter: Double?)
   /// `sandbox_quota_exceeded` (429) — carries active count and limit.
   case quotaExceeded(APIErrorBody)
-  /// `insufficient_credits` / `subscription_required` (402) — carries the top-up URL.
+  /// `insufficient_credits` (402) — carries the top-up URL.
   case insufficientCredits(APIErrorBody, upgradeURL: String?)
   /// 422 — per-field validation messages.
   case validation(APIErrorBody)
@@ -192,7 +192,7 @@ extension FountainError {
         return .notReady(body, retryAfter: retryAfter)
       case "sandbox_quota_exceeded":
         return .quotaExceeded(body)
-      case "insufficient_credits", "subscription_required":
+      case "insufficient_credits":
         return .insufficientCredits(body, upgradeURL: body.upgradeURL)
       default:
         break

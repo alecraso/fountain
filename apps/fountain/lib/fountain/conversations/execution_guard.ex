@@ -201,7 +201,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
             conversation_id: conv.id,
             user_id: conv.user_id,
             sandbox_id: sandbox.id,
-            sandbox_name: sandbox.sprite_name,
+            sandbox_name: sandbox.machine_name,
             provider: sandbox.provider,
             connection_id: connection_id,
             deadline_at: deadline_at
@@ -989,7 +989,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         from s in Sandbox,
           where:
             s.id == ^execution.sandbox_id and s.user_id == ^execution.user_id and
-              s.sprite_name == ^execution.sandbox_name and s.provider == ^execution.provider
+              s.machine_name == ^execution.sandbox_name and s.provider == ^execution.provider
       )
 
     parent_matches =
@@ -1031,7 +1031,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         where:
           c.id == ^execution.conversation_id and c.user_id == ^execution.user_id and
             s.id == ^execution.sandbox_id and s.user_id == ^execution.user_id and
-            s.sprite_name == ^execution.sandbox_name and s.provider == ^execution.provider and
+            s.machine_name == ^execution.sandbox_name and s.provider == ^execution.provider and
             s.status not in ["failed", "terminated"]
     )
   end

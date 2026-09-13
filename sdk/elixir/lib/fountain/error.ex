@@ -13,7 +13,7 @@ defmodule Fountain.Error do
 
   @type kind ::
           :auth
-          | :subscription_required
+          | :insufficient_credits
           | :not_found
           | :validation
           | :rate_limit
@@ -90,11 +90,10 @@ defmodule Fountain.Error do
 
   defp kind("sandbox_quota_exceeded", _), do: :quota_exceeded
 
-  defp kind(code, _) when code in ~w(subscription_required insufficient_credits),
-    do: :subscription_required
+  defp kind("insufficient_credits", _), do: :insufficient_credits
 
   defp kind(_, 401), do: :auth
-  defp kind(_, 402), do: :subscription_required
+  defp kind(_, 402), do: :insufficient_credits
   defp kind(_, 404), do: :not_found
   defp kind(_, 422), do: :validation
   defp kind(_, 429), do: :rate_limit

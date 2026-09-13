@@ -44,11 +44,10 @@ defmodule Fountain.Agents.Agent do
     field :skills, {:array, :map}, default: []
     field :mcp_servers, :map, default: %{}
     field :metadata, :map, default: %{}
-    # Vaults a conversation may attach to this agent. nil = any tenant
-    # vault (legacy), [] = none, non-empty = allowlist. Vault values win
-    # on env-var collision, so an attached vault can override reviewed
-    # agent config — this is the lever that scopes who can do that.
+    # Compatibility input: nil = all current/future tenant vaults, [] = none.
+    # PostgreSQL derives the explicit authorization mode for every writer.
     field :allowed_vault_ids, {:array, :binary_id}
+    field :vault_access, :string, read_after_writes: true, writable: :never
     # Environments a conversation may launch this agent under instead of its
     # own (#783). Same shape: nil = any tenant environment, [] = none,
     # non-empty = allowlist. An override *replaces* the reviewed environment
@@ -65,6 +64,39 @@ defmodule Fountain.Agents.Agent do
     belongs_to :environment, Environment
     timestamps(type: :utc_datetime)
   end
+
+  @doc """
+  Whether a persisted agent's explicit policy permits a vault ID.
+
+  This only checks policy; callers must also scope the vault lookup to the
+  tenant. Unknown/unsaved policies and inconsistent in-memory edits fail
+  closed. Reload after writes outside the context before authorizing.
+  """
+  def vault_allowed?(agent, vault_id)
+
+  def vault_allowed?(
+        %__MODULE__{
+          __meta__: %{state: :loaded},
+          vault_access: "all_tenant_vaults",
+          allowed_vault_ids: nil
+        },
+        vault_id
+      )
+      when is_binary(vault_id),
+      do: true
+
+  def vault_allowed?(
+        %__MODULE__{
+          __meta__: %{state: :loaded},
+          vault_access: "allowlist",
+          allowed_vault_ids: ids
+        },
+        vault_id
+      )
+      when is_list(ids) and is_binary(vault_id),
+      do: vault_id in ids
+
+  def vault_allowed?(_agent, _vault_id), do: false
 
   @doc "Every runtime that can appear in persisted data, including the opt-in test fixture."
   def known_runtimes, do: @runtimes ++ ["fountain-fixture"]

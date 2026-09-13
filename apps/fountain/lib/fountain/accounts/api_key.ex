@@ -75,7 +75,18 @@ defmodule Fountain.Accounts.ApiKey do
     |> validate_length(:name, min: 1, max: 200)
     |> validate_length(:scopes, min: 1)
     |> validate_subset(:scopes, @scopes)
+    |> require_principal_expiry()
+    |> check_constraint(:expires_at, name: :api_keys_active_principal_expiry_required)
     |> unique_constraint(:key_hash)
     |> foreign_key_constraint(:user_id)
+  end
+
+  defp require_principal_expiry(changeset) do
+    if "principal" in (get_field(changeset, :scopes) || []) and
+         is_nil(get_field(changeset, :revoked_at)) do
+      validate_required(changeset, [:expires_at])
+    else
+      changeset
+    end
   end
 end

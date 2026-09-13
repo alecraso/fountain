@@ -91,7 +91,7 @@ defmodule Fountain.RunnersTest do
       name = Runners.sandbox_name_for(runner.id)
 
       sandbox =
-        insert_sandbox(user_id: user.id, sprite_name: name, provider: "runner", status: "ready")
+        insert_sandbox(user_id: user.id, machine_name: name, provider: "runner", status: "ready")
 
       hosted = insert_sandbox(user_id: user.id, status: "ready")
 

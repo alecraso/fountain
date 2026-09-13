@@ -134,7 +134,7 @@ defmodule Fountain.SandboxFilesTest do
   describe "list/2" do
     test "runs the listing script on the resolved path and sorts directories first", ctx do
       expect_script(fn handle, script, args ->
-        assert handle.name == ctx.sandbox.sprite_name
+        assert handle.name == ctx.sandbox.machine_name
         assert script =~ "shopt -s dotglob nullglob"
         assert args == [@home <> "/src"]
 

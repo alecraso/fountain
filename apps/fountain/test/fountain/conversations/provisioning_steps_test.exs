@@ -35,10 +35,10 @@ defmodule Fountain.Conversations.ProvisioningStepsTest do
   describe "create_sandbox_handle/2" do
     test "creates the sandbox under the row's sprite name" do
       sandbox = insert_sandbox()
-      expected = %Handle{provider: :sprites, name: sandbox.sprite_name}
+      expected = %Handle{provider: :sprites, name: sandbox.machine_name}
 
       stub(Managoat.Sandbox, :create, fn :sprites, name ->
-        assert name == sandbox.sprite_name
+        assert name == sandbox.machine_name
         {:ok, expected}
       end)
 

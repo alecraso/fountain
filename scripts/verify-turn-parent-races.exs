@@ -23,7 +23,7 @@ fixture = fn ->
   sandbox =
     Repo.insert!(%Sandbox{
       user_id: user.id,
-      sprite_name: "local-parent-#{Ecto.UUID.generate()}",
+      machine_name: "local-parent-#{Ecto.UUID.generate()}",
       status: "ready"
     })
 

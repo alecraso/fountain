@@ -768,8 +768,8 @@ defmodule Fountain.Conversations.Provisioning do
 
   def create_sandbox_handle(provider, sandbox) do
     Managoat.Sandbox.Retry.with_backoff(
-      fn -> Managoat.Sandbox.create(provider, sandbox.sprite_name) end,
-      label: "sprite create #{sandbox.sprite_name}"
+      fn -> Managoat.Sandbox.create(provider, sandbox.machine_name) end,
+      label: "sprite create #{sandbox.machine_name}"
     )
   end
 
@@ -914,11 +914,11 @@ defmodule Fountain.Conversations.Provisioning do
 
   def discard_interrupted_attempt(provider, sandbox, true) do
     Logger.warning(
-      "sandbox #{sandbox.id}: sprite #{sandbox.sprite_name} was left mid-provision by an " <>
+      "sandbox #{sandbox.id}: sprite #{sandbox.machine_name} was left mid-provision by an " <>
         "interrupted attempt; destroying it before provisioning again"
     )
 
-    handle = Managoat.Sandbox.build_handle(provider, sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(provider, sandbox.machine_name)
 
     case Managoat.Sandbox.destroy(handle) do
       :ok ->
@@ -926,7 +926,7 @@ defmodule Fountain.Conversations.Provisioning do
 
       {:error, reason} ->
         Logger.info(
-          "sandbox #{sandbox.id}: discarding sprite #{sandbox.sprite_name} returned " <>
+          "sandbox #{sandbox.id}: discarding sprite #{sandbox.machine_name} returned " <>
             "#{inspect(reason)}; provisioning anyway"
         )
 

@@ -55,7 +55,7 @@ defmodule Fountain.Workers.SandboxResetReconcilerTest do
     assert Fountain.Quotas.active_sandbox_count(sandbox.user_id) == 1
 
     expect(Managoat.Sandbox.Sprites, :destroy, fn h ->
-      assert h.name == sandbox.sprite_name
+      assert h.name == sandbox.machine_name
       refute Repo.in_transaction?()
       :ok
     end)

@@ -298,9 +298,9 @@ defmodule Fountain.Conversations do
   end
 
   # What a caller may contribute to a sandbox name — the part after this
-  # tenant's prefix. See `mint_sprite_name/3`. Deliberately narrow: the value
+  # tenant's prefix. See `mint_machine_name/3`. Deliberately narrow: the value
   # becomes a machine name at a provider, and the old code accepted anything.
-  @sprite_name_suffix ~r/\A[A-Za-z0-9][A-Za-z0-9_-]{0,39}\z/
+  @machine_name_suffix ~r/\A[A-Za-z0-9][A-Za-z0-9_-]{0,39}\z/
 
   # A transition out of a cap-counting status frees a tenant slot and the
   # deployment-wide fleet slot at once, so every tenant with live queue work
@@ -373,7 +373,7 @@ defmodule Fountain.Conversations do
       "sandbox_provisioned",
       sandbox.id,
       "sandbox",
-      %{"sprite_name" => sandbox.sprite_name, "provider" => sandbox.provider}
+      %{"sprite_name" => sandbox.machine_name, "provider" => sandbox.provider}
     )
   end
 
@@ -388,7 +388,7 @@ defmodule Fountain.Conversations do
       "sandbox_resumed",
       sandbox.id,
       "sandbox",
-      %{"sprite_name" => sandbox.sprite_name, "provider" => sandbox.provider}
+      %{"sprite_name" => sandbox.machine_name, "provider" => sandbox.provider}
     )
   end
 
@@ -403,7 +403,7 @@ defmodule Fountain.Conversations do
       "sandbox_suspended",
       sandbox.id,
       "sandbox",
-      %{"sprite_name" => sandbox.sprite_name, "provider" => sandbox.provider}
+      %{"sprite_name" => sandbox.machine_name, "provider" => sandbox.provider}
     )
   end
 
@@ -423,7 +423,7 @@ defmodule Fountain.Conversations do
         sandbox.id,
         "sandbox",
         %{
-          "sprite_name" => sandbox.sprite_name,
+          "sprite_name" => sandbox.machine_name,
           "provider" => sandbox.provider,
           "status_before_failure" => was
         }
@@ -3487,7 +3487,7 @@ defmodule Fountain.Conversations do
          # it is stamped as the home.
          :new <- home_or_new(mode, user_id, agent, env_id || agent.environment_id, vault_id),
          {:ok, provider} <- resolve_sandbox_provider(agent),
-         {:ok, sprite_name} <- mint_sprite_name(provider, user_id, attrs["sprite_name"]),
+         {:ok, machine_name} <- mint_machine_name(provider, user_id, attrs["sprite_name"]),
          {:ok, {sandbox, conv, allowance}} <-
            reserve_initial_conversation(
              %{
@@ -3497,7 +3497,7 @@ defmodule Fountain.Conversations do
                agent_id: agent.id,
                vault_id: vault_id,
                mode: mode,
-               sprite_name: sprite_name,
+               machine_name: machine_name,
                status: "pending",
                provider: Atom.to_string(provider),
                user_id: user_id
@@ -3679,11 +3679,11 @@ defmodule Fountain.Conversations do
   defp pending_initial_binding?(%Conversation{} = parent, %Sandbox{} = machine, conv, sandbox) do
     Map.take(parent, [:user_id, :sandbox_id, :status]) ==
       %{user_id: conv.user_id, sandbox_id: sandbox.id, status: "pending"} and
-      Map.take(machine, [:user_id, :provider, :sprite_name, :status]) ==
+      Map.take(machine, [:user_id, :provider, :machine_name, :status]) ==
         %{
           user_id: conv.user_id,
           provider: sandbox.provider,
-          sprite_name: sandbox.sprite_name,
+          machine_name: sandbox.machine_name,
           status: "pending"
         }
   end
@@ -4126,14 +4126,14 @@ defmodule Fountain.Conversations do
   # `duration_ms` on the `sandbox_terminated` usage row by the length of a
   # destroy — and that row is what a provider bill is reconciled against.
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
-    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.machine_name)
 
     case Managoat.Sandbox.destroy(handle) do
       :ok ->
         :ok
 
       {:error, reason} ->
-        Logger.warning("home #{sandbox.sprite_name} destroy failed: #{inspect(reason)}")
+        Logger.warning("home #{sandbox.machine_name} destroy failed: #{inspect(reason)}")
     end
 
     {:ok, _} = update_sandbox(sandbox, %{status: "terminated"})
@@ -4377,7 +4377,7 @@ defmodule Fountain.Conversations do
   # Only a confirmed destroy releases capacity. Errors or caller loss leave
   # the committed fence intact for a later explicit reconciliation retry.
   defp finish_sandbox_reset(sandbox) do
-    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.machine_name)
 
     case Managoat.Sandbox.destroy(handle) do
       :ok ->
@@ -4766,13 +4766,13 @@ defmodule Fountain.Conversations do
   # unique index makes that "cannot" rather than "will not". A name that
   # already carries the prefix — one an earlier launch handed back — is taken
   # as it stands.
-  defp mint_sprite_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
+  defp mint_machine_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
 
-  defp mint_sprite_name(_provider, user_id, nil),
-    do: {:ok, sprite_name_prefix(user_id) <> short_id()}
+  defp mint_machine_name(_provider, user_id, nil),
+    do: {:ok, machine_name_prefix(user_id) <> short_id()}
 
   # An empty override is no override, the way an empty sandbox_mode is.
-  defp mint_sprite_name(provider, user_id, ""), do: mint_sprite_name(provider, user_id, nil)
+  defp mint_machine_name(provider, user_id, ""), do: mint_machine_name(provider, user_id, nil)
 
   # On the runner provider the name *is* the placement (ADR 0022): the runner
   # id rides in it, because `Managoat.Sandbox` hands an adapter nothing else,
@@ -4788,19 +4788,19 @@ defmodule Fountain.Conversations do
   # Account-scoped names already break that route (the prefixed name no longer
   # parses), but they break it into a 201 over a row nothing can place; this
   # clause is what makes it a plain refusal instead.
-  defp mint_sprite_name(:runner, _user_id, name) when is_binary(name),
+  defp mint_machine_name(:runner, _user_id, name) when is_binary(name),
     do: {:error, :sprite_name_not_supported}
 
-  defp mint_sprite_name(_provider, user_id, name) when is_binary(name) do
-    prefix = sprite_name_prefix(user_id)
+  defp mint_machine_name(_provider, user_id, name) when is_binary(name) do
+    prefix = machine_name_prefix(user_id)
     suffix = String.replace_prefix(name, prefix, "")
 
-    if Regex.match?(@sprite_name_suffix, suffix),
+    if Regex.match?(@machine_name_suffix, suffix),
       do: {:ok, prefix <> suffix},
       else: {:error, :invalid_sprite_name}
   end
 
-  defp sprite_name_prefix(user_id), do: "fountain-#{tenant_prefix(user_id)}-"
+  defp machine_name_prefix(user_id), do: "fountain-#{tenant_prefix(user_id)}-"
 
   defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
 
@@ -4836,14 +4836,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # Vault values win on env-var collision, so an attached vault overrides
-  # the agent's reviewed environment. agent.allowed_vault_ids scopes who
-  # may do that: nil keeps the legacy any-tenant-vault behavior, [] forbids
-  # attaching any vault, a non-empty list is an allowlist.
-  defp check_vault_allowed(_vault_id, %Agents.Agent{allowed_vault_ids: nil}), do: :ok
-
-  defp check_vault_allowed(vault_id, %Agents.Agent{allowed_vault_ids: allowed}) do
-    if vault_id in allowed, do: :ok, else: {:error, :vault_not_allowed}
+  # Vault values override the reviewed environment. Use the persisted policy;
+  # resolve_vault_id also enforces tenant ownership before attaching a vault.
+  defp check_vault_allowed(vault_id, %Agents.Agent{} = agent) do
+    if Agents.Agent.vault_allowed?(agent, vault_id), do: :ok, else: {:error, :vault_not_allowed}
   end
 
   # A per-launch environment override (#783): the conversation is provisioned
@@ -5493,7 +5489,7 @@ defmodule Fountain.Conversations do
       when not is_nil(at) and status not in ["terminated", "failed"] ->
         {:error, :sandbox_reset_pending}
 
-      %{status: status, sprite_name: name} = sandbox
+      %{status: status, machine_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->
         probe_reusable_sandbox(sandbox, sandbox_id)
 
@@ -5513,7 +5509,7 @@ defmodule Fountain.Conversations do
   # same protect-the-parked-disk reasoning as :sprite_probe_failed below;
   # falling through to :create_new would retire the row and orphan (or lose)
   # the parked sandbox. Re-adding the credentials restores wakes.
-  defp probe_reusable_sandbox(%{status: status, sprite_name: name} = sandbox, sandbox_id) do
+  defp probe_reusable_sandbox(%{status: status, machine_name: name} = sandbox, sandbox_id) do
     provider = sandbox_provider_atom(sandbox)
 
     if provider != Fountain.SandboxProviders.default_provider() and
@@ -5618,7 +5614,7 @@ defmodule Fountain.Conversations do
   # sandbox.
   defp resume_and_wake(sandbox) do
     handle =
-      Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+      Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.machine_name)
 
     case Managoat.Sandbox.resume(handle) do
       {:ok, _handle} ->
@@ -5702,7 +5698,7 @@ defmodule Fountain.Conversations do
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.
          {:ok, provider} <- resolve_sandbox_provider(agent),
-         {:ok, sprite_name} <- mint_sprite_name(provider, conv.user_id, nil),
+         {:ok, machine_name} <- mint_machine_name(provider, conv.user_id, nil),
          # Same reservation as start_conversation/1 — see the note there (#330).
          {:ok, new_sandbox} <-
            Fountain.Quotas.with_sandbox_reservation(
@@ -5714,7 +5710,7 @@ defmodule Fountain.Conversations do
                  agent_id: conv.agent_id,
                  vault_id: conv.vault_id,
                  mode: mode,
-                 sprite_name: sprite_name,
+                 machine_name: machine_name,
                  status: "pending",
                  provider: Atom.to_string(provider),
                  user_id: conv.user_id

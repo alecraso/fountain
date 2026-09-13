@@ -431,7 +431,7 @@ defmodule Fountain.SandboxFiles do
     handle =
       Managoat.Sandbox.build_handle(
         Conversations.sandbox_provider_atom(sandbox),
-        sandbox.sprite_name
+        sandbox.machine_name
       )
 
     args = Enum.map(args, &map_path(handle, &1))
