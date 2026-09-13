@@ -18,13 +18,19 @@ defmodule Fountain.SandboxFiles do
       runner's `/home/sprite` mapping holds.
     * **Not a wake.** A parked sandbox costs nothing; a read that resumed
       it would cost provider time outside any turn. Anything but `ready`
-      is refused with `{:sandbox_not_ready, status}`.
+      is refused with `{:sandbox_not_ready, status}`. This check is not atomic
+      with provider exec: a concurrent park can still race it (#1715).
 
   Every path is confined to the sandbox home (`/home/sprite`) or the
   runtime's workspace (`Managoat.Runtimes.ACP.cwd/1`) — including the one
   the caller never names, the repository root `git rev-parse --show-toplevel`
   finds by walking up. A root outside those is `not_a_repository`, not a
   listing of it.
+
+  File and directory targets are resolved physically before access, so a
+  symlink must also stay within an allowed root. This is a path check, not
+  descriptor-relative access: concurrent filesystem mutations can still race
+  resolution and opening.
 
   Every byte that leaves goes through the same redaction the transcript
   gets: the values of the identity's environment and vault, plus whatever a
@@ -72,6 +78,7 @@ defmodule Fountain.SandboxFiles do
   @exit_unreadable 5
   @exit_not_repository 6
   @exit_ref_not_found 7
+  @exit_outside 9
 
   # The porcelain v1 status letters, one per side. `change_states/0` is these
   # values, so the vocabulary is written once.
@@ -205,7 +212,7 @@ defmodule Fountain.SandboxFiles do
   def list(%Sandbox{} = sandbox, path) do
     with :ok <- ready?(sandbox),
          {:ok, absolute} <- resolve_path(sandbox, path),
-         {:ok, output} <- run(sandbox, list_script(), [absolute]) do
+         {:ok, output} <- run(sandbox, list_script(), [absolute] ++ path_roots(sandbox)) do
       entries = parse_entries(output)
       values = secret_values(sandbox)
 
@@ -252,10 +259,11 @@ defmodule Fountain.SandboxFiles do
          # `overlap/1` bytes past the cap, so a secret lying across it is
          # whole when redaction runs; `redact_to_cap/3` cuts back down.
          {:ok, output} <-
-           run(sandbox, read_script(), [
-             Integer.to_string(max_bytes + overlap(values)),
-             absolute
-           ]),
+           run(
+             sandbox,
+             read_script(),
+             [Integer.to_string(max_bytes + overlap(values)), absolute] ++ path_roots(sandbox)
+           ),
          {:ok, size, bytes} <- parse_read(output) do
       {bytes, capped?} = redact_to_cap(values, bytes, max_bytes)
       {encoding, content} = encode(bytes)
@@ -309,7 +317,7 @@ defmodule Fountain.SandboxFiles do
                Integer.to_string(max_bytes + 1 + overlap(values)),
                ref || "",
                if(staged, do: "1", else: "0")
-             ] ++ git_roots(sandbox)
+             ] ++ path_roots(sandbox)
            ),
          {:ok, root, bytes} <- parse_diff(output) do
       {text, capped?} = redact_to_cap(values, bytes, max_bytes)
@@ -365,7 +373,8 @@ defmodule Fountain.SandboxFiles do
            run(
              sandbox,
              status_script(),
-             [absolute, Integer.to_string(@max_status_bytes + 1), untracked] ++ git_roots(sandbox)
+             [absolute, Integer.to_string(@max_status_bytes + 1), untracked] ++
+               path_roots(sandbox)
            ),
          {:ok, root, branch, body} <- parse_status(output) do
       {records, cut?} = status_records(body)
@@ -444,6 +453,7 @@ defmodule Fountain.SandboxFiles do
       {:ok, _output, @exit_unreadable} -> {:error, :path_unreadable}
       {:ok, _output, @exit_not_repository} -> {:error, :not_a_repository}
       {:ok, _output, @exit_ref_not_found} -> {:error, :ref_not_found}
+      {:ok, _output, @exit_outside} -> {:error, :path_outside_sandbox}
       {:ok, output, @exit_wrong_kind} -> {:error, wrong_kind(script, output)}
       {:ok, output, code} -> {:error, command_failed(sandbox, code, output)}
       {:error, reason} -> {:error, {:sandbox_unreachable, reason}}
@@ -463,7 +473,7 @@ defmodule Fountain.SandboxFiles do
 
   # Pair each mapped host root with its sandbox spelling. The tag keeps
   # run/3 from mapping that spelling too; both remain literal argv values.
-  defp git_roots(sandbox),
+  defp path_roots(sandbox),
     do: Enum.flat_map(roots(sandbox), &[&1, "sandbox:" <> &1])
 
   defp map_path(handle, "/" <> _ = path), do: Managoat.Sandbox.host_path(handle, path)
@@ -489,20 +499,27 @@ defmodule Fountain.SandboxFiles do
   defp list_script do
     ~S"""
     p=$1
+    shift
     [ -e "$p" ] || exit 3
     [ -d "$p" ] || exit 4
     cd -- "$p" 2>/dev/null || exit 5
-    shopt -s dotglob nullglob
-    for f in *; do
-      if [ -L "$f" ]; then t=symlink
-      elif [ -d "$f" ]; then t=directory
-      elif [ -f "$f" ]; then t=file
-      else t=other; fi
-      s=
-      if [ "$t" = file ]; then s=$(wc -c < "$f" 2>/dev/null | tr -d ' '); fi
-      printf '%s\t%s\t%s\0' "$t" "$s" "$f"
-    done
-    """
+    physical=$(pwd -P && printf '.') || exit 5
+    physical=${physical%$'\n.'}
+    outside=9
+    """ <>
+      physical_root_script() <>
+      ~S"""
+      shopt -s dotglob nullglob
+      for f in *; do
+        if [ -L "$f" ]; then t=symlink
+        elif [ -d "$f" ]; then t=directory
+        elif [ -f "$f" ]; then t=file
+        else t=other; fi
+        s=
+        if [ "$t" = file ]; then s=$(wc -c < "$f" 2>/dev/null | tr -d ' '); fi
+        printf '%s\t%s\t%s\0' "$t" "$s" "$f"
+      done
+      """
   end
 
   # The size on the first line, then the first N bytes base64-encoded, so
@@ -511,12 +528,20 @@ defmodule Fountain.SandboxFiles do
     ~S"""
     n=$1
     p=$2
+    shift 2
     [ -e "$p" ] || exit 3
-    [ -d "$p" ] && exit 4
-    [ -r "$p" ] || exit 5
-    wc -c < "$p" | tr -d ' '
-    head -c "$n" "$p" | base64
-    """
+    physical=$(realpath -- "$p" 2>/dev/null && printf '.') || exit 5
+    physical=${physical%$'\n.'}
+    outside=9
+    """ <>
+      physical_root_script() <>
+      ~S"""
+      p=$physical
+      [ -d "$p" ] && exit 4
+      [ -r "$p" ] || exit 5
+      wc -c < "$p" | tr -d ' '
+      head -c "$n" "$p" | base64
+      """
   end
 
   # Discover and confine in the execution namespace, then return the matched
@@ -527,23 +552,33 @@ defmodule Fountain.SandboxFiles do
     [ -e "$d" ] || exit 3
     [ -d "$d" ] || exit 4
     cd -- "$d" 2>/dev/null || exit 5
-    root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
+    physical=$(git rev-parse --show-toplevel 2>/dev/null && printf '.') || exit 6
+    physical=${physical%$'\n.'}
+    outside=6
+    """ <>
+      physical_root_script() <>
+      ~S"""
+      root=$confined_path
+      """
+  end
+
+  # All operations compare physical paths to physical roots in the provider's
+  # execution namespace. The sentinel preserves trailing newlines that command
+  # substitution would otherwise trim. Git also needs the sandbox spelling.
+  defp physical_root_script do
+    ~S"""
     inside=
     while [ "$#" -ge 2 ]; do
       r=$1
       logical=${2#sandbox:}
       shift 2
-      case $root in
-        "$r"|"$r"/*) root="$logical${root#"$r"}"; inside=1; break ;;
+      r=$(cd -- "$r" 2>/dev/null && pwd -P && printf '.') || continue
+      r=${r%$'\n.'}
+      case $physical in
+        "$r"|"$r"/*) confined_path="$logical${physical#"$r"}"; inside=1; break ;;
       esac
-      p=$(cd -- "$r" 2>/dev/null && pwd -P)
-      if [ -n "$p" ]; then
-        case $root in
-          "$p"|"$p"/*) root="$logical${root#"$p"}"; inside=1; break ;;
-        esac
-      fi
     done
-    [ -n "$inside" ] || exit 6
+    [ -n "$inside" ] || exit "$outside"
     """
   end
 
@@ -553,7 +588,7 @@ defmodule Fountain.SandboxFiles do
   # which would turn an unknown ref into an empty diff. `--no-optional-locks`
   # keeps a read from contending with the agent's own git for the index.
   #
-  # `git_roots/1` follows the arguments, and the discovered root has to be one of
+  # `path_roots/1` follows the arguments, and the discovered root has to be one of
   # them or under one — see `status_script/0` for why.
   # Retain git's status, allowing SIGPIPE from the intentional byte cap. Keep
   # encoded output private until success: on failure the catch-all redacts raw
@@ -603,7 +638,7 @@ defmodule Fountain.SandboxFiles do
   # The mode chooses between fixed flags rather than reaching the command
   # line, so caller data is never adjacent to a `--`.
   #
-  # `git_roots/1` follows the three arguments, and the root `rev-parse` discovers
+  # `path_roots/1` follows the three arguments, and the root `rev-parse` discovers
   # has to be one of them or under one. `resolve_path/2` confines the
   # *request*; `--show-toplevel` then walks up its ancestors, and without this
   # check a repository above the sandbox answers instead — inert on Sprites,

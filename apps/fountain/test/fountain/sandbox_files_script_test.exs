@@ -21,7 +21,7 @@ defmodule Fountain.SandboxFilesScriptTest do
   # stderr goes nowhere. Dropping it here keeps the test reading what a
   # caller reads — and keeps a deliberate `fatal:` out of the suite's output.
   defp run(kind, args, env \\ [], logical_roots \\ nil) do
-    {flags, roots} = Enum.split(args, if(kind == :status, do: 3, else: 4))
+    {flags, roots} = Enum.split(args, %{list: 1, read: 2, status: 3, diff: 4}[kind])
     pairs = Enum.zip_with(roots, logical_roots || roots, &[&1, "sandbox:" <> &2])
     args = flags ++ List.flatten(pairs)
 
@@ -55,6 +55,86 @@ defmodule Fountain.SandboxFilesScriptTest do
     File.write!(Path.join(dir, "a.txt"), "two\n")
     File.write!(Path.join(dir, "new.txt"), "fresh\n")
     dir
+  end
+
+  describe "file paths are physically confined" do
+    setup do
+      dir = TmpDir.mkdir!("sandbox-files-paths")
+      root = Path.join(dir, "home")
+      outside = Path.join(dir, "home-outside")
+      File.mkdir_p!(Path.join(root, "nested"))
+      File.mkdir_p!(outside)
+      File.write!(Path.join(root, "nested/inside.txt"), "inside")
+      File.write!(Path.join(outside, "secret.txt"), "outside")
+      %{root: root, outside: outside}
+    end
+
+    test "directory symlinks cannot list or read outside a root", c do
+      link = Path.join(c.root, "escape")
+      File.ln_s!(c.outside, link)
+      assert {"", 9} = run(:list, [link, c.root])
+      assert {"", 9} = run(:read, ["100", Path.join(link, "secret.txt"), c.root])
+    end
+
+    test "a final file symlink cannot read outside a root", c do
+      link = Path.join(c.root, "escape.txt")
+      File.ln_s!(Path.join(c.outside, "secret.txt"), link)
+      assert {"", 9} = run(:read, ["100", link, c.root])
+    end
+
+    test "symlinks within a root and symlinked runner homes remain usable", c do
+      home = Path.join(c.outside, "mapped-home")
+      File.ln_s!(c.root, home)
+      File.ln_s!(Path.join(c.root, "nested"), Path.join(c.root, "directory-link"))
+      File.ln_s!(Path.join(c.root, "nested/inside.txt"), Path.join(c.root, "file-link"))
+
+      assert {listing, 0} = run(:list, [Path.join(home, "directory-link"), home])
+      assert listing == "file\t6\tinside.txt\0"
+      assert {encoded, 0} = run(:read, ["100", Path.join(home, "file-link"), home])
+      assert encoded == "6\naW5zaWRl\n"
+      assert {listing, 0} = run(:list, [home, home])
+      assert listing =~ "symlink\t\tfile-link\0"
+    end
+
+    test "either allowed root can contain the physical target", c do
+      link = Path.join(c.root, "workspace")
+      File.ln_s!(c.outside, link)
+      assert {listing, 0} = run(:list, [link, c.root, c.outside])
+      assert listing =~ "secret.txt"
+      assert {_encoded, 0} = run(:read, ["100", Path.join(link, "secret.txt"), c.root, c.outside])
+    end
+
+    test "newlines at the end of physical paths are preserved", c do
+      root = Path.join(c.root, "odd\n")
+      File.mkdir_p!(root)
+      file = Path.join(root, "file\n")
+      File.write!(file, "inside")
+      assert {"file\t6\tfile\n\0", 0} = run(:list, [root, root])
+      assert {"6\naW5zaWRl\n", 0} = run(:read, ["100", file, root])
+    end
+
+    test "missing paths and wrong kinds retain their existing errors", c do
+      missing = Path.join(c.root, "missing")
+      File.ln_s!(missing, Path.join(c.root, "dangling"))
+      assert {"", 3} = run(:list, [missing, c.root])
+      assert {"", 3} = run(:read, ["100", missing, c.root])
+      assert {"", 3} = run(:read, ["100", Path.join(c.root, "dangling"), c.root])
+      assert {"", 4} = run(:list, [Path.join(c.root, "nested/inside.txt"), c.root])
+      assert {"", 4} = run(:read, ["100", c.root, c.root])
+    end
+
+    test "unreadable files remain unreadable", c do
+      file = Path.join(c.root, "locked")
+      File.write!(file, "private")
+      File.chmod!(file, 0o000)
+      on_exit(fn -> File.chmod(file, 0o600) end)
+
+      # A root-run test process can read mode 000; exercise the permission
+      # refusal only when the OS actually denies the test user's read.
+      if match?({:error, :eacces}, File.read(file)) do
+        assert {"", 5} = run(:read, ["100", file, c.root])
+      end
+    end
   end
 
   describe "status_script/0 exit status" do

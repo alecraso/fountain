@@ -41,7 +41,7 @@ defmodule FountainWeb.SandboxFilesControllerTest do
         |> json_response(200)
         |> Map.fetch!("data")
 
-      assert_received {:exec_args, [@home]}
+      assert_received {:exec_args, [@home, @home, "sandbox:" <> @home]}
 
       assert data == %{
                "path" => @home,
@@ -61,7 +61,7 @@ defmodule FountainWeb.SandboxFilesControllerTest do
       |> get("/api/sandboxes/#{ctx.sandbox.id}/files?path=src/lib")
       |> json_response(200)
 
-      assert_received {:exec_args, [@home <> "/src/lib"]}
+      assert_received {:exec_args, [@home <> "/src/lib", @home, "sandbox:" <> @home]}
 
       reject(&Managoat.Sandbox.exec/4)
 
@@ -168,7 +168,7 @@ defmodule FountainWeb.SandboxFilesControllerTest do
 
       # 1000 plus the overlap, one byte less than `ghp_0123456789`, so a value
       # lying across the cap is whole when redaction runs (#1907).
-      assert_received {:exec_args, ["1013", @home <> "/.git/config"]}
+      assert_received {:exec_args, ["1013", @home <> "/.git/config", @home, "sandbox:" <> @home]}
 
       assert data == %{
                "path" => @home <> "/.git/config",
