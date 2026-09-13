@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+### Breaking changes
+
+Replace `SubscriptionRequiredError` imports and `except` clauses with
+`InsufficientCreditsError`. The old export is removed. Read `error.upgrade_url`
+to offer the credit-purchase page; do not retry a 402 without adding credit.
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.
+
 ## 0.2.1
 
 - Classify `sandbox_unavailable` as `NotReadyError`, preserving the server's `Retry-After` delay for callers retrying a refused sandbox binding (#2049).

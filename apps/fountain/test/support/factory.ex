@@ -316,7 +316,7 @@ defmodule Fountain.Factory do
     user_id = Map.get(overrides_map, :user_id) || insert_verified_user().id
 
     attrs =
-      %{sprite_name: "test-sprite-#{uniq()}", status: "pending", user_id: user_id}
+      %{machine_name: "test-sprite-#{uniq()}", status: "pending", user_id: user_id}
       |> Map.merge(overrides_map)
 
     sandbox =

@@ -7,7 +7,7 @@ defmodule Fountain.Conversations.TurnParentActorTest do
     user = insert_verified_user()
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
-    stub_happy_sprite(sandbox.sprite_name)
+    stub_happy_sprite(sandbox.machine_name)
     {pid, _monitor, :alive} = start_server(conv)
     on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 

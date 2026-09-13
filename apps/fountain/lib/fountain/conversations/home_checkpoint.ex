@@ -40,7 +40,7 @@ defmodule Fountain.Conversations.HomeCheckpoint do
   # a non-retiring write to a fenced row while this clause matches `{:ok, _}`.
   def on_park(%Sandbox{reset_requested_at: at}) when not is_nil(at), do: :skipped
 
-  def on_park(%Sandbox{mode: "persistent", sprite_name: name} = sandbox) when is_binary(name) do
+  def on_park(%Sandbox{mode: "persistent", machine_name: name} = sandbox) when is_binary(name) do
     provider = Conversations.sandbox_provider_atom(sandbox)
 
     if Managoat.Sandbox.supports?(provider, :checkpoint) do
@@ -83,7 +83,7 @@ defmodule Fountain.Conversations.HomeCheckpoint do
 
       {:error, reason} ->
         Logger.warning(
-          "home checkpoint failed for sandbox #{sandbox.id} (#{sandbox.sprite_name}): " <>
+          "home checkpoint failed for sandbox #{sandbox.id} (#{sandbox.machine_name}): " <>
             "#{inspect(reason)}; parking without one"
         )
 
@@ -100,7 +100,7 @@ defmodule Fountain.Conversations.HomeCheckpoint do
 
     {:ok, _} = Conversations.update_sandbox(sandbox, %{provider_meta: meta})
 
-    Logger.info("home checkpoint #{id} for sandbox #{sandbox.id} (#{sandbox.sprite_name})")
+    Logger.info("home checkpoint #{id} for sandbox #{sandbox.id} (#{sandbox.machine_name})")
     publish(sandbox, "done", %{checkpoint_id: id})
   end
 

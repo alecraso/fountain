@@ -385,7 +385,7 @@ try {
 | `ConversationBusyError` | `conversation_busy` (400) | Yes. The turn in flight must finish. |
 | `NotReadyError` | `provisioning`, `sprite_probe_failed`, `fleet_full` (503) | Yes. It carries the server's `Retry-After`. |
 | `QuotaExceededError` | `sandbox_quota_exceeded` (429) | Yes. Terminate a conversation first. |
-| `SubscriptionRequiredError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
+| `InsufficientCreditsError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
 | `ValidationError` | 422 | No. Read `fieldErrors`. |
 | `AuthError` and `NotFoundError` | 401 and 404 | No. |
 | `ConnectionError` | It never reached the server. | In a browser, the cause is usually CORS. |
@@ -479,3 +479,28 @@ your own turn's events, and no other. Keep the `text` blocks, and no other
 kind. Join ACP chunks with nothing between them.
 Start a new paragraph after a tool call. Resume from the last event id when a
 connection drops mid-turn.
+
+## Credit error migration
+
+This change prepares TypeScript 2.0.0, Python 0.3.0 and Elixir 0.3.0.
+These are upcoming breaking releases; this cleanup does not publish packages.
+Replace subscription-era error checks with the credit names below.
+
+| Client | Removed name | Credit error | Purchase URL |
+|---|---|---|---|
+| TypeScript | `SubscriptionRequiredError` | `InsufficientCreditsError` | `error.upgradeUrl` |
+| Python | `SubscriptionRequiredError` | `InsufficientCreditsError` | `error.upgrade_url` |
+| Elixir | `:subscription_required` | `:insufficient_credits` | `Fountain.Error.upgrade_url(error)` |
+| Swift `Fountain` | `.subscriptionRequired` | `.insufficientCredits` | `error.upgradeURL` |
+| Swift `FountainKit` | No case rename | `.insufficientCredits(body, upgradeURL:)` | Associated `upgradeURL` value |
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.
+
+Swift's next package tag containing this change must be a breaking minor
+release while the package is 0.x. Until then, use a reviewed commit to adopt
+the new source API. Existing tags keep their original error names.

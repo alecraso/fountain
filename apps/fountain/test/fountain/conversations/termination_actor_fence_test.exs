@@ -10,7 +10,7 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
     agent = insert_agent(user_id: user.id)
     sandbox = insert_sandbox(user_id: user.id, agent_id: agent.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
-    handle = Managoat.Sandbox.build_handle(:sprites, sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(:sprites, sandbox.machine_name)
 
     state = %{
       conversation_id: conv.id,

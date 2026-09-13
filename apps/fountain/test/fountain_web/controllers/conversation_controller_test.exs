@@ -1000,7 +1000,7 @@ defmodule FountainWeb.ConversationControllerTest do
 
   describe "POST /api/conversations/:conversation_id/requests/:request_id" do
     defp waiting_conv(user) do
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite", status: "suspended")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite", status: "suspended")
       conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
 
       insert_turn(conv, %{

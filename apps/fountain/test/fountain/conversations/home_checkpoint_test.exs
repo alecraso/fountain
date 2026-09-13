@@ -41,7 +41,7 @@ defmodule Fountain.Conversations.HomeCheckpointTest do
       stub(Managoat.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
 
       stub(Managoat.Sandbox, :create_checkpoint, fn handle, opts ->
-        assert handle.name == sandbox.sprite_name
+        assert handle.name == sandbox.machine_name
         assert opts[:comment] == "home park #{sandbox.id}"
         {:ok, "v7"}
       end)

@@ -96,6 +96,69 @@ Did you move migrations into a Job with `MIGRATE_ON_BOOT=false`? Then the Job
 is the upgrade step. Read
 [Run migrations in a Job](database.md#run-migrations-in-a-job).
 
+## Vault policy migration (upcoming)
+
+Migration `20260913180000` adds generated `vault_access` columns to agents and
+saved agent versions. New authorization readers use the explicit mode. Existing
+clients keep sending `allowed_vault_ids`: `null` permits all current and future
+vaults owned by the tenant, `[]` denies vault attachments, and a non-empty list
+permits only those IDs within the tenant. SDK payloads and saved configs keep
+their existing shape. A historical version with no vault key leaves the current
+policy unchanged on restore; an explicit `null` restores unrestricted access.
+
+Run this migration before starting the new server code. PostgreSQL derives the
+mode on every write, so old and new servers can continue writing the existing
+field during the rollout. No client upgrade or list of current vaults is needed.
+The remaining wire-contract retirement is tracked in
+[issue #2107](https://github.com/managoat/fountain/issues/2107).
+
+These stored columns rewrite both tables and hold exclusive locks until the
+migration commits. Each statement has a five-second lock wait and a 30-second
+execution limit; failure rolls back the whole migration. Schedule a maintenance
+window for busy or large tables and verify the migration completes before
+rolling the application. If it exceeds these bounds, keep the existing server
+running and plan a separate migration approach for that database size.
+
+## Principal credential expiry
+
+Every unrevoked key with `principal` scope must have an expiry. The database
+CHECK enforces this independently of the issuer. Full and sprite keys can
+still omit expiry. Existing deadlines and revoked keys remain unchanged.
+
+The application now rejects a principal key write without an explicit expiry.
+The database trigger still supplies 30 days for older writers during a rolling
+upgrade. This release installs and validates the permanent CHECK in separate
+migrations, so validation does not hold the installation's exclusive table lock.
+A timeout leaves validation pending; retry after you resolve the contention.
+
+Principal issuance, claim replay and owner renewal supply deadlines starting
+with [commit af1178dd](https://github.com/managoat/fountain/commit/af1178dd2b3462eb7a26e9d655ff3fe09681a0ed).
+This is a verified code boundary, not evidence that every deployed replica
+uses it. No published release floor for trigger removal is established here.
+
+Before a later migration removes the trigger, finish a deployment containing
+that writer change and this validation. Confirm all older replicas, workers
+and release-task processes have stopped. Include any external database writers
+in that check. Boot migrations can run before replacement replicas serve
+requests, so the trigger cannot disappear in the first rollout of new writers.
+[Issue #2103](https://github.com/managoat/fountain/issues/2103) tracks that remaining step.
+
+## Conversation message compatibility
+
+The server uses the `managoat_acp` peer from its own release. The audited peer
+floor is version `0.4.2`, pinned in `mix.lock`. It reports model refusal as
+`{:failed, {:model_selection_failed, requested, detail}}` before it sends a prompt.
+The retired `model_rejected` event has no receiver.
+
+Each conversation starts its peer locally. The peer monitors its owner and
+stops when that owner exits. Replace the server process during upgrades;
+hot code replacement across peer versions is not a supported upgrade path.
+Sandbox adapters send ACP protocol messages, not these internal peer events.
+
+The cross-node termination and sandbox-loss compatibility handlers remain
+in place. Their removal is still tracked in
+[issue #2099](https://github.com/managoat/fountain/issues/2099).
+
 ## Match the CLI to the server
 
 The CLI and the server come from the same tag. The two versions that match are

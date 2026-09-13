@@ -64,7 +64,7 @@ defmodule FountainWeb.AdminJSON do
   defp sandbox_data(%Sandbox{} = s) do
     %{
       id: s.id,
-      sprite_name: s.sprite_name,
+      sprite_name: s.machine_name,
       provider: s.provider,
       status: s.status,
       user_id: s.user_id,

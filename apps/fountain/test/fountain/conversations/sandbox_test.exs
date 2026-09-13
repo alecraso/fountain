@@ -5,7 +5,7 @@ defmodule Fountain.Conversations.SandboxTest do
 
   defp valid_attrs do
     %{
-      sprite_name: "sprite-abc123",
+      machine_name: "sprite-abc123",
       status: "pending",
       user_id: Ecto.UUID.generate()
     }
@@ -13,6 +13,64 @@ defmodule Fountain.Conversations.SandboxTest do
 
   defp changeset(overrides \\ %{}) do
     Sandbox.changeset(%Sandbox{}, Map.merge(valid_attrs(), overrides))
+  end
+
+  describe "machine name storage and API boundary" do
+    test "there is one internal name backed by the existing column" do
+      assert Sandbox.__schema__(:field_source, :machine_name) == :sprite_name
+      refute :sprite_name in Sandbox.__schema__(:fields)
+    end
+
+    for provider <- ~w(sprites e2b daytona runner) do
+      test "loads and updates existing #{provider} names without changing their identity" do
+        user = insert_user()
+        sandbox = insert_sandbox(user_id: user.id, provider: unquote(provider))
+        name = "existing-#{sandbox.id}"
+
+        Repo.query!(
+          "UPDATE sandboxes SET sprite_name = $1 WHERE id = $2::text::uuid",
+          [name, sandbox.id]
+        )
+
+        loaded = Repo.get_by!(Sandbox, machine_name: name, provider: unquote(provider))
+        assert loaded.machine_name == name
+        assert loaded.provider_meta == sandbox.provider_meta
+        assert loaded.provider_instance_id == sandbox.provider_instance_id
+
+        handle =
+          Managoat.Sandbox.build_handle(
+            Fountain.Conversations.sandbox_provider_atom(loaded),
+            loaded.machine_name
+          )
+
+        assert handle.name == name
+        assert Atom.to_string(handle.provider) == unquote(provider)
+        assert {:ok, updated} = Fountain.Conversations.update_sandbox(loaded, %{status: "ready"})
+        assert updated.machine_name == name
+
+        assert %{rows: [[^name, "ready"]]} =
+                 Repo.query!(
+                   "SELECT sprite_name, status FROM sandboxes WHERE id = $1::text::uuid",
+                   [sandbox.id]
+                 )
+      end
+    end
+
+    test "conversation, sandbox and admin serializers retain the public sprite_name field" do
+      user = insert_user()
+      sandbox = insert_sandbox(user_id: user.id) |> Repo.preload([:user, :conversations])
+      %{data: [admin]} = FountainWeb.AdminJSON.index_sandboxes(%{sandboxes: [sandbox]})
+
+      for payload <- [
+            FountainWeb.ConversationJSON.sandbox_data(sandbox),
+            FountainWeb.SandboxJSON.data(sandbox),
+            admin
+          ] do
+        json = payload |> Jason.encode!() |> Jason.decode!()
+        assert json["sprite_name"] == sandbox.machine_name
+        refute Map.has_key?(json, "machine_name")
+      end
+    end
   end
 
   describe "statuses/0" do
@@ -68,9 +126,9 @@ defmodule Fountain.Conversations.SandboxTest do
   end
 
   describe "changeset/2 required fields" do
-    test "errors when sprite_name is missing" do
-      errors = changeset(%{sprite_name: nil}) |> errors_on()
-      assert "can't be blank" in errors.sprite_name
+    test "errors when machine_name is missing" do
+      errors = changeset(%{machine_name: nil}) |> errors_on()
+      assert "can't be blank" in errors.machine_name
     end
 
     test "errors when user_id is missing" do

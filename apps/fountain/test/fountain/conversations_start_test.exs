@@ -16,7 +16,7 @@ defmodule Fountain.ConversationsStartTest do
     test "a failed resume leaves the row suspended and fails retryably" do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-wont-wake")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "parked-wont-wake")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -40,7 +40,7 @@ defmodule Fountain.ConversationsStartTest do
       # safe until the operator restores the provider's credentials.
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-on-e2b")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "parked-on-e2b")
 
       {:ok, sandbox} =
         Conversations.update_sandbox(sandbox, %{status: "suspended", provider: "e2b"})
@@ -72,18 +72,18 @@ defmodule Fountain.ConversationsStartTest do
         insert_sandbox(
           user_id: victim.id,
           status: "ready",
-          sprite_name: "fountain-" <> binary_part(victim.id, 0, 8) <> "-deadbeef"
+          machine_name: "fountain-" <> binary_part(victim.id, 0, 8) <> "-deadbeef"
         )
 
       assert {:ok, conv} =
                Conversations.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => attacker.id,
-                 "sprite_name" => target.sprite_name
+                 "sprite_name" => target.machine_name
                })
 
-      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name !=
-               target.sprite_name
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name !=
+               target.machine_name
     end
 
     test "a supplied name becomes the suffix of this account's prefix" do
@@ -100,7 +100,7 @@ defmodule Fountain.ConversationsStartTest do
 
       prefix = "fountain-" <> binary_part(user.id, 0, 8) <> "-"
 
-      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name ==
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name ==
                prefix <> "review-loop-7"
     end
 
@@ -118,7 +118,7 @@ defmodule Fountain.ConversationsStartTest do
                  "sprite_name" => full
                })
 
-      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name == full
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name == full
     end
 
     test "a suffix outside the allowed shape is refused before any row is allocated" do
@@ -150,7 +150,7 @@ defmodule Fountain.ConversationsStartTest do
                  "sprite_name" => ""
                })
 
-      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name =~
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name =~
                ~r/\Afountain-#{binary_part(user.id, 0, 8)}-[0-9a-f]{8}\z/
     end
 
@@ -378,6 +378,17 @@ defmodule Fountain.ConversationsStartTest do
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
       assert {:ok, conv} = Conversations.start_conversation(attrs)
       assert conv.vault_id == vault.id
+    end
+
+    test "a foreign vault is refused even when unrestricted or explicitly allowlisted", %{} do
+      user = insert_active_user()
+      foreign = insert_vault(user_id: insert_verified_user().id)
+
+      for ids <- [nil, [foreign.id]] do
+        agent = insert_agent(user_id: user.id, allowed_vault_ids: ids)
+        attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => foreign.id}
+        assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+      end
     end
 
     test "allows a vault on the agent's allowed_vault_ids list", %{} do
@@ -912,11 +923,11 @@ defmodule Fountain.ConversationsStartTest do
       # so safe_to_existing_atom triggers its rescue clause and returns the string key.
       result =
         Fountain.Factory.to_atom_map(%{
-          "sprite_name" => "test-sprite",
+          "machine_name" => "test-sprite",
           "xyzquuxfoo_novel_key_never_an_atom" => "ignored_value"
         })
 
-      assert Map.get(result, :sprite_name) == "test-sprite"
+      assert Map.get(result, :machine_name) == "test-sprite"
       # The unknown key is preserved as a string (fallback)
       assert Map.get(result, "xyzquuxfoo_novel_key_never_an_atom") == "ignored_value"
     end

@@ -14,7 +14,7 @@ fixture = fn seconds ->
   sandbox =
     Repo.insert!(%Sandbox{
       user_id: user.id,
-      sprite_name: "local-transcript-#{Ecto.UUID.generate()}",
+      machine_name: "local-transcript-#{Ecto.UUID.generate()}",
       status: "ready"
     })
 

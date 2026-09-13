@@ -30,6 +30,16 @@ upgrade, is in
   catalog's Conversations app for direct run links. The catalog-aware URL helper
   uses that app first, then `appURL`, then `/dashboard`.
 
+- New principal-key writes must provide an expiry. The database now checks
+  that unrevoked principal keys have deadlines, preserving existing deadlines
+  and revoked history (#2103). The old-writer trigger remains during rollout;
+  its removal requires evidence that every writer supplies an expiry.
+
+- ChatGPT `auth.json` imports now require explicit `"auth_mode": "chatgpt"`
+  (#2106). Use Codex 0.93.0 or newer to sign in again with file storage,
+  then paste the fresh file. Files with missing or null mode are rejected.
+  Existing stored grants continue to refresh without another import.
+
 - `fountain apply` now requires Fountain server v0.3.0 or later (#2098).
   The fallback for servers without `POST /api/apply` is removed. If the
   endpoint returns 404, the CLI fails before individual resource requests
@@ -74,6 +84,10 @@ upgrade, is in
   `sandboxes.applied_skills`) (#1565).
 
 ### Changed
+
+- Sandbox application code now uses `machine_name` across providers (#2108).
+  Existing database columns, API fields, event metadata and provider names retain
+  their current values and names.
 
 - **Brokerage is a property of the deployment, and the per-tenant ratchet is
   gone** (ADR 0019 §9, amended 2026-09-12). `Fountain.Broker.enabled_for?/1`

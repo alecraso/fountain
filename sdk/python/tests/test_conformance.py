@@ -28,7 +28,7 @@ from fountain import (  # noqa: E402
     QuotaExceededError,
     RateLimitError,
     ResolutionError,
-    SubscriptionRequiredError,
+    InsufficientCreditsError,
     TimeoutError,
     ValidationError,
 )
@@ -252,7 +252,7 @@ class ScriptedServer:
 
 ERROR_KINDS = [
     (ConversationBusyError, "busy"),
-    (SubscriptionRequiredError, "subscription"),
+    (InsufficientCreditsError, "insufficient_credits"),
     (QuotaExceededError, "quota"),
     (NotReadyError, "not_ready"),
     (RateLimitError, "rate_limited"),
@@ -280,6 +280,7 @@ def _normalise_error(error: BaseException) -> Dict[str, Any]:
                 "retryable": error.retryable,
                 "retry_after": error.retry_after,
                 "field_errors": error.field_errors,
+                "upgrade_url": getattr(error, "upgrade_url", None),
             }
         )
     if isinstance(error, TimeoutError):
