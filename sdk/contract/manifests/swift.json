@@ -103,6 +103,7 @@
     "POST /api/vaults/{vault_id}/secrets"
   ],
   "schemas": {
+    "AuthMeResponse": { "fields": ["connections_enabled", "connections_manageable"] },
     "TurnUsage": { "optional": ["input", "output", "cache_read", "cache_write", "accounting"] },
     "UsageAccounting": { "required": ["version", "source", "scope", "completeness"] },
     "Agent": { "required": ["id", "name"] },

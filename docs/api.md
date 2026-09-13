@@ -190,6 +190,12 @@ It is distinct from an API key for Fountain. See
 [Connections](catalog/connections/index.md) for supported services and setup.
 The [generated reference](/api/docs) describes discovery and connection state.
 
+Use `GET /api/auth/me` to decide which controls to show:
+`connections_enabled` allows adding connections, providers, and credential
+bindings; `connections_manageable` allows listing and removing existing ones.
+Keep removal controls visible when `connections_manageable` is true, even if
+`connections_enabled` is false.
+
 ### Connection providers
 
 An instance must configure a provider before an account can connect it.

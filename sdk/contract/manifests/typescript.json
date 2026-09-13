@@ -84,7 +84,7 @@
     "Agent": { "required": ["id", "name"] },
     "AgentRequest": {},
     "AgentUpdate": {},
-    "AuthMeResponse": { "required": ["id", "email"] },
+    "AuthMeResponse": { "required": ["id", "email"], "fields": ["connections_enabled", "connections_manageable"] },
     "Block": {
       "required": ["kind"],
       "fields": ["body", "error", "id", "name", "options", "raw", "request_id", "summary", "tool_id"]

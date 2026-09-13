@@ -3169,8 +3169,10 @@ export interface components {
             brokered?: boolean;
             /** @description Null when billing is off. */
             comped?: boolean | null;
-            /** @description Whether Connections and credential binding management are enabled for this account. */
+            /** @description Whether this account may add connections, providers, or credential bindings. Use connections_manageable to show existing credentials and their removal controls. */
             connections_enabled?: boolean;
+            /** @description Whether this account may list, revoke, and delete existing connections, providers, and credential bindings. Remains true when the connections rollout flag is off but the deployment still brokers credentials. */
+            connections_manageable?: boolean;
             /** Format: email */
             email: string;
             email_verified: boolean;

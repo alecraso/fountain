@@ -3975,7 +3975,15 @@ defmodule FountainWeb.Schemas do
         connections_enabled: %Schema{
           type: :boolean,
           description:
-            "Whether Connections and credential binding management are enabled for this account."
+            "Whether this account may add connections, providers, or credential bindings. " <>
+              "Use connections_manageable to show existing credentials and their removal controls."
+        },
+        connections_manageable: %Schema{
+          type: :boolean,
+          description:
+            "Whether this account may list, revoke, and delete existing connections, " <>
+              "providers, and credential bindings. Remains true when the connections " <>
+              "rollout flag is off but the deployment still brokers credentials."
         },
         expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },

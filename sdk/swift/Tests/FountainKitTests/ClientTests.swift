@@ -200,11 +200,13 @@ import Testing
       json: """
         {"id":"50e06232-0000-0000-0000-000000000000","email":"user@example.com","role":"admin",
          "onboarding_state":"completed","email_verified":true,"comped":false,"brokered":true,
-         "onboarding_completed":true}
+         "onboarding_completed":true,"connections_enabled":false,"connections_manageable":true}
         """)
     let me = try await FountainClient.fake(transport).auth.me()
     #expect(me.email == "user@example.com")
     #expect(me.brokered == true)
+    #expect(me.connectionsEnabled == false)
+    #expect(me.connectionsManageable == true)
   }
 
   @Test func permissionRequestNeedsIdAndUsableOption() throws {

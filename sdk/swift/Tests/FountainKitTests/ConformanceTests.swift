@@ -258,7 +258,12 @@ private func drive(
     switch op {
     case "me":
       let me = try await client.auth.me()
-      observations.value = .object(["id": .string(me.id), "email": .string(me.email)])
+      var value: [String: JSONValue] = ["id": .string(me.id), "email": .string(me.email)]
+      if let enabled = me.connectionsEnabled { value["connections_enabled"] = .bool(enabled) }
+      if let manageable = me.connectionsManageable {
+        value["connections_manageable"] = .bool(manageable)
+      }
+      observations.value = .object(value)
 
     case "list":
       switch step["resource"]?.stringValue {
