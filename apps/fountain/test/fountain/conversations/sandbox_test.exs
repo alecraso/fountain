@@ -1,6 +1,7 @@
 defmodule Fountain.Conversations.SandboxTest do
   use Fountain.DataCase, async: true
 
+  alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
 
   defp valid_attrs do
@@ -110,6 +111,61 @@ defmodule Fountain.Conversations.SandboxTest do
 
       assert updated.status == "terminated"
       assert updated.terminated_at == retired.terminated_at
+    end
+  end
+
+  describe "claim_sandbox/2" do
+    test "returns the updated live sandbox" do
+      sandbox = insert_sandbox(user_id: insert_user().id)
+      assert {:ok, updated} = Conversations.claim_sandbox(sandbox, %{status: "ready"})
+      assert updated.status == "ready"
+      assert Repo.reload!(sandbox).status == "ready"
+    end
+
+    test "recognizes retirement alongside a different field validation" do
+      sandbox = insert_sandbox(user_id: insert_user().id, status: "terminated")
+      attrs = %{status: "ready", mode: "invalid"}
+      assert {:error, changeset} = Conversations.update_sandbox(sandbox, attrs)
+      assert Map.has_key?(errors_on(changeset), :mode)
+      assert Conversations.sandbox_retired?(changeset)
+      assert :retired = Conversations.claim_sandbox(sandbox, attrs)
+      assert Repo.reload!(sandbox).status == "terminated"
+    end
+
+    test "preserves unrelated validation errors and reset refusals" do
+      sandbox = insert_sandbox(user_id: insert_user().id, status: "ready")
+      assert {:error, changeset} = Conversations.claim_sandbox(sandbox, %{mode: "invalid"})
+      assert errors_on(changeset).mode == ["is invalid"]
+      refute Conversations.sandbox_retired?(changeset)
+
+      sandbox
+      |> Ecto.Changeset.change(reset_requested_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      assert {:error, :sandbox_reset_pending} =
+               Conversations.claim_sandbox(sandbox, %{status: "ready"})
+
+      refute Conversations.sandbox_retired?(:sandbox_reset_pending)
+      assert Repo.reload!(sandbox).status == "ready"
+    end
+  end
+
+  describe "sandbox_retired?/1" do
+    test "checks every status error regardless of order" do
+      for errors <- [
+            [status: {"other failure", []}, status: {"sandbox is retired", []}],
+            [status: {"sandbox is retired", []}, status: {"other failure", []}]
+          ] do
+        assert Conversations.sandbox_retired?(%Ecto.Changeset{errors: errors})
+      end
+    end
+
+    test "does not mistake unrelated fields or errors for retirement" do
+      refute Conversations.sandbox_retired?(%Ecto.Changeset{
+               errors: [mode: {"sandbox is retired", []}, status: {"other failure", []}]
+             })
+
+      refute Conversations.sandbox_retired?(nil)
     end
   end
 
