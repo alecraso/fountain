@@ -149,14 +149,18 @@ defmodule Fountain.PrincipalKeyExpiryTest do
     assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
              Repo.query(
                "UPDATE principal_expiry_probe SET revoked_at = NULL WHERE id = $1",
-               [Ecto.UUID.dump!(revoked.id)], mode: :savepoint)
+               [Ecto.UUID.dump!(revoked.id)],
+               mode: :savepoint
+             )
 
     # Scopes already have their own NOT NULL invariant; SQL's unknown truth
     # value cannot hide a principal-bearing scope list from the CHECK above.
     assert {:error, %Postgrex.Error{postgres: %{code: :not_null_violation}}} =
              Repo.query(
                "UPDATE principal_expiry_probe SET scopes = NULL WHERE id = $1",
-               [Ecto.UUID.dump!(full.id)], mode: :savepoint)
+               [Ecto.UUID.dump!(full.id)],
+               mode: :savepoint
+             )
 
     assert Repo.reload!(principal).expires_at == deadline
     assert is_nil(Repo.reload!(full).expires_at)
