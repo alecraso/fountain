@@ -2,7 +2,7 @@ defmodule Fountain.TeamTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.{Audit, Conversations, Team}
+  alias Fountain.{Agents, Audit, Conversations, Team}
   alias Fountain.Conversations.ConversationServer
 
   # A conversation bound to the team channel, the way add_teammate leaves one.
