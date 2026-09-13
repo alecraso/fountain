@@ -114,17 +114,20 @@ defmodule Fountain.Conversations.Connection do
 
     previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
 
-    Output.publish_stage(conversation_id, "turn", "started", %{
-      turn_id: turn.id,
-      turn_number: turn.turn_number,
-      mode: "continue",
-      connection: "reused"
-    })
-
     started_mono = System.monotonic_time(:millisecond)
 
     case Managoat.ACP.Peer.prompt(conn.peer, prompt, images, model: model) do
       :ok ->
+        # Announce only an accepted reuse. On refusal the fresh launch owns
+        # this same row's start (#1924). The actor processes queued peer
+        # output after this call returns, so the start still precedes it.
+        Output.publish_stage(conversation_id, "turn", "started", %{
+          turn_id: turn.id,
+          turn_number: turn.turn_number,
+          mode: "continue",
+          connection: "reused"
+        })
+
         OpenTelemetry.Tracer.set_current_span(previous_span)
         {:ok, turn_span, Managoat.ACP.Tracer.new(turn_span, prefix: "fountain"), started_mono}
 

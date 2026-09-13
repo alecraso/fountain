@@ -179,9 +179,8 @@ defmodule Fountain.Conversations.ConnectionTest do
         end)
 
       assert log =~ "idle peer refused prompt"
-      # The stage event is published before the peer answers, so it stands
-      # either way; the turn row is the caller's to run afresh.
-      assert [{"started", _}] = stages(conv.id, "turn")
+      # The caller's fresh launch announces the row when reuse is refused.
+      assert [] = stages(conv.id, "turn")
     end
   end
 
