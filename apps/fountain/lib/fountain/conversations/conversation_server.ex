@@ -1928,6 +1928,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp terminate_machine(state, sandbox) do
+    state = if state.current_turn, do: interrupt_turn(state), else: state
     state = drop_connection(state, "terminated")
     if state.handle, do: _ = Managoat.Sandbox.destroy(state.handle)
     Egress.release(state.conversation_id)
