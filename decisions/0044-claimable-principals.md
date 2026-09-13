@@ -132,17 +132,23 @@ abandoning what it already has.
    independently of the anonymous grant deadline. The owner's API keys page
    can replace them before or after expiry. Existing active principal keys
    with no expiry get a 30-day renewal window when migrated. A database
-   trigger permanently enforces a finite expiry when a writer inserts a
-   principal key or updates its scope/expiry without supplying a deadline.
-   It supplies 30 days from the write's wall-clock time, including for older
-   writers during rollout. Explicit deadlines and keys without principal
-   scope are unaffected. Issuers must still set and return their deadline
-   explicitly: an insert without `RETURNING expires_at` does not see the
-   trigger's generated value in its returned struct. Intentionally permitting
-   non-expiring principal credentials would require changing this database
-   policy. Trigger installation commits before the legacy backfill, with
-   bounded lock and statement timeouts on both migrations. Rolling back
-   retains deadlines already assigned.
+   CHECK permanently requires an expiry on every unrevoked principal key,
+   including writes that bypass the application. Revoked history may retain
+   NULL expiry, but cannot be reactivated without a deadline. Issuers must
+   supply and return their own deadline; missing expiry is rejected by the
+   shared changeset. Explicit deadlines and keys without principal scope are
+   unaffected. Intentionally permitting non-expiring active principal
+   credentials would require changing this database policy.
+
+   The temporary 30-day default trigger supports older writers during rollout.
+   Its retirement migration requires the validated CHECK and must follow a
+   completed deployment of the explicit-expiry writers, with every older
+   process drained. Database state cannot prove that operational boundary.
+   The [upgrade guide](https://managoat.com/docs/guides/operate/upgrade#principal-credential-expiry)
+   records the writer floor and sequence. Trigger retirement and rollback
+   preserve every assigned deadline; rollback restores compatibility before
+   older writers restart. Historical trigger installation, backfill and CHECK
+   validation remain separate migrations with bounded lock and statement waits.
 
 **The API is four routes**, all behind `:require_full_scope`:
 `POST /api/claimable-users`, `GET /api/claimable-users/:id`,
