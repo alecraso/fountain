@@ -179,9 +179,10 @@ defmodule Fountain.Agents.Agent do
   defp validate_fixture_account(changeset) do
     if get_field(changeset, :runtime) == "fountain-fixture" do
       changeset =
-        if Fountain.DeployedACPFixture.allowed?(get_field(changeset, :user_id)),
-          do: changeset,
-          else: add_error(changeset, :runtime, "fixture is not enabled for this account")
+        if retaining_fixture?(changeset) or
+             Fountain.DeployedACPFixture.allowed?(get_field(changeset, :user_id)),
+           do: changeset,
+           else: add_error(changeset, :runtime, "fixture is not enabled for this account")
 
       Enum.reduce([:skills, :mcp_servers, :system], changeset, fn field, acc ->
         if get_field(acc, field) in [nil, [], %{}, ""],
@@ -192,6 +193,15 @@ defmodule Fountain.Agents.Agent do
       changeset
     end
   end
+
+  # Disabling a runtime stops admission, not maintenance of its persisted
+  # agents. Retaining the same fixture and owner does not grant launch access;
+  # RuntimeDispatch and prepare_sandbox recheck the live account gate.
+  defp retaining_fixture?(%{data: %__MODULE__{runtime: "fountain-fixture"} = agent} = changeset) do
+    agent.__meta__.state == :loaded and get_field(changeset, :user_id) == agent.user_id
+  end
+
+  defp retaining_fixture?(_changeset), do: false
 
   # `model` is required for every runtime but `acp`, where it is optional and
   # inert: that runtime resolves no inference credential, so a model would be

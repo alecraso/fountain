@@ -1,6 +1,7 @@
 defmodule Fountain.DeployedACPFixtureTest do
   # Enabling this runtime changes application-wide admission and catalog state.
   use ExUnit.Case, async: false
+  use Mimic
 
   alias Fountain.Agents.Agent
   alias Fountain.DeployedACPFixture
@@ -75,6 +76,25 @@ defmodule Fountain.DeployedACPFixtureTest do
     assert DeployedACPFixture.default_env(attrs(), %{anthropic_api_key: "not-exported"}) == []
   end
 
+  test "an existing fixture can be maintained after disabling it without granting admission" do
+    enable()
+    agent = Agent.changeset(%Agent{}, attrs()) |> Ecto.Changeset.apply_changes()
+    agent = Ecto.put_meta(agent, state: :loaded)
+    Application.delete_env(:fountain, :deployed_acp_fixture)
+
+    assert Agent.changeset(agent, %{name: "retired fixture"}).valid?
+    assert Agent.changeset(agent, %{runtime: "fountain-fixture", description: "retired"}).valid?
+    refute Agent.changeset(agent, %{user_id: @other}).valid?
+    refute Agent.changeset(agent, %{skills: [%{"name" => "ignored"}]}).valid?
+    refute Agent.changeset(%Agent{}, attrs()).valid?
+    ordinary = %{agent | runtime: "claude", model: "anthropic/claude-sonnet-5"}
+    refute Agent.changeset(ordinary, %{runtime: "fountain-fixture", model: agent.model}).valid?
+    assert {:error, _} = RuntimeDispatch.for_agent(agent)
+    assert {:error, :fixture_disabled} = DeployedACPFixture.prepare_sandbox(nil, agent, [])
+
+    assert Agent.changeset(agent, %{runtime: "claude", model: "anthropic/claude-sonnet-5"}).valid?
+  end
+
   test "packaged runtimes retain their dispatcher, ACP command, concurrency and permissions" do
     enable()
 
@@ -94,10 +114,17 @@ defmodule Fountain.DeployedACPFixtureTest do
     assert RuntimeDispatch.acp_enabled?("fountain-fixture")
   end
 
-  test "the installed source has stable digest evidence" do
-    source = Application.app_dir(:fountain, "priv/deployed/acp-fixture.mjs") |> File.read!()
+  test "the installed source matches the pinned fixture digest" do
+    enable()
+    digest = "0ce5a31f8a5b4a6bd3679f1fcb4818faa21b3c93238334f29c9e39ec16973751"
 
-    assert DeployedACPFixture.sha256() ==
-             Base.encode16(:crypto.hash(:sha256, source), case: :lower)
+    expect(Managoat.Sandbox, :write_file, fn :fixture_handle, path, source ->
+      assert path == "/home/sprite/.fountain-acp-fixture.mjs"
+      assert Base.encode16(:crypto.hash(:sha256, source), case: :lower) == digest
+      :ok
+    end)
+
+    assert :ok = DeployedACPFixture.prepare_sandbox(:fixture_handle, attrs(), [])
+    assert DeployedACPFixture.sha256() == digest
   end
 end
