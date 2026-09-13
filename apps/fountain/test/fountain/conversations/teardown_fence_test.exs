@@ -132,6 +132,47 @@ defmodule Fountain.Conversations.TeardownFenceTest do
     assert event.metadata["reason"] == "agent_deleted"
   end
 
+  test "agent deletion succeeds when its home disappears before fencing", ctx do
+    handler = {__MODULE__, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:fountain, :repo, :query],
+        &__MODULE__.remove_listed_home/4,
+        %{owner: self(), home: ctx.home, handler: handler}
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    assert {:ok, _} = Agents.delete_agent(ctx.agent)
+    assert_received :home_removed_after_listing
+    refute Repo.get(Agents.Agent, ctx.agent.id)
+    refute Repo.reload(ctx.home)
+    assert events(ctx) == []
+  end
+
+  test "direct home teardown still refuses a missing sandbox", ctx do
+    Repo.delete!(ctx.home)
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    assert {:error, :not_found} = Conversations._unsafe_destroy_home(ctx.home)
+    assert events(ctx) == []
+  end
+
+  def remove_listed_home(_event, _measurements, metadata, ctx) do
+    # The query has returned its snapshot, but the teardown loop has not yet
+    # tried to fence that row. Reproduce the deletion race without timing sleeps.
+    if self() == ctx.owner and metadata.source == "sandboxes" and
+         String.starts_with?(metadata.query, "SELECT") do
+      :telemetry.detach(ctx.handler)
+      Repo.delete!(ctx.home)
+      send(ctx.owner, :home_removed_after_listing)
+    end
+  end
+
   defp events(ctx) do
     Audit.list_for_user(ctx.user.id, action_prefix: "sandbox.teardown_requested")
   end
