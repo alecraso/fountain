@@ -2460,10 +2460,16 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # An out-of-turn protocol line opened a background cycle
-  # (`Connection.open_autonomous_turn/3`). The row, its span and its tracer are
+  # (`Connection.open_autonomous_turn/5`). The row, its span and its tracer are
   # the server's to hold; the quiet timer is armed in this process.
   defp open_autonomous_turn(state) do
-    case Connection.open_autonomous_turn(state.conversation_id, state.user_id, state.sandbox_id) do
+    case Connection.open_autonomous_turn(
+           state.conversation_id,
+           state.user_id,
+           state.sandbox_id,
+           state.configuration_revision,
+           Fountain.InferenceCredentials.Source.dump(state.inference_source)
+         ) do
       {:error, _} ->
         drop_connection(state, "admission_refused")
 

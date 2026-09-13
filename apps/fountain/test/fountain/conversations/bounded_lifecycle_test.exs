@@ -421,7 +421,9 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
       Fountain.Conversations.Connection.open_autonomous_turn(
         c.conv.id,
         c.user.id,
-        c.sandbox.id
+        c.sandbox.id,
+        c.conv.configuration_revision,
+        c.conv.inference_source
       )
 
     assert turn.origin == "autonomous"
@@ -438,7 +440,9 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
              Fountain.Conversations.Connection.open_autonomous_turn(
                c.conv.id,
                c.user.id,
-               c.sandbox.id
+               c.sandbox.id,
+               c.conv.configuration_revision,
+               c.conv.inference_source
              )
 
     assert Repo.aggregate(Turn, :count) == 1
