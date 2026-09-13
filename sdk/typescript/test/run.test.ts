@@ -1,11 +1,11 @@
 import { test, describe, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFountain } from "./server.ts";
-import { Fountain } from "../src/index.ts";
+import { Fountain, InsufficientCreditsError } from "../src/index.ts";
+import * as publicSDK from "../src/index.ts";
 import {
   NotFoundError,
   ResolutionError,
-  SubscriptionRequiredError,
   TimeoutError,
 } from "../src/errors.ts";
 
@@ -340,6 +340,10 @@ describe("resume and send", () => {
 });
 
 describe("errors", () => {
+  test("the public credit error replaces the subscription export", () => {
+    assert.equal(publicSDK.InsufficientCreditsError, InsufficientCreditsError);
+    assert.equal("SubscriptionRequiredError" in publicSDK, false);
+  });
   test("402 carries the upgrade url", async () => {
     fake.failNextWith = { status: 402, body: { error: "insufficient_credits", upgrade_url: "/account/billing" } };
     await assert.rejects(
@@ -347,7 +351,7 @@ describe("errors", () => {
         await client().run("go", { agent: "11111111-1111-1111-1111-111111111111" });
       },
       (error: unknown) => {
-        assert.ok(error instanceof SubscriptionRequiredError);
+        assert.ok(error instanceof InsufficientCreditsError);
         assert.equal(error.status, 402);
         assert.equal(error.code, "insufficient_credits");
         assert.equal(error.upgradeUrl, "/account/billing");

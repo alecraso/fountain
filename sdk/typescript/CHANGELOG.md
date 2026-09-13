@@ -11,6 +11,21 @@ server releases.
 
 ---
 
+## [2.0.0] - 2026-09-13
+
+### Breaking changes
+
+Replace `SubscriptionRequiredError` imports and `instanceof` checks with
+`InsufficientCreditsError`. The old export is removed. Read `error.upgradeUrl`
+to offer the credit-purchase page; do not retry a 402 without adding credit.
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.
+
 ## [1.32.0] - 2026-09-13
 
 ### Removed
