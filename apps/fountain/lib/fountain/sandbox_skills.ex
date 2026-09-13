@@ -78,10 +78,12 @@ defmodule Fountain.SandboxSkills do
     it owns. A GitHub install without a `--skill` name decides its own
     directory names, which is why the manifest records what appeared rather
     than what was asked for.
-  - **`previous`, for disks written before the manifest existed.** The
+  - **`previous`, used only when the manifest is absent.** The
     conversation's recorded Agent version names the skills that were
     installed, and the skills.sh source lock names the directories an unnamed
-    GitHub install produced. Anything neither can account for is left where
+    GitHub install produced. Recovery is persisted before any skill changes.
+    A present manifest is authoritative; historical names are never merged
+    back into it. Anything neither can account for is left where
     it is: an entry with no ownership record is somebody else's.
   - **Only direct children of the skills root are ever removed**, each one
     matched against a conservative name pattern. Neither a forged manifest
@@ -92,7 +94,12 @@ defmodule Fountain.SandboxSkills do
   reinstall fails, which is what an offline machine under a restrictive
   network policy looks like: the copy on the disk is the working one.
   """
-  @spec reconcile(Managoat.Sandbox.Handle.t(), String.t() | module(), [map()] | nil, [map()]) ::
+  @spec reconcile(
+          Managoat.Sandbox.Handle.t(),
+          String.t() | module(),
+          [map()] | nil,
+          [map()] | nil
+        ) ::
           :ok | {:error, term()}
   def reconcile(handle, runtime, skills, previous) when is_binary(runtime) do
     case Fountain.RuntimeDispatch.for_agent(%{runtime: runtime, user_id: nil}) do
@@ -110,18 +117,88 @@ defmodule Fountain.SandboxSkills do
     manifest = Path.join(root, @manifest_name)
     selected = bundled() ++ (skills || [])
 
-    with {:ok, raw} <-
-           run(
-             handle,
-             "if [ -f #{quote_shell(manifest)} ]; then cat -- #{quote_shell(manifest)}; fi"
-           ),
-         {:ok, legacy} <- legacy_manifest(handle, previous),
-         managed = Map.merge(legacy, decode_manifest(raw)),
+    with {:ok, managed} <- ensure_manifest(handle, manifest, previous),
          obsolete = obsolete_names(managed, selected),
          {:ok, _} <- run(handle, remove(root, obsolete)),
          {:ok, installed} <- install_selected(handle, runtime_module, root, selected, managed) do
       Managoat.Sandbox.write_file(handle, manifest, Jason.encode!(installed))
     end
+  end
+
+  @doc """
+  Inspect the ownership manifest using an already-owned sandbox handle.
+
+  Returns `:missing`, `:present` or `:invalid`, never skill contents. This
+  performs provider I/O and can wake a sleeping disk. It does not install,
+  delete or write anything, and says nothing about build fingerprints.
+  """
+  @spec manifest_status(Managoat.Sandbox.Handle.t(), String.t() | module()) ::
+          {:ok, :missing | :present | :invalid} | {:error, term()}
+  def manifest_status(handle, runtime) do
+    with {:ok, module} <- runtime_module(runtime) do
+      case read_manifest(handle, Path.join(module.skills_root(), @manifest_name)) do
+        {:ok, nil} -> {:ok, :missing}
+        {:ok, _managed} -> {:ok, :present}
+        {:error, :invalid_skill_manifest} -> {:ok, :invalid}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  @doc """
+  Adopt legacy skill ownership once, without changing any installed skills.
+
+  `previous` must be the recorded applied selection or the conversation's
+  historical Agent version, never the agent's current mutable configuration.
+  Names and matching GitHub source-lock entries seed an absent manifest.
+  Present valid manifests are left byte-for-byte unchanged; invalid manifests
+  are refused. Repeating this after reconciliation cannot reclaim names that
+  Fountain has since removed. Call through the conversation's serialized wake
+  path, or with the machine quiesced so no reconciliation races the migration.
+  """
+  @spec upgrade_manifest(Managoat.Sandbox.Handle.t(), String.t() | module(), [map()] | nil) ::
+          :ok | {:error, term()}
+  def upgrade_manifest(handle, runtime, previous) do
+    with {:ok, module} <- runtime_module(runtime),
+         {:ok, _} <-
+           ensure_manifest(handle, Path.join(module.skills_root(), @manifest_name), previous) do
+      :ok
+    end
+  end
+
+  defp runtime_module(runtime) when is_atom(runtime), do: {:ok, runtime}
+
+  defp runtime_module(runtime),
+    do: Fountain.RuntimeDispatch.for_agent(%{runtime: runtime, user_id: nil})
+
+  defp ensure_manifest(handle, manifest, previous) do
+    with {:ok, managed} <- read_manifest(handle, manifest) do
+      if is_nil(managed) do
+        with {:ok, recovered} <- legacy_manifest(handle, previous),
+             :ok <- Managoat.Sandbox.write_file(handle, manifest, Jason.encode!(recovered)) do
+          {:ok, recovered}
+        end
+      else
+        {:ok, managed}
+      end
+    end
+  end
+
+  defp read_manifest(handle, manifest) do
+    # The newline distinguishes an empty (invalid) file from an absent file.
+    # Reject symlinks and non-files rather than following them outside root.
+    script = """
+    if [ -L #{quote_shell(manifest)} ]; then
+      printf 'invalid'
+    elif [ -f #{quote_shell(manifest)} ]; then
+      cat -- #{quote_shell(manifest)} || exit
+      printf '\n'
+    elif [ -e #{quote_shell(manifest)} ]; then
+      printf 'invalid'
+    fi
+    """
+
+    with {:ok, raw} <- run(handle, script), do: decode_manifest(raw)
   end
 
   # Stable across content and ref edits: a retained remote skill stays usable
@@ -137,6 +214,8 @@ defmodule Fountain.SandboxSkills do
   # skills.sh records globally installed names by source, including installs
   # made without --skill. Recover those on disks predating Fountain's own
   # manifest. Format: https://github.com/vercel-labs/skills/blob/main/src/skill-lock.ts
+  defp legacy_manifest(_handle, nil), do: {:error, :legacy_skill_ownership_unknown}
+
   defp legacy_manifest(handle, previous) do
     unnamed = Enum.filter(normalize(previous), &(is_binary(&1["source"]) and is_nil(&1["name"])))
 
@@ -173,20 +252,30 @@ defmodule Fountain.SandboxSkills do
             {identity(entry), names}
           end)
 
-        {:ok, Map.merge(named_manifest(previous), recovered)}
+        if Enum.any?(recovered, fn {_identity, names} -> names == [] end) do
+          {:error, :legacy_skill_ownership_unknown}
+        else
+          {:ok, Map.merge(named_manifest(previous), recovered)}
+        end
       end
     end
   end
 
+  defp decode_manifest(""), do: {:ok, nil}
+
   defp decode_manifest(raw) do
     case Jason.decode(raw) do
       {:ok, map} when is_map(map) ->
-        Map.new(map, fn {key, values} ->
-          {key, if(is_list(values), do: Enum.filter(values, &safe_name?/1), else: [])}
-        end)
+        if Enum.all?(map, fn {_key, values} ->
+             is_list(values) and Enum.all?(values, &safe_name?/1)
+           end) do
+          {:ok, map}
+        else
+          {:error, :invalid_skill_manifest}
+        end
 
       _ ->
-        %{}
+        {:error, :invalid_skill_manifest}
     end
   end
 

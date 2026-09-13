@@ -236,10 +236,11 @@ defmodule Fountain.Conversations.Reapply do
 
   The seed for a disk that predates the manifest: it is the selection that
   was installed when the machine was built, so it is the best available
-  answer to "which entries under the skills root are ours".
+  answer to "which entries under the skills root are ours". Missing history
+  returns `nil`, not an empty selection: absence cannot establish ownership.
   """
-  @spec previous_skills(map()) :: [map()]
-  def previous_skills(%{agent_version_id: nil}), do: []
+  @spec previous_skills(map()) :: [map()] | nil
+  def previous_skills(%{agent_version_id: nil}), do: nil
 
   def previous_skills(conv) do
     # The conversation's own version; ownership was checked at the API door.
@@ -247,7 +248,7 @@ defmodule Fountain.Conversations.Reapply do
            from v in Fountain.Agents.AgentVersion,
              where: v.id == ^conv.agent_version_id and v.user_id == ^conv.user_id
          ) do
-      nil -> []
+      nil -> nil
       version -> version.config["skills"] || []
     end
   end
