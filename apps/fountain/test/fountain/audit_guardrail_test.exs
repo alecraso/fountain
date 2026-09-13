@@ -498,7 +498,17 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_conv_reapply(user) do
     agent = insert_agent(user_id: user.id)
-    conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+
+    # Exercise a successful reapply on a currently provisioned machine. A legacy
+    # machine without recorded build evidence must refuse this mutation.
+    sandbox =
+      insert_sandbox(
+        user_id: user.id,
+        status: "ready",
+        build_fingerprint: Conversations.Reapply.fingerprint(nil)
+      )
+
+    conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
     {:ok, _} = Conversations.reapply_conversation(conv)
   end
 

@@ -126,6 +126,35 @@ defmodule FountainWeb.ConversationReapplyControllerTest do
     assert Conversations._unsafe_get_conversation!(ctx.conv.id).agent_id == ctx.agent.id
   end
 
+  for status <- ["ready", "suspended"], edited? <- [false, true] do
+    test "missing build evidence refuses #{status} reapply and retries (edited: #{edited?})",
+         ctx do
+      {:ok, sandbox} =
+        Conversations.update_sandbox(ctx.sandbox, %{
+          status: unquote(status),
+          build_fingerprint: nil
+        })
+
+      if unquote(edited?) do
+        {:ok, _} =
+          Fountain.Environments.update_environment(ctx.env, %{"setup_script" => "echo edited"})
+      end
+
+      before = Fountain.Repo.get!(Fountain.Conversations.Conversation, ctx.conv.id)
+
+      for _attempt <- 1..2 do
+        body = ctx |> reapply(%{"vault_id" => nil}) |> json_response(409)
+        assert body["error"] == "rebuild_required"
+        assert body["field"] == "environment"
+        assert body["message"] =~ "no recorded build fingerprint"
+        assert body["message"] =~ "start a new conversation"
+        assert body["message"] =~ "DELETE /api/sandboxes/:id"
+        assert Fountain.Repo.reload!(sandbox) == sandbox
+        assert Fountain.Repo.reload!(before) == before
+      end
+    end
+  end
+
   test "503 while the machine is still being built", ctx do
     {:ok, _} = Conversations.update_sandbox(ctx.sandbox, %{status: "starting"})
     {:ok, _} = Conversations.update_conversation(ctx.conv, %{status: "pending"})

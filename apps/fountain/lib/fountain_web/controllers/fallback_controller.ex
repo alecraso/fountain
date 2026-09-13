@@ -314,7 +314,7 @@ defmodule FountainWeb.FallbackController do
     |> put_status(:conflict)
     |> json(%{
       error: "rebuild_required",
-      field: to_string(field),
+      field: if(field == :missing_build_fingerprint, do: "environment", else: to_string(field)),
       message:
         "this conversation's machine cannot be reconfigured in place because " <>
           Fountain.Conversations.Reapply.explain(field) <>
