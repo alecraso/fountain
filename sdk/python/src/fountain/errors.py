@@ -56,7 +56,7 @@ class AuthError(FountainError):
     pass
 
 
-class SubscriptionRequiredError(FountainError):
+class InsufficientCreditsError(FountainError):
     @property
     def upgrade_url(self) -> Optional[str]:
         value = self.body.get("upgrade_url") if isinstance(self.body, dict) else None
@@ -172,12 +172,11 @@ def error_for_status(
         "sandbox_unavailable": NotReadyError,
         "fleet_full": NotReadyError,
         "sandbox_quota_exceeded": QuotaExceededError,
-        "subscription_required": SubscriptionRequiredError,
-        "insufficient_credits": SubscriptionRequiredError,
+        "insufficient_credits": InsufficientCreditsError,
     }
     by_status: Dict[int, Type[FountainError]] = {
         401: AuthError,
-        402: SubscriptionRequiredError,
+        402: InsufficientCreditsError,
         404: NotFoundError,
         422: ValidationError,
         429: RateLimitError,

@@ -1,8 +1,8 @@
 {
-  "name": "error-code-outranks-status-insufficient-credits",
-  "title": "`insufficient_credits` maps to the credit error and preserves the purchase URL",
+  "name": "error-402-with-retired-code-keeps-purchase-url",
+  "title": "HTTP 402 still carries the purchase URL with an unknown code",
   "contract": "errors",
-  "why": "A caller topping up credit and a caller waiting for a sandbox slot need to tell these apart from a generic failure.",
+  "why": "Removing a wire alias must preserve generic HTTP 402 classification and its purchase URL.",
   "client": {
     "api_key": "conformance-key"
   },
@@ -15,8 +15,8 @@
       "respond": {
         "status": 402,
         "json": {
-          "error": "insufficient_credits",
-          "upgrade_url": "https://managoat.com/account/billing"
+          "error": "subscription_required",
+          "upgrade_url": "/account/billing"
         }
       }
     }
@@ -32,8 +32,8 @@
     "error": {
       "kind": "insufficient_credits",
       "status": 402,
-      "code": "insufficient_credits",
-      "upgrade_url": "https://managoat.com/account/billing",
+      "code": "subscription_required",
+      "upgrade_url": "/account/billing",
       "retryable": false
     }
   }

@@ -1,0 +1,38 @@
+{
+  "name": "error-subscription-code-is-not-special",
+  "title": "The retired subscription code follows the HTTP status",
+  "contract": "errors",
+  "why": "An obsolete wire code must no longer override the ordinary status classification.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      "respond": {
+        "status": 400,
+        "json": {
+          "error": "subscription_required"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "run",
+      "agent": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "prompt": "hello"
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "server",
+      "status": 400,
+      "code": "subscription_required",
+      "retryable": false
+    }
+  }
+}

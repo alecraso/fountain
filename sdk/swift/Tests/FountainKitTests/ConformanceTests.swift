@@ -412,7 +412,7 @@ private func project(_ error: any Error) -> JSONValue {
   let kind: String =
     switch error {
     case .missingAPIKey, .unauthorized: "auth"
-    case .insufficientCredits: "subscription"
+    case .insufficientCredits: "insufficient_credits"
     case .notFound: "not_found"
     case .validation: "validation"
     case .rateLimited: "rate_limited"
@@ -432,6 +432,9 @@ private func project(_ error: any Error) -> JSONValue {
     "retry_after": error.retryAfter.map(JSONValue.number) ?? .null,
     "field_errors": .object(error.fieldErrors.mapValues { .array($0.map(JSONValue.string)) }),
   ]
+  if case .insufficientCredits(_, let url) = error {
+    output["upgrade_url"] = url.map(JSONValue.string) ?? .null
+  }
   if case .timedOut(let partial) = error { output["partial_text"] = .string(partial) }
   return .object(output)
 }
