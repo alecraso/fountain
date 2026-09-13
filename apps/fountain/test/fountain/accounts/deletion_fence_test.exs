@@ -69,7 +69,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
     end)
 
     expect(Managoat.Sandbox.Sprites, :destroy, 2, fn handle ->
-      sandbox = Repo.get_by!(Conversations.Sandbox, sprite_name: handle.name)
+      sandbox = Repo.get_by!(Conversations.Sandbox, machine_name: handle.name)
       refute Repo.in_transaction?()
       assert sandbox.reset_requested_at
       :ok
@@ -181,11 +181,11 @@ defmodule Fountain.Accounts.DeletionFenceTest do
     assert log =~ ":late_fence_refused"
     assert_received {:late_sandbox, late_id}
     late = Repo.get!(Conversations.Sandbox, late_id)
-    late_name = late.sprite_name
+    late_name = late.machine_name
     refute_received {:destroyed, ^late_name}
     refute late.reset_requested_at
     assert late.status == "ready"
-    original_name = ctx.sandbox.sprite_name
+    original_name = ctx.sandbox.machine_name
     assert_received {:destroyed, ^original_name}
     refute Repo.get(User, ctx.user.id)
     assert deleted_event(ctx.user.id)

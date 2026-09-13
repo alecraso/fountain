@@ -106,7 +106,7 @@ defmodule FountainWeb.TeamControllerTest do
       name = Fountain.Runners.sandbox_name_for(runner.id)
 
       sandbox =
-        insert_sandbox(user_id: user.id, sprite_name: name, provider: "runner", status: "ready")
+        insert_sandbox(user_id: user.id, machine_name: name, provider: "runner", status: "ready")
 
       ada = insert_agent(user_id: user.id, name: "Ada")
       insert_teammate_conv(user, ada, sandbox_id: sandbox.id)

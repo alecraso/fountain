@@ -124,7 +124,7 @@ defmodule Fountain.Accounts.DeletionTest do
       capture_log(fn -> assert {:ok, %{sprites_destroyed: 1}} = Deletion.delete_user(user) end)
 
       assert_received {:destroyed, name}
-      assert name == sandbox.sprite_name
+      assert name == sandbox.machine_name
     end
 
     test "suspended sandboxes are destroyed too" do
@@ -143,7 +143,7 @@ defmodule Fountain.Accounts.DeletionTest do
       capture_log(fn -> assert {:ok, %{sprites_destroyed: 1}} = Deletion.delete_user(user) end)
 
       assert_received {:destroyed, name}
-      assert name == sandbox.sprite_name
+      assert name == sandbox.machine_name
     end
 
     test "already-terminal sandboxes are not touched again" do

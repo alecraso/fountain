@@ -27,9 +27,9 @@ defmodule Fountain.Conversations.Sandbox do
   schema "sandboxes" do
     # Provider-scoped sandbox identity: the name Fountain mints
     # (`fountain-<tenant-prefix>-<hex>`) and uses as the primary external ref.
-    # The column name predates multiple providers and survives for API and
-    # historical-metadata compatibility.
-    field :sprite_name, :string
+    # The database column keeps its historical name; application code uses
+    # machine_name. API and event serializers preserve their existing keys.
+    field :machine_name, :string, source: :sprite_name
     field :status, :string, default: "pending"
     # Which sandbox backend owns this row. Stamped at creation and never
     # re-resolved: a parked sandbox wakes on the provider that holds its
@@ -77,7 +77,7 @@ defmodule Fountain.Conversations.Sandbox do
   def changeset(sandbox, attrs) do
     sandbox
     |> cast(attrs, [
-      :sprite_name,
+      :machine_name,
       :status,
       :provider,
       :provider_meta,
@@ -91,7 +91,7 @@ defmodule Fountain.Conversations.Sandbox do
       :vault_id,
       :user_id
     ])
-    |> validate_required([:sprite_name, :status, :provider, :mode, :user_id])
+    |> validate_required([:machine_name, :status, :provider, :mode, :user_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:mode, @modes)
     |> validate_inclusion(:provider, Fountain.SandboxProviders.known_providers())

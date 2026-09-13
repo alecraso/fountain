@@ -14,7 +14,7 @@ defmodule Fountain.Conversations.WakePolicyTest do
     agent = insert_agent(user_id: user.id, runtime: "claude")
 
     sandbox =
-      insert_sandbox(user_id: user.id, sprite_name: "test-sprite-home", mode: "persistent")
+      insert_sandbox(user_id: user.id, machine_name: "test-sprite-home", mode: "persistent")
 
     {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
     a = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")

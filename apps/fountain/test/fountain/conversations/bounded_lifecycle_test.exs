@@ -168,7 +168,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
     {:ok, _} = ExecutionGuard._unsafe_interrupt(c.conv.id)
     Repo.delete!(c.conv)
-    c.sandbox |> Ecto.Changeset.change(sprite_name: "replacement-sandbox") |> Repo.update!()
+    c.sandbox |> Ecto.Changeset.change(machine_name: "replacement-sandbox") |> Repo.update!()
 
     assert {:ok, %{permitted: false, execution: %{state: "uncertain"}}} =
              ExecutionGuard._unsafe_claim_termination(execution.id)
@@ -437,7 +437,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
   end
 
   defp start_bounded(c) do
-    stub_happy_sprite(c.sandbox.sprite_name)
+    stub_happy_sprite(c.sandbox.machine_name)
     stub(Sandbox.Sprites, :stop_command, fn _ -> :ok end)
     {pid, _mon, :alive} = start_server(c.conv)
     on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)

@@ -30,7 +30,7 @@ sandbox =
   insert_sandbox(
     user_id: original.user_id,
     status: "suspended",
-    sprite_name: "acorn-cart",
+    machine_name: "acorn-cart",
     environment_id: data["env_id"]
   )
 

@@ -274,7 +274,7 @@ defmodule Fountain.Accounts.Deletion do
     |> Repo.all()
   end
 
-  defp destroy_sprite(%Sandbox{sprite_name: name} = sandbox) when is_binary(name) do
+  defp destroy_sprite(%Sandbox{machine_name: name} = sandbox) when is_binary(name) do
     # The row's provider, never the instance default: a sandbox is destroyed
     # on the backend that holds it (ADR 0018), and this path used to hardcode
     # :sprites, which "destroyed" E2B/Daytona/runner sandboxes against the

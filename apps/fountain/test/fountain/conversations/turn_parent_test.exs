@@ -176,7 +176,7 @@ defmodule Fountain.Conversations.TurnParentTest do
   end
 
   test "changed sandbox identity and a forged parent cannot authorize a session write", c do
-    c.sandbox |> Ecto.Changeset.change(sprite_name: "replacement") |> Repo.update!()
+    c.sandbox |> Ecto.Changeset.change(machine_name: "replacement") |> Repo.update!()
 
     assert {:ok, %{applied: false}} =
              Conversations._unsafe_set_turn_session(c.turn, "wrong-machine")
@@ -377,7 +377,7 @@ defmodule Fountain.Conversations.TurnParentTest do
   end
 
   test "a changed binding cannot expire or recover another machine's parent", c do
-    c.sandbox |> Ecto.Changeset.change(sprite_name: "replacement") |> Repo.update!()
+    c.sandbox |> Ecto.Changeset.change(machine_name: "replacement") |> Repo.update!()
 
     c.execution
     |> Ecto.Changeset.change(deadline_at: DateTime.add(DateTime.utc_now(), -1))

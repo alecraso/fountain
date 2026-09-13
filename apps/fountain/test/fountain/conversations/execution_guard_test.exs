@@ -50,7 +50,7 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
   test "registration derives ownership and retries cannot extend the deadline", c do
     assert c.execution.user_id == c.user.id
     assert c.execution.sandbox_id == c.sandbox.id
-    assert c.execution.sandbox_name == c.sandbox.sprite_name
+    assert c.execution.sandbox_name == c.sandbox.machine_name
     assert c.execution.provider == c.sandbox.provider
     assert {:ok, again} = ExecutionGuard._unsafe_register(c.turn.id, c.connection, c.deadline)
     assert again.id == c.execution.id

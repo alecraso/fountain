@@ -200,7 +200,7 @@ defmodule Fountain.Runners do
   """
   @spec for_sandbox(map() | nil) ::
           %{runner: Runner.t() | nil, online: boolean(), path: String.t() | nil} | nil
-  def for_sandbox(%{provider: "runner", sprite_name: name, user_id: user_id})
+  def for_sandbox(%{provider: "runner", machine_name: name, user_id: user_id})
       when is_binary(name) do
     case parse_sandbox_name(name) do
       {:ok, runner_id} ->
@@ -225,7 +225,7 @@ defmodule Fountain.Runners do
   off). Registry only — no query — so presence can ask per roster row.
   """
   @spec sandbox_online?(map() | nil) :: boolean()
-  def sandbox_online?(%{provider: "runner", sprite_name: name}) when is_binary(name) do
+  def sandbox_online?(%{provider: "runner", machine_name: name}) when is_binary(name) do
     case parse_sandbox_name(name) do
       {:ok, runner_id} -> online?(runner_id)
       :error -> true

@@ -60,7 +60,7 @@ results =
       %Sandbox{}
       |> Sandbox.changeset(%{
         user_id: user.id,
-        sprite_name: "local-database-fixture-#{Ecto.UUID.generate()}",
+        machine_name: "local-database-fixture-#{Ecto.UUID.generate()}",
         status: "ready"
       })
       |> Repo.insert!()
@@ -191,7 +191,7 @@ for operation <- [:spawn, :write], lock_table <- ["conversations", "turns"] do
   sandbox =
     Repo.insert!(%Sandbox{
       user_id: user.id,
-      sprite_name: "local-lock-fixture-#{Ecto.UUID.generate()}",
+      machine_name: "local-lock-fixture-#{Ecto.UUID.generate()}",
       status: "ready"
     })
 

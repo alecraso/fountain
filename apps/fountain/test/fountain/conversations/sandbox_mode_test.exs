@@ -115,7 +115,7 @@ defmodule Fountain.Conversations.SandboxModeTest do
                environment_id: ctx.env.id,
                vault_id: nil,
                mode: "persistent",
-               sprite_name: "dup",
+               machine_name: "dup",
                status: "pending",
                provider: "sprites"
              })

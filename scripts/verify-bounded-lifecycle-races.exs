@@ -28,7 +28,7 @@ fixture = fn ->
     %Sandbox{}
     |> Sandbox.changeset(%{
       user_id: user.id,
-      sprite_name: "local-admission-#{Ecto.UUID.generate()}",
+      machine_name: "local-admission-#{Ecto.UUID.generate()}",
       status: "ready"
     })
     |> Repo.insert!()

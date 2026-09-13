@@ -328,7 +328,7 @@ defmodule Fountain.TeamTest do
                Team.update_teammate(user.id, agent.id, %{"environment_id" => other.id})
 
       assert_received {:destroyed, name}
-      assert name == home.sprite_name
+      assert name == home.machine_name
       assert Conversations._unsafe_get_sandbox!(home.id).status == "terminated"
     end
 
