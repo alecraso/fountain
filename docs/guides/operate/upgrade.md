@@ -96,6 +96,29 @@ Did you move migrations into a Job with `MIGRATE_ON_BOOT=false`? Then the Job
 is the upgrade step. Read
 [Run migrations in a Job](database.md#run-migrations-in-a-job).
 
+## Vault policy migration (upcoming)
+
+Migration `20260913180000` adds generated `vault_access` columns to agents and
+saved agent versions. New authorization readers use the explicit mode. Existing
+clients keep sending `allowed_vault_ids`: `null` permits all current and future
+vaults owned by the tenant, `[]` denies vault attachments, and a non-empty list
+permits only those IDs within the tenant. SDK payloads and saved configs keep
+their existing shape. A historical version with no vault key leaves the current
+policy unchanged on restore; an explicit `null` restores unrestricted access.
+
+Run this migration before starting the new server code. PostgreSQL derives the
+mode on every write, so old and new servers can continue writing the existing
+field during the rollout. No client upgrade or list of current vaults is needed.
+The remaining wire-contract retirement is tracked in
+[issue #2107](https://github.com/managoat/fountain/issues/2107).
+
+These stored columns rewrite both tables and hold exclusive locks until the
+migration commits. Each statement has a five-second lock wait and a 30-second
+execution limit; failure rolls back the whole migration. Schedule a maintenance
+window for busy or large tables and verify the migration completes before
+rolling the application. If it exceeds these bounds, keep the existing server
+running and plan a separate migration approach for that database size.
+
 ## Conversation message compatibility
 
 The server uses the `managoat_acp` peer from its own release. The audited peer

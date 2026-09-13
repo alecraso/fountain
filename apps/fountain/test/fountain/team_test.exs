@@ -557,6 +557,20 @@ defmodule Fountain.TeamTest do
   end
 
   describe "addable_options/2" do
+    test "unrestricted policy includes future vaults but never another tenant's vault" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      future = insert_vault(user_id: user.id)
+      foreign = insert_vault(user_id: insert_verified_user().id)
+      assert %{vaults: [^future]} = Team.addable_options(user.id, agent)
+
+      assert {:ok, finite} =
+               Agents.update_agent(agent, %{"allowed_vault_ids" => [future.id, foreign.id]})
+
+      assert %{vaults: [^future]} = Team.addable_options(user.id, finite)
+      assert %{vaults: []} = Team.addable_options(user.id, %{agent | allowed_vault_ids: []})
+    end
+
     test "the user's environments and vaults, narrowed by the agent's allowlists" do
       user = insert_verified_user()
       own = insert_env(user_id: user.id, name: "own")

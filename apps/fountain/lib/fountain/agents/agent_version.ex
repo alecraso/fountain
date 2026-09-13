@@ -24,6 +24,8 @@ defmodule Fountain.Agents.AgentVersion do
   schema "agent_versions" do
     field :version, :integer
     field :config, :map
+    # Missing historical keys mean a partial restore, never inferred access.
+    field :vault_access, :string, read_after_writes: true, writable: :never
     belongs_to :agent, Agent
     belongs_to :user, User
     timestamps(type: :utc_datetime, updated_at: false)

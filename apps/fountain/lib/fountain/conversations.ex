@@ -4836,14 +4836,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # Vault values win on env-var collision, so an attached vault overrides
-  # the agent's reviewed environment. agent.allowed_vault_ids scopes who
-  # may do that: nil keeps the legacy any-tenant-vault behavior, [] forbids
-  # attaching any vault, a non-empty list is an allowlist.
-  defp check_vault_allowed(_vault_id, %Agents.Agent{allowed_vault_ids: nil}), do: :ok
-
-  defp check_vault_allowed(vault_id, %Agents.Agent{allowed_vault_ids: allowed}) do
-    if vault_id in allowed, do: :ok, else: {:error, :vault_not_allowed}
+  # Vault values override the reviewed environment. Use the persisted policy;
+  # resolve_vault_id also enforces tenant ownership before attaching a vault.
+  defp check_vault_allowed(vault_id, %Agents.Agent{} = agent) do
+    if Agents.Agent.vault_allowed?(agent, vault_id), do: :ok, else: {:error, :vault_not_allowed}
   end
 
   # A per-launch environment override (#783): the conversation is provisioned
