@@ -78,7 +78,7 @@ defmodule Fountain.Conversations.TerminationBillingTest do
         :sys.replace_state(pid, &%{&1 | turn_execution: execution})
       end
 
-      assert :ok = GenServer.call(pid, :terminate_conv)
+      assert :ok = GenServer.call(pid, {:terminate_conv, []})
       assert :normal = assert_stopped(monitor)
       ended = Repo.reload!(turn)
       assert ended.status == "interrupted"
@@ -150,7 +150,7 @@ defmodule Fountain.Conversations.TerminationBillingTest do
       :ok
     end)
 
-    assert {:error, :sandbox_unavailable} = GenServer.call(pid, :terminate_conv)
+    assert {:error, :sandbox_unavailable} = GenServer.call(pid, {:terminate_conv, []})
     assert :normal = assert_stopped(monitor)
     assert_received {:successor, successor}
     assert Repo.reload!(turn) == turn

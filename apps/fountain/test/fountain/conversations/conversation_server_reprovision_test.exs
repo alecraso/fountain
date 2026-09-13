@@ -36,7 +36,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
     assert_receive {:sprite_created, ^name}, 5_000
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
 
-    GenServer.call(pid, :terminate_conv, 30_000)
+    GenServer.call(pid, {:terminate_conv, []}, 30_000)
   end
 
   test "a `pending` row provisions without destroying anything" do
@@ -57,7 +57,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
     refute_received :sprite_destroyed
 
-    GenServer.call(pid, :terminate_conv, 30_000)
+    GenServer.call(pid, {:terminate_conv, []}, 30_000)
   end
 
   test "a destroy that fails does not block the rebuild" do
@@ -73,6 +73,6 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
     {pid, _ref, :alive} = start_server(conv)
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
 
-    GenServer.call(pid, :terminate_conv, 30_000)
+    GenServer.call(pid, {:terminate_conv, []}, 30_000)
   end
 end

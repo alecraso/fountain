@@ -202,6 +202,6 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     assert Process.alive?(pid)
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
 
-    GenServer.call(pid, :terminate_conv, 30_000)
+    GenServer.call(pid, {:terminate_conv, []}, 30_000)
   end
 end

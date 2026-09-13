@@ -118,7 +118,7 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
 
       {pid_a, ref_a} = start(a)
-      assert :ok = GenServer.call(pid_a, :terminate_conv)
+      assert :ok = GenServer.call(pid_a, {:terminate_conv, []})
       assert :normal = assert_stopped(ref_a)
 
       refute_received :destroyed
@@ -126,7 +126,7 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       assert Conversations._unsafe_get_conversation!(a.id).status == "terminated"
 
       {pid_b, ref_b} = start(b)
-      assert :ok = GenServer.call(pid_b, :terminate_conv)
+      assert :ok = GenServer.call(pid_b, {:terminate_conv, []})
       assert :normal = assert_stopped(ref_b)
 
       assert_received :destroyed
@@ -304,6 +304,25 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       refute Enum.any?(sandbox_stages(b.id), &(&1["message"] == "rebound"))
     end
 
+    test "an unqualified notification cannot interrupt the current sandbox" do
+      %{b: b} = shared_machine("claude")
+      stub_happy_sprite()
+      stub_turn_boundary()
+      {pid, _ref} = start(b)
+      assert :ok = GenServer.call(pid, {:send_prompt, "hi", []})
+      state = :sys.get_state(pid)
+      [turn] = Conversations._unsafe_list_turns(b.id)
+      turn = Repo.reload!(turn)
+      events = sandbox_stages(b.id)
+
+      GenServer.cast(pid, {:machine_gone, "suspended", "idle", "obsolete sender"})
+
+      assert :sys.get_state(pid) == state
+      assert Repo.reload!(turn) == turn
+      assert Repo.reload!(b).status == "running"
+      assert sandbox_stages(b.id) == events
+    end
+
     test "an obsolete notification leaves the replacement actor and its turn alone" do
       %{b: b, user: user} = shared_machine("claude")
       old = insert_sandbox(user_id: user.id, status: "terminated")
@@ -380,11 +399,15 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
     end
 
     test "a co-tenant told the machine is gone records it and stops" do
-      %{b: b} = shared_machine("claude")
+      %{b: b, sandbox: sandbox} = shared_machine("claude")
       stub_happy_sprite()
       {pid, ref} = start(b)
 
-      GenServer.cast(pid, {:machine_gone, "suspended", "idle", "parked by a neighbour"})
+      GenServer.cast(
+        pid,
+        {:machine_gone, sandbox.id, "suspended", "idle", "parked by a neighbour"}
+      )
+
       assert :normal = assert_stopped(ref)
 
       assert Enum.any?(sandbox_stages(b.id), fn d ->

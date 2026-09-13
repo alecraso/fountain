@@ -155,9 +155,54 @@ stops when that owner exits. Replace the server process during upgrades;
 hot code replacement across peer versions is not a supported upgrade path.
 Sandbox adapters send ACP protocol messages, not these internal peer events.
 
-The cross-node termination and sandbox-loss compatibility handlers remain
-in place. Their removal is still tracked in
-[issue #2099](https://github.com/managoat/fountain/issues/2099).
+Conversation servers accept only `{:terminate_conv, opts}` and
+`{:machine_gone, sandbox_id, event, reason, message}`. Termination options carry
+`actor` and `request_ip` across nodes. A sandbox-loss notification for a different
+sandbox leaves the current actor and its turn alone. The old atom and unqualified
+notification are unsupported.
+
+### Required cluster floor
+
+Do not deploy this removal directly into a cluster with older nodes. Complete a
+bridge rollout first. The bridge must contain both of these commits.
+
+| Change | Required commit |
+|---|---|
+| Attributed termination sender and receiver | [aecaf345](https://github.com/managoat/fountain/commit/aecaf345b0ef4e31edb466fe603dcf5537cde1cc) |
+| Sandbox-qualified lifecycle senders | [da27fb2c](https://github.com/managoat/fountain/commit/da27fb2cec2b9f3ae5df655d54ec4c5d4b0cfc9a) |
+
+Commit `da27fb2c` includes both changes and the qualified receiver. This is the
+source floor for cluster messages, not a claim about deployed images. The peer
+floor above applies separately. A bridge built from
+[f7706e01](https://github.com/managoat/fountain/commit/f7706e013714dc0ca4e279aee59e785ab8760163) contains both floors
+and retains the compatibility handlers.
+
+1. Deploy the bridge with full server-process replacement. Include workers and
+   other cluster members outside the web deployment.
+2. Wait for every older node and conversation owner to exit. Hot code replacement
+   does not drain old actors or their mailboxes.
+3. Record each connected node's image digest and source revision, completed
+   rollout status, and evidence that older processes cannot reconnect. Check
+   scaled-down workloads and rollback automation as well as current replicas.
+4. Deploy the removal only after that record establishes the floor everywhere.
+   Bridge and removal nodes can coexist. Nodes below the floor cannot rejoin.
+
+For a direct upgrade without a bridge, stop every old cluster process before
+starting any removal process. This requires an outage. The normal backup and
+migration rules still apply.
+
+A rollback must also preserve the floor. Use the bridge only where the migration
+rules permit it. Never reintroduce a pre-floor node into the upgraded cluster.
+The retirement work in [issue #2099](https://github.com/managoat/fountain/issues/2099)
+requires an operator to record this evidence before release. Source inspection
+and tests alone cannot establish that a rollout or actor drain has completed.
+
+On 2026-09-13, read-only hosted checks found two ready replicas at
+[31a74cc9](https://github.com/managoat/fountain/commit/31a74cc998ec43c8d4ec17ff5739e7e6dd962643),
+a descendant of the bridge. All older ReplicaSets had zero replicas and no old
+pods remained. Each node saw only its counterpart and its temporary inspection
+client. This establishes the hosted process floor at that observation. It does
+not establish the floor for another deployment or permit older nodes to return.
 
 ## Match the CLI to the server
 

@@ -47,6 +47,16 @@ upgrade, is in
   the one the guides use. The boot guards for `BROKER_URL` and `BROKER_TOKEN`,
   the Agent Vault backend removed in #1487, are gone too: a leftover value is
   now ignored like any other unknown variable.
+
+- **Cluster upgrades require a bridge rollout before legacy conversation
+  messages can be removed** (#2099). First replace every server process with
+  a build containing `aecaf345` and `da27fb2c` (for example, `f7706e01`).
+  Confirm older nodes and conversation owners have exited before deploying
+  this release. Termination now requires attribution-bearing tuples, and
+  sandbox-loss messages require sandbox identity. A direct upgrade requires
+  stopping all old cluster processes first. See
+  [Conversation message compatibility](https://managoat.com/docs/guides/operate/upgrade#conversation-message-compatibility).
+
 - **A sandbox without a recorded build fingerprint now requires an explicit
   rebuild before configuration reapply** (#2102). The API returns
   `409 rebuild_required` with `field: "environment"` and a missing-build-evidence
