@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Upgrade notes
 
+- New principal-key writes must provide an expiry. The database now checks
+  that unrevoked principal keys have deadlines, preserving existing deadlines
+  and revoked history (#2103). The old-writer trigger remains during rollout;
+  its removal requires evidence that every writer supplies an expiry.
+
 - `fountain apply` now requires Fountain server v0.3.0 or later (#2098).
   The fallback for servers without `POST /api/apply` is removed. If the
   endpoint returns 404, the CLI fails before individual resource requests
