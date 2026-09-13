@@ -120,6 +120,22 @@ in that check. Boot migrations can run before replacement replicas serve
 requests, so the trigger cannot disappear in the first rollout of new writers.
 [Issue #2103](https://github.com/managoat/fountain/issues/2103) tracks that remaining step.
 
+## Conversation message compatibility
+
+The server uses the `managoat_acp` peer from its own release. The audited peer
+floor is version `0.4.2`, pinned in `mix.lock`. It reports model refusal as
+`{:failed, {:model_selection_failed, requested, detail}}` before it sends a prompt.
+The retired `model_rejected` event has no receiver.
+
+Each conversation starts its peer locally. The peer monitors its owner and
+stops when that owner exits. Replace the server process during upgrades;
+hot code replacement across peer versions is not a supported upgrade path.
+Sandbox adapters send ACP protocol messages, not these internal peer events.
+
+The cross-node termination and sandbox-loss compatibility handlers remain
+in place. Their removal is still tracked in
+[issue #2099](https://github.com/managoat/fountain/issues/2099).
+
 ## Match the CLI to the server
 
 The CLI and the server come from the same tag. The two versions that match are
