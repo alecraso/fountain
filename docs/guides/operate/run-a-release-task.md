@@ -75,10 +75,17 @@ source locks. Reconciliation never supplies an absent build fingerprint.
 To apply a different configuration, start a new conversation on a fresh
 sandbox, without an explicit old `sandbox_id`. A persistent agent home can
 reuse its old disk; choose a new agent or explicitly rebuild that home.
-To rebuild this conversation's machine, first copy any work you need from its
-disk. Then request `DELETE /api/sandboxes/:id`. That action destroys the old
-disk; the next prompt provisions a fresh one and records its build inputs.
-The conversation and transcript survive.
+
+Only eligible persistent homes support an in-place rebuild. The home must be
+`ready` or `suspended`, with no turn in progress or unresolved remote execution.
+First copy any work you need from its disk. Then request
+`DELETE /api/sandboxes/:id`. That action destroys the old disk; the next prompt
+provisions a fresh one and records its build inputs. The conversation and
+transcript survive.
+
+An ephemeral sandbox cannot use this reset endpoint: it returns
+`422 sandbox_not_resettable`. For an ephemeral sandbox with no recorded build
+evidence, use the fresh-conversation path above.
 
 These rules apply to hosted and self-hosted instances. They also apply to
 disks that remain dormant through an upgrade. Issue #2102 stays open for disk inventory
