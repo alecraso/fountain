@@ -39,12 +39,16 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: gomod
-    directory: /cli
+    # One update job spans both sides of Buzz's local replace (#1769).
+    directories:
+      - /cli
+      - /apps/fountain_buzz/cli
     schedule:
       interval: weekly
     groups:
       go-deps:
-        update-types: [minor, patch]
+        patterns: ["*"]
+        group-by: dependency-name
 
   - package-ecosystem: docker
     directory: /
