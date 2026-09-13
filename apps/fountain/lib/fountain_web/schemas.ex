@@ -4404,7 +4404,8 @@ defmodule FountainWeb.Schemas do
         host: %Schema{type: :string, description: "Host and port, as the sandbox dialed it."},
         path: %Schema{
           type: :string,
-          description: "The URL path. A query string is never recorded: it can hold a credential."
+          description:
+            "Always /[REDACTED]. URL paths, queries and fragments are withheld because they can contain credentials."
         },
         service: %Schema{
           type: :string,

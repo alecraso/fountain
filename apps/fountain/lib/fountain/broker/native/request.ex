@@ -12,13 +12,11 @@ defmodule Fountain.Broker.Native.Request do
   *names* of the environment variables whose values the proxy attached, which
   is the same thing the audit trail records for a secret event.
 
-  `path` is the URL path alone. A query string is dropped by the library
-  before the event is emitted (`managoat_broker` 0.1.3, row 0 of #1501) and
-  never reaches this column: a query can hold a credential the proxy never
-  brokered, a signed URL being one in itself, so the "never record values"
-  rule of `decisions/0013-audit-trail.md` would be broken here by a column
-  nobody thinks of as sensitive. `broker_native_test.exs` pins it against
-  the real proxy rather than against the library's changelog.
+  `path` is always `/[REDACTED]` on new rows. Credentials can appear in any
+  URL segment, even the first; stripping a query or matching known secrets is
+  insufficient. The API also redacts paths on older rows, which remain in the
+  database until the normal retention sweep removes them. Historical server
+  logs follow their own configured retention. No bulk data rewrite is implied.
 
   `status`, `latency_ms` and `error` are how the request ended, written from
   the proxy's terminal event (`managoat_broker` 0.3.0, #1501 row 2). They

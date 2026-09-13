@@ -50,7 +50,7 @@ defmodule Fountain.Broker.Native.RequestLogTest do
       assert %{
                method: "GET",
                host: "api.github.com",
-               path: "/user",
+               path: "/[REDACTED]",
                service: "github-api",
                credential_keys: ["GITHUB_TOKEN"]
              } = event
@@ -64,8 +64,21 @@ defmodule Fountain.Broker.Native.RequestLogTest do
       assert is_integer(event.id)
     end
 
+    test "redacts arbitrary paths before buffering or writing", ctx do
+      RequestLog.record(
+        row(ctx.conv, ctx.user, %{path: "/botraw-token/arbitrary?secret=value"}),
+        ctx.log
+      )
+
+      assert %{buffer: [%{path: "/[REDACTED]"}]} = :sys.get_state(ctx.log)
+      RequestLog.flush(ctx.log)
+      assert Repo.one!(Request).path == "/[REDACTED]"
+    end
+
     test "writes the whole buffer in one go once it fills", ctx do
-      for i <- 1..205, do: RequestLog.record(row(ctx.conv, ctx.user, %{path: "/#{i}"}), ctx.log)
+      for i <- 1..205,
+          do: RequestLog.record(row(ctx.conv, ctx.user, %{path: "/#{i}", latency_ms: i}), ctx.log)
+
       assert :ok = RequestLog.flush(ctx.log)
 
       assert Repo.aggregate(Request, :count, :id) == 205
@@ -99,7 +112,7 @@ defmodule Fountain.Broker.Native.RequestLogTest do
   describe "page/2" do
     setup ctx do
       for i <- 1..5 do
-        RequestLog.record(row(ctx.conv, ctx.user, %{path: "/#{i}"}), ctx.log)
+        RequestLog.record(row(ctx.conv, ctx.user, %{path: "/#{i}", latency_ms: i}), ctx.log)
         RequestLog.flush(ctx.log)
       end
 
@@ -108,23 +121,32 @@ defmodule Fountain.Broker.Native.RequestLogTest do
 
     test "is newest first", ctx do
       assert {:ok, %{events: events}} = RequestLog.page(ctx.conv.id)
-      assert Enum.map(events, & &1.path) == ~w(/5 /4 /3 /2 /1)
+      assert Enum.map(events, & &1.latency_ms) == [5, 4, 3, 2, 1]
     end
 
     test "the cursor walks backwards through the ids", ctx do
       assert {:ok, %{events: first, next: next}} = RequestLog.page(ctx.conv.id, limit: 2)
-      assert Enum.map(first, & &1.path) == ~w(/5 /4)
+      assert Enum.map(first, & &1.latency_ms) == [5, 4]
       assert is_integer(next)
 
       assert {:ok, %{events: second, next: next2}} =
                RequestLog.page(ctx.conv.id, limit: 2, before: next)
 
-      assert Enum.map(second, & &1.path) == ~w(/3 /2)
+      assert Enum.map(second, & &1.latency_ms) == [3, 2]
 
       assert {:ok, %{events: third, next: nil}} =
                RequestLog.page(ctx.conv.id, limit: 2, before: next2)
 
-      assert Enum.map(third, & &1.path) == ~w(/1)
+      assert Enum.map(third, & &1.latency_ms) == [1]
+    end
+
+    test "redacts old stored paths on read without rewriting retained rows", ctx do
+      legacy = row(ctx.conv, ctx.user, %{path: "/botlegacy-secret/sendMessage"})
+      {1, [stored]} = Repo.insert_all(Request, [legacy], returning: true)
+      assert {:ok, %{events: [event | _]}} = RequestLog.page(ctx.conv.id)
+      assert event.id == stored.id
+      assert event.path == "/[REDACTED]"
+      assert Repo.get!(Request, stored.id).path == legacy.path
     end
 
     test "shows one conversation only", ctx do
@@ -136,14 +158,19 @@ defmodule Fountain.Broker.Native.RequestLogTest do
   describe "sweep/1" do
     test "deletes rows older than the cutoff and leaves the rest", ctx do
       old = DateTime.add(DateTime.utc_now(), -8 * 24 * 3600, :second)
-      RequestLog.record(row(ctx.conv, ctx.user, %{path: "/old", inserted_at: old}), ctx.log)
-      RequestLog.record(row(ctx.conv, ctx.user, %{path: "/new"}), ctx.log)
+
+      RequestLog.record(
+        row(ctx.conv, ctx.user, %{host: "old.example", inserted_at: old}),
+        ctx.log
+      )
+
+      RequestLog.record(row(ctx.conv, ctx.user, %{host: "new.example"}), ctx.log)
       RequestLog.flush(ctx.log)
 
       cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 3600, :second)
       assert RequestLog.sweep(cutoff) == 1
 
-      assert {:ok, %{events: [%{path: "/new"}]}} = RequestLog.page(ctx.conv.id)
+      assert {:ok, %{events: [%{host: "new.example"}]}} = RequestLog.page(ctx.conv.id)
     end
   end
 

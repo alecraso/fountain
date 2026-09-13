@@ -3968,7 +3968,7 @@ export interface components {
             /** @description How long the whole request took, request head through response body, not time to first byte. */
             latency_ms?: number | null;
             method: string;
-            /** @description The URL path. A query string is never recorded: it can hold a credential. */
+            /** @description Always /[REDACTED]. URL paths, queries and fragments are withheld because they can contain credentials. */
             path: string;
             /** @description The binding that matched, and so which credential was attached. Null when none was: a passthrough host, or a host allowed under `limited` with no credential bound to it. */
             service?: string | null;

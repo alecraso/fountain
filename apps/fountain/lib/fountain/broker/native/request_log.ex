@@ -22,7 +22,7 @@ defmodule Fountain.Broker.Native.RequestLog do
 
   ## What is stored
 
-  Method, host, path, outcome, the rule that matched and the names of the
+  Method, host, a redacted path, outcome, the rule that matched and the names of the
   environment variables whose values were attached, plus how the request
   ended: the upstream status, the total duration and the terminal error
   where forwarding did not finish. Never a header, a body or a credential.
@@ -61,7 +61,7 @@ defmodule Fountain.Broker.Native.RequestLog do
   """
   @spec record(map(), GenServer.server()) :: :ok
   def record(row, server \\ __MODULE__) when is_map(row) do
-    GenServer.cast(server, {:record, row})
+    GenServer.cast(server, {:record, Map.put(row, :path, redacted_path())})
   catch
     # No writer on this node (brokerage off, or a boot race). Losing the row
     # is the correct outcome; losing the request is not.
@@ -69,6 +69,9 @@ defmodule Fountain.Broker.Native.RequestLog do
       Logger.debug("broker request log: dropped a row: #{inspect({kind, reason})}")
       :ok
   end
+
+  @doc false
+  def redacted_path, do: "/[REDACTED]"
 
   @doc "Write anything buffered, now. Synchronous, so a test can assert on rows."
   @spec flush(GenServer.server()) :: :ok
@@ -122,7 +125,9 @@ defmodule Fountain.Broker.Native.RequestLog do
       at: r.inserted_at,
       method: r.method,
       host: r.host,
-      path: r.path,
+      # Existing rows may predate write-time redaction; do not expose their
+      # paths while the normal retention sweep ages them out.
+      path: redacted_path(),
       service: r.service,
       credential_keys: r.credential_keys || [],
       status: r.status,

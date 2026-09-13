@@ -19,7 +19,7 @@ defmodule Fountain.Broker.Native do
 
   The request log is the `[:managoat, :broker, :request]` telemetry event
   the proxy emits. `attach_telemetry/0` writes one log line per request
-  naming the conversation, method, host, path and outcome, never a header,
+  naming the conversation, method, host and outcome, with a redacted path,
   and buffers a `broker_requests` row through
   `Fountain.Broker.Native.RequestLog` for `GET /api/conversations/:id/egress`
   to read back (gate 4, #1486). Since `managoat_broker` 0.3.0 the event is
@@ -107,6 +107,9 @@ defmodule Fountain.Broker.Native do
   # own connection process.
   @doc false
   def handle_request(_event, measurements, meta, _config) do
+    # Credentials can occupy any URL segment, including the first (Telegram).
+    # Redact before either sink, regardless of which secrets the broker knows.
+    meta = Map.put(meta, :path, RequestLog.redacted_path())
     session = Map.get(meta, :meta) || %{}
     conv = session["conversation_id"]
 
