@@ -459,8 +459,11 @@ record stays where it is.
 
 Some selections need a new disk. Fountain refuses those with
 `409 rebuild_required` and a `field` that names the cause. Fountain answers
-`environment` when you edit one Environment in place. The machine records one
-digest of its build inputs, not a digest for each field. A different runtime
+`environment` when you edit one Environment in place or the machine has no
+recorded build fingerprint. The error message distinguishes absent build
+evidence. Fountain cannot reconstruct original inputs from the current mutable
+Environment. The machine records one digest of its build inputs, not a digest
+for each field. A different runtime
 needs one, because Fountain installs the agent adapter before the network
 policy, and that policy now blocks a second install. A different set of
 packages, repositories, setup script or network policy needs one too. A

@@ -139,6 +139,23 @@ defmodule Fountain.SandboxSkillsTest do
       assert File.exists?(Path.join(root, "fountain/SKILL.md"))
     end
 
+    test "repeating a legacy reconciliation keeps the manifest and unrelated files", %{root: root} do
+      File.mkdir_p!(Path.join(root, "legacy"))
+      File.write!(Path.join(root, "legacy/SKILL.md"), "Old skill")
+      File.mkdir_p!(Path.join(root, "personal"))
+      File.write!(Path.join(root, "personal/SKILL.md"), "Keep my work")
+      previous = [%{"name" => "legacy", "content" => "Old skill"}]
+      selected = [%{"name" => "current", "content" => "Current skill"}]
+
+      assert :ok = SandboxSkills.reconcile(@handle, DiskRuntime, selected, previous)
+      manifest = File.read!(Path.join(root, ".fountain-managed-skills"))
+      assert :ok = SandboxSkills.reconcile(@handle, DiskRuntime, selected, previous)
+      assert File.read!(Path.join(root, ".fountain-managed-skills")) == manifest
+      assert File.read!(Path.join(root, "current/SKILL.md")) == "Current skill"
+      assert File.read!(Path.join(root, "personal/SKILL.md")) == "Keep my work"
+      refute File.exists?(Path.join(root, "legacy"))
+    end
+
     test "seeds legacy named skills and ignores unsafe manifest paths", %{root: root} do
       File.mkdir_p!(Path.join(root, "legacy"))
       File.write!(Path.join(root, "legacy/SKILL.md"), "Old skill")

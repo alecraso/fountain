@@ -1,8 +1,7 @@
 defmodule Fountain.Conversations.ConversationServerBuildFingerprintTest do
   # What the disk was built from is recorded on the row when the machine
-  # reaches `ready` (#1565). Without it a later reapply has to guess whether a
-  # selection needs the disk built again, and an environment edited after the
-  # build reads as "unchanged".
+  # reaches `ready` (#1565). Without it a later reapply must refuse to guess
+  # whether the current environment still matches the original build (#2102).
   use Fountain.ConversationServerCase
 
   alias Fountain.Conversations
@@ -28,6 +27,34 @@ defmodule Fountain.Conversations.ConversationServerBuildFingerprintTest do
     assert sandbox.applied_skills == skills
 
     GenServer.call(pid, :terminate_conv, 30_000)
+  end
+
+  test "waking an older disk reconciles skills without inventing a build fingerprint" do
+    stub_happy_sprite()
+    user = insert_verified_user()
+    env = insert_env(user_id: user.id, setup_script: "echo changed-after-original-build")
+    agent = insert_agent(user_id: user.id, runtime: "gemini", environment_id: env.id)
+
+    sandbox =
+      insert_sandbox(
+        user_id: user.id,
+        status: "suspended",
+        environment_id: env.id,
+        agent_id: agent.id,
+        build_fingerprint: nil,
+        applied_skills: nil
+      )
+
+    conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+    for _wake <- 1..2 do
+      {pid, _ref, :alive} = start_server(conv)
+      current = Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert current.build_fingerprint == nil
+      assert current.applied_skills == []
+      assert current.id == sandbox.id
+      GenServer.stop(pid, :normal)
+    end
   end
 
   test "a machine built with no environment records the digest that stands for none" do

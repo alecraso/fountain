@@ -90,24 +90,20 @@ defmodule Fountain.Conversations.ReapplyCheckTest do
              check(ctx.sandbox, target_environment: nil, built_with: ctx.env)
   end
 
-  test "a row that predates the digest falls back to the environment it records", ctx do
-    # `build_fingerprint` is null on every row built before #1565. The
-    # environment the sandbox names stands in, so a selection pointing at a
-    # different environment is still caught.
+  test "a missing digest never borrows current or historical-looking environment inputs", ctx do
     legacy = %{ctx.sandbox | build_fingerprint: nil}
-    {:ok, other} = Environments.update_environment(ctx.env, %{"setup_script" => "echo other"})
+    {:ok, edited} = Environments.update_environment(ctx.env, %{"setup_script" => "echo edited"})
 
-    assert :ok = check(legacy, target_environment: ctx.env, built_with: ctx.env)
-
-    assert {:error, {:rebuild_required, :setup_script}} =
-             check(legacy, target_environment: other, built_with: ctx.env)
-  end
-
-  test "a row that predates the digest and cannot name what it was built with", ctx do
-    legacy = %{ctx.sandbox | build_fingerprint: nil}
-
-    assert {:error, {:rebuild_required, :environment}} =
-             check(legacy, target_environment: ctx.env, built_with: nil)
+    for {target, built_with} <- [
+          {ctx.env, ctx.env},
+          {edited, edited},
+          {edited, ctx.env},
+          {ctx.env, nil},
+          {nil, nil}
+        ] do
+      assert {:error, {:rebuild_required, :missing_build_fingerprint}} =
+               check(legacy, target_environment: target, built_with: built_with)
+    end
   end
 
   test "every blocker has a sentence of its own" do
@@ -118,6 +114,7 @@ defmodule Fountain.Conversations.ReapplyCheckTest do
       :setup_script,
       :networking,
       :environment,
+      :missing_build_fingerprint,
       :shared_sandbox
     ]
 

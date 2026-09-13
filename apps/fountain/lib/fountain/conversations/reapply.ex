@@ -74,6 +74,7 @@ defmodule Fountain.Conversations.Reapply do
           | :setup_script
           | :networking
           | :environment
+          | :missing_build_fingerprint
           | :shared_sandbox
 
   @doc """
@@ -104,8 +105,10 @@ defmodule Fountain.Conversations.Reapply do
   Whether the machine `sandbox` already is can be reconfigured into the
   requested selection, or the first reason it cannot.
 
-  `:built_with` is the Environment the sandbox records, used only when the row
-  predates `build_fingerprint` and so cannot answer for itself.
+  `:built_with` is the Environment the sandbox records, used to name a changed
+  build field after the stored fingerprint proves the inputs differ. It is
+  mutable and cannot establish what an older machine was built from. A machine
+  with no recorded fingerprint requires an explicit rebuild.
 
   ## What the refusal can name
 
@@ -134,20 +137,16 @@ defmodule Fountain.Conversations.Reapply do
       target_runtime != current_runtime ->
         {:error, {:rebuild_required, :runtime}}
 
-      built_fingerprint(sandbox, built_with) == fingerprint(target_env) ->
+      is_nil(sandbox.build_fingerprint) ->
+        {:error, {:rebuild_required, :missing_build_fingerprint}}
+
+      sandbox.build_fingerprint == fingerprint(target_env) ->
         :ok
 
       true ->
         {:error, {:rebuild_required, build_field(built_with, target_env)}}
     end
   end
-
-  # A row written since #1565 answers for itself. An older one cannot, so the
-  # environment it records stands in: that catches a selection pointing at a
-  # different environment, and misses only an environment edited before this
-  # column existed.
-  defp built_fingerprint(%Sandbox{build_fingerprint: fp}, _built_with) when is_binary(fp), do: fp
-  defp built_fingerprint(_sandbox, built_with), do: fingerprint(built_with)
 
   # Which field to name in the refusal. Falls back to `:environment` in two
   # cases: the machine cannot say what it was built from, and both sides are
@@ -185,6 +184,11 @@ defmodule Fountain.Conversations.Reapply do
         "are written once, when the machine is built"
 
   def explain(:environment), do: "the selected environment builds the machine differently"
+
+  def explain(:missing_build_fingerprint),
+    do:
+      "this machine has no recorded build fingerprint, so its original environment build " <>
+        "inputs cannot be verified from the current environment"
 
   def explain(:shared_sandbox),
     do:

@@ -18,6 +18,17 @@ upgrade, is in
 
 ### Upgrade notes
 
+- **A sandbox without a recorded build fingerprint now requires an explicit
+  rebuild before configuration reapply** (#2102). The API returns
+  `409 rebuild_required` with `field: "environment"` and a missing-build-evidence
+  message. It no longer guesses original inputs from the current Environment.
+  Repeated refusals preserve the selection and disk. Ordinary wake and the
+  legacy skill reconciliation path remain available. Operators can run
+  `Fountain.Release.inventory_sandbox_metadata()` for a read-only database
+  inventory; disk manifests remain unverified. See
+  [Inventory older sandbox metadata](https://managoat.com/docs/guides/operate/run-a-release-task#inventory-older-sandbox-metadata)
+  before choosing a new sandbox or a destructive rebuild.
+
 - New principal-key writes must provide an expiry. The database now checks
   that unrevoked principal keys have deadlines, preserving existing deadlines
   and revoked history (#2103). The old-writer trigger remains during rollout;
