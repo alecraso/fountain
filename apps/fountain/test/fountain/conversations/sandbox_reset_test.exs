@@ -389,7 +389,9 @@ defmodule Fountain.Conversations.SandboxResetTest do
              Fountain.Conversations.Connection.open_autonomous_turn(
                ctx.a.id,
                ctx.user.id,
-               ctx.home.id
+               ctx.home.id,
+               ctx.a.configuration_revision,
+               ctx.a.inference_source
              )
   end
 

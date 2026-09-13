@@ -445,9 +445,13 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub_happy_sprite()
       _ref = stub_turn_boundary()
 
-      Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
-        {:ok, %{claude_code_oauth_token: "sk-ant-oat01-realtoken"}}
-      end)
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(
+          user.id,
+          <<0::256>>,
+          :claude_code_oauth_token,
+          "sk-ant-oat01-realtoken"
+        )
 
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
@@ -607,11 +611,24 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         end)
 
         stub(Conversations, :claim_sandbox, fn row, attrs ->
-          attrs = if attrs[:status] == "ready", do: Map.put(attrs, :mode, "invalid"), else: attrs
+          attrs =
+            if attrs[:status] == "ready" do
+              send(test, :ready_claimed)
+              Map.put(attrs, :mode, "invalid")
+            else
+              attrs
+            end
+
           Mimic.call_original(Conversations, :claim_sandbox, [row, attrs])
         end)
 
-        stub(Fountain.Conversations.Provisioning, :install_packages, fn _h, _e, _se, _id ->
+        # Pause after inference reservation so the final ready write, rather
+        # than the source's configuration check, observes the retirement race.
+        stub(Fountain.Conversations.Provisioning, :prepare_runtime_sprite, fn _h,
+                                                                              _r,
+                                                                              _m,
+                                                                              _a,
+                                                                              _e ->
           send(test, {:provision_paused, self()})
           receive do: (:resume_provision -> :ok)
         end)
@@ -661,6 +678,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         send(pid, :resume_provision)
 
         assert :normal = assert_stopped(ref, 5_000)
+        assert_received :ready_claimed
         assert Fountain.Repo.reload!(sandbox).status == retired.status
         assert Fountain.Repo.reload!(sandbox).terminated_at == retired.terminated_at
         assert Fountain.Repo.reload!(sandbox).reset_requested_at == retired.reset_requested_at
