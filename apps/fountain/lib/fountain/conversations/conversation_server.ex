@@ -1030,7 +1030,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp reattach(state, conv, sandbox, agent, env, secrets) do
     Fountain.Telemetry.span(
       [:reattach],
-      %{conv_id: state.conversation_id, sprite_name: sandbox.sprite_name},
+      %{conv_id: state.conversation_id, sprite_name: sandbox.machine_name},
       fn -> {do_reattach(state, conv, sandbox, agent, env, secrets), %{}} end
     )
   end
@@ -1058,7 +1058,7 @@ defmodule Fountain.Conversations.ConversationServer do
     handle =
       Managoat.Sandbox.build_handle(
         Fountain.Conversations.sandbox_provider_atom(sandbox),
-        sandbox.sprite_name
+        sandbox.machine_name
       )
 
     # A broker failure lands in the transient arm below: it says nothing
@@ -1071,7 +1071,7 @@ defmodule Fountain.Conversations.ConversationServer do
          {:ok, state} <- Egress.prepare_state(state),
          :ok <- Egress.reattach_policy(handle, env, state.conversation_id) do
       Output.publish_stage(state.conversation_id, "reattach", "started", %{
-        sprite_name: sandbox.sprite_name,
+        sprite_name: sandbox.machine_name,
         node: to_string(node())
       })
 
@@ -1184,7 +1184,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # justifies retiring the row: the disk no longer exists, so the next
         # prompt must provision fresh.
         Logger.warning(
-          "reattach failed for sprite #{sandbox.sprite_name}: not found — marking sandbox failed"
+          "reattach failed for sprite #{sandbox.machine_name}: not found — marking sandbox failed"
         )
 
         Output.publish_stage(state.conversation_id, "reattach", "failed", %{
@@ -1218,7 +1218,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # transient failure must not become a destroyed disk; the same rule
         # `probe_sandbox/4` applies on the wake path.
         Logger.warning(
-          "reattach failed for sprite #{sandbox.sprite_name}: #{inspect(reason)} — " <>
+          "reattach failed for sprite #{sandbox.machine_name}: #{inspect(reason)} — " <>
             "transient; sandbox row left untouched"
         )
 

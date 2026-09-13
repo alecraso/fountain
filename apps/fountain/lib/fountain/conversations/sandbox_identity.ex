@@ -20,11 +20,11 @@ defmodule Fountain.Conversations.SandboxIdentity do
   end
 
   defp capture(observed, handle) do
-    with true <- handle.name == observed.sprite_name,
+    with true <- handle.name == observed.machine_name,
          true <- is_atom(handle.provider),
          true <- Atom.to_string(handle.provider) == observed.provider,
          {:ok, %{raw: %{"name" => name, "id" => id}}} <- Managoat.Sandbox.get(handle),
-         true <- name == observed.sprite_name do
+         true <- name == observed.machine_name do
       # Ownership: the caller supplied its owned sandbox; binding rechecks the row.
       _unsafe_bind(observed, id)
     else
@@ -96,6 +96,6 @@ defmodule Fountain.Conversations.SandboxIdentity do
 
   defp same_binding?(current, observed) do
     current.user_id == observed.user_id and current.provider == observed.provider and
-      current.sprite_name == observed.sprite_name
+      current.machine_name == observed.machine_name
   end
 end

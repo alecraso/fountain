@@ -62,7 +62,7 @@ defmodule Fountain.ConversationsWakeTest do
     test "returns {:ok, conv} reusing existing sandbox when sprite is still alive" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-alive")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-alive")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -86,7 +86,7 @@ defmodule Fountain.ConversationsWakeTest do
       # of reaching the winner's server.
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-race")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-race")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -119,7 +119,7 @@ defmodule Fountain.ConversationsWakeTest do
       # the quota, and the max-lifetime ceiling restarts from the wake.
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-parked")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-parked")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -153,7 +153,7 @@ defmodule Fountain.ConversationsWakeTest do
 
       insert_sandbox(user_id: user.id, status: "ready")
 
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-capped")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-capped")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -170,7 +170,7 @@ defmodule Fountain.ConversationsWakeTest do
       # definitive not-found may do that; anything else fails retryably.
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-blip")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-blip")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -187,7 +187,7 @@ defmodule Fountain.ConversationsWakeTest do
       # and the reaper destroyed a sprite that was fine.
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-blip-ready")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-blip-ready")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -207,7 +207,7 @@ defmodule Fountain.ConversationsWakeTest do
     test "a definitively gone sprite retires the suspended sandbox and provisions fresh" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-vanished")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-vanished")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -230,7 +230,7 @@ defmodule Fountain.ConversationsWakeTest do
       # what happened.
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, status: "ready", sprite_name: "shared-gone")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready", machine_name: "shared-gone")
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
       neighbour =
@@ -277,7 +277,7 @@ defmodule Fountain.ConversationsWakeTest do
     test "returns {:ok, conv} creating fresh sandbox when sprite is gone" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-gone")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-gone")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -376,7 +376,7 @@ defmodule Fountain.ConversationsWakeTest do
     test "returns {:ok, conv} when old sandbox is already terminated (mark_old_sandbox_terminated no-op)" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-terminated")
+      sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite-terminated")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 

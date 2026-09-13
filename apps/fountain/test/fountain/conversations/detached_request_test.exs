@@ -29,7 +29,7 @@ defmodule Fountain.Conversations.DetachedRequestTest do
 
     # Parked, which is where a conversation with a detached request spends
     # its wait (0017): the answer has to wake it.
-    sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite", status: "suspended")
+    sandbox = insert_sandbox(user_id: user.id, machine_name: "test-sprite", status: "suspended")
 
     conv =
       insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")

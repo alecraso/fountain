@@ -68,6 +68,10 @@ upgrade, is in
 
 ### Changed
 
+- Sandbox application code now uses `machine_name` across providers (#2108).
+  Existing database columns, API fields, event metadata and provider names retain
+  their current values and names.
+
 - **Brokerage is a property of the deployment, and the per-tenant ratchet is
   gone** (ADR 0019 §9, amended 2026-09-12). `Fountain.Broker.enabled_for?/1`
   and the `:broker_tenants` configuration are removed, and
