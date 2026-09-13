@@ -1758,6 +1758,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
       :noop ->
         TurnMachine.end_span(state.current_turn_span, :error, %{"outcome" => "completion_ignored"})
+
+      {:error, reason} ->
+        Logger.warning("turn #{turn.id}: completion refused (#{inspect(reason)})")
+
+        TurnMachine.end_span(state.current_turn_span, :error, %{"outcome" => "completion_refused"})
     end
 
     {:noreply,

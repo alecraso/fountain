@@ -2324,16 +2324,17 @@ defmodule Fountain.Conversations do
   @doc """
   Complete a running turn only on the actor's current sandbox binding.
 
-  Lock the conversation before the turn, and commit its idle status with the
-  turn's result. A moved or terminal conversation, or a turn already ended by
-  another actor, is a no-op. Reply materialization shares that transaction;
+  Lock the conversation, execution journal and turn in that order, and commit
+  the journal's outcome with the reply and parent idle status. A moved or
+  terminal conversation is a no-op. An already-ended current turn can release
+  its parent without announcing another terminal event. Reply materialization
+  shares that transaction;
   activation and sidebar publication run after it commits. The optional
   `:exit_code` is persisted atomically with the result.
 
-  The parent only idles under the two conditions `_unsafe_idle_after_turn/1`
-  idled under: `ExecutionGuard.latest_turn?/2` and a `running` parent. The
-  journal's own condition is not carried here — see the known gap on
-  `Fountain.Conversations.TurnMachine.finish/4`.
+  Only the latest generation can idle a running parent, and a journal must
+  have retired its execution first. A refused journal transition returns its
+  error without changing the turn, reply or parent.
 
   `"interrupted"` is a terminal status this writer accepts, because a bounded
   turn that its journal retires comes back through the same ending
@@ -2355,64 +2356,43 @@ defmodule Fountain.Conversations do
     do: end_running_turn(turn, sandbox_id, "interrupted", false)
 
   defp end_running_turn(turn, sandbox_id, status, idle?, attrs \\ %{}) do
-    {:ok, result} =
-      Repo.transaction(fn ->
-        conversation_query =
-          from(c in Conversation, where: c.id == ^turn.conversation_id, lock: "FOR UPDATE")
+    # ownership: the actor supplied its original turn and sandbox binding.
+    result =
+      ExecutionGuard._unsafe_end_actor_turn(turn, sandbox_id, status, attrs, fn conv, ending ->
+        changeset = Turn.changeset(ending.turn, ending.attrs)
 
-        turn_query =
-          from(t in Turn,
-            where: t.id == ^turn.id and t.conversation_id == ^turn.conversation_id,
-            lock: "FOR UPDATE"
-          )
+        changeset =
+          if ending.materialize?,
+            do: maybe_put_reply_text(changeset, ending.turn),
+            else: changeset
 
-        with %Conversation{} = conv <- Repo.one(conversation_query),
-             true <- conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"],
-             %Turn{status: "running"} = current <- Repo.one(turn_query) do
-          changeset =
-            current
-            |> Turn.changeset(
-              Map.merge(attrs, %{
-                status: status,
-                ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
-              })
-            )
-            |> maybe_put_reply_text(current)
+        updated = Repo.update!(changeset)
 
-          updated = Repo.update!(changeset)
+        # Completion releases only its newest ended generation. Interrupt keeps
+        # the parent running until the peer stops and its second half idles it.
+        updated_conv =
+          if idle? and ending.idle_allowed? and
+               updated.status in ["completed", "failed", "interrupted"] and
+               conv.status == "running" and
+               ExecutionGuard.latest_turn?(conv.id, turn.id),
+             do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+             else: conv
 
-          # The two preconditions `_unsafe_idle_after_turn/1` idled under, kept
-          # exactly (`ExecutionGuard.parent_write_allowed?/4`, mode `:idle`):
-          # this turn is the conversation's newest generation, and the parent
-          # is `running`. A successor admitted while this actor was ending its
-          # turn therefore keeps the conversation running, and an abandoned
-          # older turn cannot stop this one from idling it. The parent lock
-          # above is the same one turn admission takes, so nothing can be
-          # admitted between this read and the write.
-          #
-          # The interrupt path passes `idle?: false` and idles later, through
-          # `_unsafe_idle_interrupted_turn/1`, which asks the same two
-          # questions once the peer has stopped.
-          updated_conv =
-            if idle? and conv.status == "running" and
-                 ExecutionGuard.latest_turn?(conv.id, turn.id),
-               do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
-               else: conv
-
-          {updated, updated_conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
-        else
-          _ -> :noop
-        end
+        {updated, updated_conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text)),
+         ending.announce?}
       end)
 
     case result do
-      :noop ->
+      {:ok, :noop} ->
         :noop
 
-      {updated, conv, reply_materialized?} ->
+      {:ok, {updated, conv, reply_materialized?, announce?}} ->
         if reply_materialized?, do: Fountain.Activation.turn_replied(updated)
         if idle?, do: broadcast_sidebar_update(conv.user_id)
-        {:ok, updated}
+        if announce?, do: {:ok, updated}, else: :noop
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -2462,9 +2442,9 @@ defmodule Fountain.Conversations do
   for conversations without turns, not the parent's status; a stuck parent
   alone does not keep the shared sandbox busy or extend its billing lifetime.
 
-  Known gap: a turn no longer `interrupted` writes nothing, and nothing
-  overwrites a terminal turn today, so that arm has no live producer (#2054
-  gap 2).
+  This second half only releases the interrupted turn it marked. General
+  completion can separately release an already-ended latest turn without
+  changing its result or publishing another outcome.
   """
   def _unsafe_idle_interrupted_turn(%Turn{} = turn) do
     {:ok, result} =
