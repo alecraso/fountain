@@ -96,6 +96,10 @@ defmodule Fountain.Conversations.Sandbox do
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:mode, @modes)
     |> validate_inclusion(:provider, Fountain.SandboxProviders.known_providers())
+    |> unique_constraint(:machine_name,
+      name: :sandboxes_live_machine_name_index,
+      message: "is already assigned to a live sandbox on this provider"
+    )
     # One live home per identity. Surfaced under `:home` so a launch that
     # lost the race to create it can tell and attach to the winner instead.
     |> unique_constraint(:home,
