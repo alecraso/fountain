@@ -66,12 +66,13 @@ public struct FountainClient: Sendable {
     return data
   }
 
-  /// Deep link a human to a transcript, via the deployment's conversations
-  /// app when one exists.
+  /// Deep link via the catalog's Conversations app, then `config.appURL`.
+  /// Without either app URL, open the deployment dashboard.
   public func conversationURL(_ id: String, apps: Catalog.Apps?) -> URL {
-    if let app = apps?.conversations, !app.isEmpty, let url = URL(string: "\(app)/#/c/\(id)") {
-      return url
+    var destination = config
+    if let app = apps?.conversations, !app.isEmpty, let url = URL(string: app) {
+      destination.appURL = url
     }
-    return config.baseURL.appendingPathComponent("conversations/\(id)")
+    return destination.conversationURL(id)
   }
 }

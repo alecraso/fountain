@@ -26,13 +26,37 @@ import Testing
 
     """
 
-  private func startedRun() async throws -> Run {
+  private func startedRun(appURL: URL? = nil) async throws -> Run {
     let transport = FakeTransport([
       .init(json: #"{"data": {"id": "c1", "status": "running", "runtime": "claude"}}"#),
       .init(json: Self.stream),
       .init(json: #"{"data": {"id": "c1", "status": "idle", "runtime": "claude"}}"#),
     ])
-    return try await FountainClient.fake(transport).run("hello", agent: "a1")
+    return try await FountainClient(
+      config: FountainConfig(
+        baseURL: URL(string: "https://fountain.test")!, apiKey: "ftn_live_test", appURL: appURL),
+      transport: transport
+    ).run("hello", agent: "a1")
+  }
+
+  @Test(arguments: [false, true])
+  func runTranscriptLinksUseTheAppOrDashboard(configured: Bool) async throws {
+    let appURL = configured ? URL(string: "https://talk.fountain.test/base/")! : nil
+    let expected =
+      configured
+      ? "https://talk.fountain.test/base/#/c/c1" : "https://fountain.test/dashboard"
+    let run = try await startedRun(appURL: appURL)
+    let result = try await run.value()
+
+    #expect(run.url.absoluteString == expected)
+    #expect(result.url.absoluteString == expected)
+    var conversationURLs: [String] = []
+    for try await event in run.events {
+      if case .conversation(_, let url) = event {
+        conversationURLs.append(url.absoluteString)
+      }
+    }
+    #expect(conversationURLs == [expected])
   }
 
   @Test func valueIsTheSameAnswerHoweverOftenItIsAsked() async throws {

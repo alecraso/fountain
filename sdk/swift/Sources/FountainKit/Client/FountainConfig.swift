@@ -8,7 +8,7 @@ public struct FountainConfig: Sendable, Equatable {
   public var baseURL: URL
   public var apiKey: String?
   /// Where transcript deep links point (the conversations app).
-  /// `nil` falls back to the API itself.
+  /// `nil` falls back to the deployment dashboard.
   public var appURL: URL?
   /// Default timeout for ordinary calls. Streams are never timed out.
   public var timeout: TimeInterval
@@ -31,14 +31,14 @@ public struct FountainConfig: Sendable, Equatable {
   }
 
   /// Where a human reads this transcript: the conversations app when the
-  /// deployment names one, else the API itself.
+  /// configuration names one, else the deployment dashboard.
   public func conversationURL(_ id: String) -> URL {
     if let appURL,
       let url = URL(string: "\(appURL.absoluteString.trimmingTrailingSlashes())/#/c/\(id)")
     {
       return url
     }
-    return baseURL.appendingPathComponent("conversations/\(id)")
+    return baseURL.appendingPathComponent("dashboard")
   }
 
   /// Parse a base URL a human or the environment supplied. Throws rather

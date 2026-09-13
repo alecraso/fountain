@@ -29,6 +29,18 @@ upgrade, is in
   [Inventory older sandbox metadata](https://managoat.com/docs/guides/operate/run-a-release-task#inventory-older-sandbox-metadata)
   before choosing a new sandbox or a destructive rebuild.
 
+- **Retired browser URLs now return 404** (#2105). Starting with the release
+  containing this change, hosted and self-hosted servers no longer redirect
+  `/conversations*`, `/team*` or `/onboarding*`. Update bookmarks, saved skill
+  instructions and support links to the configured Conversations or Team app;
+  use `/dashboard` for the old onboarding pages. Links in historical emails
+  need the same migration. See [Retired browser URLs](https://managoat.com/docs/concepts/surfaces#retired-browser-urls)
+  for the destination map and deployments with no app. The separate
+  `/api/account/onboarding` API remains available. FountainKit transcript links
+  use `FountainConfig.appURL`, or `/dashboard` when unset. Set `appURL` from the
+  catalog's Conversations app for direct run links. The catalog-aware URL helper
+  uses that app first, then `appURL`, then `/dashboard`.
+
 - New principal-key writes must provide an expiry. The database now checks
   that unrevoked principal keys have deadlines, preserving existing deadlines
   and revoked history (#2103). The old-writer trigger remains during rollout;
