@@ -9486,9 +9486,9 @@
       "additionalProperties": true,
       "properties": {
         "body": {
-          "nullable": true,
           "oneOf": [
             {
+              "nullable": true,
               "type": "string"
             },
             {

@@ -3195,7 +3195,7 @@ export interface components {
          * @description One structured piece of a log event's output — the same parse the web UI renders (`Fountain.Conversations.Blocks`). `kind` decides the other fields: `text`/`thinking` carry `body`; `plan` carries the full ordered checklist in `body` (entries with `content`, `status`, and optional `priority`, `id`, `activeForm`); `tool_use` carries `id`, `name`, `summary`, `body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`; `permission_request` carries `request_id`, `name`, `summary` and `options` — the agent is blocked on it, and a client answers with POST /api/conversations/{id}/requests/{request_id}. Render only the options in `options`; never synthesise one the agent did not offer.
          */
         Block: {
-            body?: (string | ({
+            body?: (string | null) | ({
                 activeForm?: string;
                 content: string;
                 id?: string;
@@ -3204,7 +3204,7 @@ export interface components {
                 status: "pending" | "in_progress" | "completed";
             } & {
                 [key: string]: unknown;
-            })[]) | null;
+            })[];
             error?: boolean | null;
             id?: string | null;
             /** @enum {string} */

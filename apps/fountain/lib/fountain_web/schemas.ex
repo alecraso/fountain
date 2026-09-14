@@ -1992,9 +1992,8 @@ defmodule FountainWeb.Schemas do
           enum: Fountain.Conversations.Blocks.kinds()
         },
         body: %Schema{
-          nullable: true,
           oneOf: [
-            %Schema{type: :string},
+            %Schema{type: :string, nullable: true},
             %Schema{
               type: :array,
               items: %Schema{
