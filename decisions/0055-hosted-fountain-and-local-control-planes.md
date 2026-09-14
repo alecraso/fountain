@@ -7,8 +7,8 @@ status: stable
 adr: "0055"
 adr_status: "Accepted"
 date: 2026-09-14
-generated: { by: openai/gpt-6, at: 2026-09-14T09:12:00Z }
-verified: { by: openai/gpt-6, at: 2026-09-14T09:12:00Z }
+generated: { by: openai/gpt-6, at: 2026-09-14T09:23:33Z }
+verified: { by: openai/gpt-6, at: 2026-09-14T09:23:33Z }
 stale_after: 2026-11-01
 ---
 
@@ -54,12 +54,18 @@ watching a turn. The boundary has four parts:
    shared contract. This allocation does not lift the org/team scope gate.
 2. **A closed laptop.** The remote adapter can keep running when the local
    driver disconnects, and `goatherd attach` can rejoin it. That does not
-   keep a consumer of output or a human permission responder alive. An
-   unanswered permission request is denied on timeout while the peer is
-   running; losing the driver is not a promise of unattended completion.
+   keep a consumer of output or a human permission responder alive. With
+   goatherd's interactive driver still running, an unanswered permission
+   request can wait indefinitely: the driver blocks on terminal input and
+   installs no permission timer. Its locked
+   [ACP peer (0.1.2)](https://github.com/managoat/managoat_acp/blob/v0.1.2/lib/managoat/acp/peer.ex#L663-L686)
+   leaves timeout enforcement to its owner. Losing the driver is not a
+   promise of unattended completion.
    Fountain's `ConversationServer` owns the supervised lifecycle, output
    persistence and permission handling independently of an attached browser
-   or CLI. It does not promise to approve unanswered requests either.
+   or CLI; its
+   [`Conversations.Pending`](https://github.com/managoat/fountain/blob/67d65b46/apps/fountain/lib/fountain/conversations/pending.ex)
+   implements the permission timer used to deny unanswered requests.
 3. **Schedules and other triggers.** Work that starts when nobody typed
    needs a running service to admit and coordinate it. Those triggers belong
    to Fountain's service side; this ADR does not add a scheduler to goatherd
