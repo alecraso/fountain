@@ -1914,7 +1914,19 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+          # HEAD is the merge commit GitHub built against the base branch's
+          # tip *at checkout time*. When main moved between the event that
+          # started this run and the checkout, that tip is newer than the
+          # event's base.sha, and fetching base.sha on its own at depth 1
+          # yields a commit that shares no history with HEAD: `base...HEAD`
+          # has no merge base and git exits 128. #2163 and #2166 both went
+          # red this way within ten minutes of #2164 landing, and a re-run
+          # cannot recover because the merge ref moves again. The first
+          # parent is the base the merge was actually built against and is
+          # always present in a depth-2 checkout.
+          if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -gt 2 ]; then
+            BASE_SHA=$(git rev-parse HEAD^1)
+          elif ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             git fetch --quiet --depth=1 origin "${BASE_SHA}"
           fi
           args=()
