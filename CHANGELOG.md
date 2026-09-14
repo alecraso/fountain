@@ -166,10 +166,11 @@ the release PR rolls them into a dated section here.
   `/api/secret-bindings` routes. An operator who set
   `FEATURE_FLAGS_ON=connections` to get the feature back can drop it, and
   nothing changes where PostHog is configured: it answers the flag as before,
-  and `FEATURE_FLAGS_ON` still wins over both. Creating connections also requires the deployment-wide broker, selected
-  by `BROKER_LISTEN_PORT`; tenant lists are no longer supported (#2058).
-  Existing connections remain manageable when creation is unavailable, and
-  the catalog advertises that management capability (#2134).
+  and `FEATURE_FLAGS_ON` still wins over both. Creating connections also
+  requires the deployment-wide broker, selected by `BROKER_LISTEN_PORT`;
+  tenant lists are no longer supported (#2058). With the broker configured,
+  existing connections remain manageable when the `connections` creation flag
+  is off. Read `connections_manageable` from `GET /api/auth/me` (#2134).
 
 - **Upgrade every serving node before enabling multiple inference sources**
   (#2018). Credential, environment and vault writers must acquire source locks
