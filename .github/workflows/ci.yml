@@ -1874,14 +1874,54 @@ jobs:
     name: CI policy and alert tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # The changelog guard reads the PR's labels.
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           persist-credentials: false
+          # The changelog guard diffs the PR's merge commit against its base,
+          # which is that commit's first parent: one level of history.
+          fetch-depth: 2
       - name: Reject conflict markers
         run: python3 scripts/conflict-markers.py
       - name: Test CI decisions
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+      - name: Check the changelog fragments
+        # Every fragment under changelog.d/ parses, and [Unreleased] still
+        # has the shape the release roll reads (changelog.d/README.md).
+        run: python3 scripts/changelog.py check
+      - name: Changelog entries go through changelog.d/
+        # A PR does not edit CHANGELOG.md: that file changes once per
+        # release, in the release PR, which is what ended the changelog
+        # merge conflict every other PR used to hit. The release branch and
+        # the changelog:manual label (a typo in a shipped entry) are the two
+        # doors. pull_request only: the merge group re-tests the same tree,
+        # and a push to main has no PR to judge.
+        #
+        # The labels are read from the API, not the event payload: the
+        # payload freezes them at trigger time, so a label added after the
+        # push counted for nothing until the next push (#2158 hit this on
+        # its own first run). With a live read, re-running this job after
+        # labelling is enough.
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --quiet --depth=1 origin "${BASE_SHA}"
+          fi
+          args=()
+          while IFS= read -r label; do
+            if [ -n "${label}" ]; then args+=(--label "${label}"); fi
+          done < <(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name')
+          python3 scripts/changelog.py guard --base "${BASE_SHA}" --branch "${HEAD_REF}" "${args[@]}"
       # This job is required even for docs-only changes and reused trees.
       # The path-filtered Alert rules workflow alone cannot gate a merge.
       - name: Install the alert rule evaluator

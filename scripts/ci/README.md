@@ -211,6 +211,7 @@ blocking checks in the Elixir and Go suites.
 
 ```sh
 python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+python3 scripts/changelog.py check
 actionlint -shellcheck= .github/workflows/ci.yml
 shellcheck scripts/ci/*.sh
 elixir scripts/ci/timing-formatter-test.exs

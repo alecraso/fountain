@@ -4,10 +4,11 @@ name: Release bump
 #
 # 1. "Run workflow" (Actions tab → "Release bump"; defaults to `patch`)
 #    bumps the version in both mix.exs files, the Swift SDK version source,
-#    and the six self-host image pins on a `release/vX.Y.Z` branch and opens
-#    the PR. CI runs on it like
-#    any other PR; the compose boot check knows the pinned image does not
-#    exist yet and skips.
+#    and the six self-host image pins, rolls the changelog.d/ fragments into
+#    CHANGELOG.md, and opens the PR from a `release/vX.Y.Z` branch. CI runs
+#    on it like any other PR; the compose boot check knows the pinned image
+#    does not exist yet and skips, and the changelog guard knows the release
+#    branch is the one that edits CHANGELOG.md.
 # 2. Queueing that PR (`gh pr merge --squash --auto`, like every PR here)
 #    triggers the `tag` job below once the queue merges it. The trigger is
 #    `pull_request: [closed]`, which the queue fires the same way a direct
@@ -111,42 +112,26 @@ jobs:
             exit 1
           fi
 
-      - name: Require a changelog section for the new version
+      - name: Roll the changelog
         env:
           NEXT: ${{ steps.ver.outputs.next }}
+          BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
-          # v0.3.0 shipped with its upgrade notes stranded under
-          # [Unreleased] (#318). Refuse to open the PR until CHANGELOG.md
-          # has a heading for the version being released.
-          if ! grep -qF "## [${NEXT}]" CHANGELOG.md; then
-            echo "CHANGELOG.md has no \"## [${NEXT}]\" section." >&2
-            echo "Roll the [Unreleased] entries into a dated [${NEXT}] section before running the release bump." >&2
-            exit 1
-          fi
-
-      - name: Require upgrade notes for a minor bump
-        if: ${{ inputs.bump == 'minor' }}
-        env:
-          NEXT: ${{ steps.ver.outputs.next }}
-        run: |
-          set -euo pipefail
-          # Pre-1.0, a minor may break; the changelog header promises such a
-          # release carries an "Upgrade notes" section. The heading-exists
-          # check above cannot see a missing section, which is how the
-          # CREDITS_ENABLED flip nearly shipped without one. A minor with
-          # genuinely nothing to note still gets the section, saying so —
-          # explicit beats absent.
-          section="$(awk -v ver="## [${NEXT}]" '
-            index($0, ver) == 1 {on=1; next}
-            on && /^## \[/ {exit}
-            on {print}
-          ' CHANGELOG.md)"
-          if ! grep -q '^### Upgrade notes' <<< "$section"; then
-            echo "The [${NEXT}] section has no \"### Upgrade notes\"." >&2
-            echo "Minor releases may break (pre-1.0); add the section — \"- None.\" is fine when true." >&2
-            exit 1
-          fi
+          # The release PR is the one place CHANGELOG.md changes. The roll
+          # folds [Unreleased] and every changelog.d/ fragment into a dated
+          # ## [NEXT] section and deletes the fragments (scripts/changelog.py,
+          # changelog.d/README.md). Two guards it keeps from the hand-rolled
+          # days: v0.3.0 shipped with its upgrade notes stranded under
+          # [Unreleased] (#318), so the roll refuses an empty release; and
+          # pre-1.0 a minor may break, so a minor or major refuses without an
+          # "Upgrade notes" entry, which the CREDITS_ENABLED flip nearly
+          # shipped without. "- None." is fine when true; explicit beats
+          # absent.
+          flags=()
+          if [ "${BUMP}" != "patch" ]; then flags+=(--require-upgrade-notes); fi
+          python3 scripts/changelog.py release --version "${NEXT}" --date "$(date -u +%F)" "${flags[@]}"
+          git status --short -- CHANGELOG.md changelog.d
 
       - name: Update server and Swift SDK versions
         run: |
@@ -205,13 +190,14 @@ jobs:
           git add mix.exs apps/fountain/mix.exs sdk/swift/Sources/Fountain/Fountain.swift \
             sdk/swift/Sources/FountainKit/Version.swift \
             docker-compose.yml .env.compose.example render.yaml fly.toml \
-            deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml
+            deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml \
+            CHANGELOG.md changelog.d
           # No [skip ci]: the PR is meant to run CI, and a main push whose
           # tree a PR run already tested is skipped by ci.yml on its own.
           git commit -m "chore(release): ${TAG}"
           git push origin "${BRANCH}"
           cat > "${RUNNER_TEMP}/body.md" <<EOF
-          Version bump for ${TAG}: both \`mix.exs\` files, the two Swift version sources, and the six self-host image pins.
+          Version bump for ${TAG}: both \`mix.exs\` files, the two Swift version sources, the six self-host image pins, and the changelog roll (\`[Unreleased]\` plus every \`changelog.d/\` fragment into \`## [${TAG#v}]\`).
 
           Merging this PR tags the squash commit \`${TAG}\` and dispatches \`release.yml\`, which builds the CLI binaries, publishes \`ghcr.io/managoat/fountain:${TAG}\`, boots it through the documented quick start and creates the GitHub Release.
 
