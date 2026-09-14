@@ -739,7 +739,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
       # The harness starts servers outside Horde, so the registry lookup the
       # public API does would miss it; the call is the same one it makes.
-      :ok = GenServer.call(pid, :terminate_conv)
+      :ok = GenServer.call(pid, {:terminate_conv, []})
 
       assert_receive {:released, conv_id}, 2_000
       assert conv_id == conv.id

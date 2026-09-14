@@ -68,26 +68,16 @@ defmodule Fountain.Conversations.TerminationClientTest do
     end
   end
 
-  describe "rolling deploy" do
-    # A pod that predates #1980 has no `{:terminate_conv, opts}` clause, so the
-    # tuple reaches the `handle_call/3` catch-all and comes back
-    # `{:error, :unknown_call}`. Without the retry the sprite keeps running.
-    test "retries the bare atom when the actor pod does not know the tuple", ctx do
-      pid =
-        probe(ctx.conv.id, fn
-          {:terminate_conv, _opts} -> {:error, :unknown_call}
-          :terminate_conv -> :ok
-        end)
+  describe "supported message contract" do
+    test "an obsolete actor refusal is returned without an unattributed retry", ctx do
+      pid = probe(ctx.conv.id, {:error, :unknown_call})
 
-      assert :ok = ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
+      assert {:error, :unknown_call} =
+               ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
 
-      assert_received {:termination_request, ^pid, {:terminate_conv, _}}
-      assert_received {:termination_request, ^pid, :terminate_conv}
-
-      # The outer audit gates on `result == :ok`, so it only survives the
-      # fallback if the retry actually succeeded.
-      assert [event] = events(ctx)
-      assert event.actor == "ui"
+      assert_received {:termination_request, ^pid, {:terminate_conv, [actor: "ui"]}}
+      refute_received {:termination_request, ^pid, :terminate_conv}
+      assert events(ctx) == []
     end
 
     test "does not retry when the actor pod understands the tuple", ctx do

@@ -61,6 +61,15 @@ upgrade, is in
   the Agent Vault backend removed in #1487, are gone too: a leftover value is
   now ignored like any other unknown variable.
 
+- **Cluster upgrades require a bridge rollout before legacy conversation
+  messages can be removed** (#2099). First replace every server process with
+  a build containing `aecaf345` and `da27fb2c` (for example, `f7706e01`).
+  Confirm older nodes and conversation owners have exited before deploying
+  this release. Termination now requires attribution-bearing tuples, and
+  sandbox-loss messages require sandbox identity. A direct upgrade requires
+  stopping all old cluster processes first. See
+  [Conversation message compatibility](https://managoat.com/docs/guides/operate/upgrade#conversation-message-compatibility).
+
 - **Skill manifests now take precedence over historical skill names** (#2102).
   An absent manifest is upgraded before skill changes; retries cannot reclaim
   a name that Fountain has removed and the user has reused. Invalid manifests

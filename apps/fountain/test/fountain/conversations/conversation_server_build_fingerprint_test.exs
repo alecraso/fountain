@@ -26,7 +26,7 @@ defmodule Fountain.Conversations.ConversationServerBuildFingerprintTest do
     assert sandbox.build_fingerprint == Reapply.fingerprint(env)
     assert sandbox.applied_skills == skills
 
-    GenServer.call(pid, :terminate_conv, 30_000)
+    GenServer.call(pid, {:terminate_conv, []}, 30_000)
   end
 
   test "waking an older disk reconciles skills without inventing a build fingerprint" do
@@ -106,6 +106,6 @@ defmodule Fountain.Conversations.ConversationServerBuildFingerprintTest do
     assert sandbox.build_fingerprint == Reapply.fingerprint(nil)
     assert sandbox.applied_skills == []
 
-    GenServer.call(pid, :terminate_conv, 30_000)
+    GenServer.call(pid, {:terminate_conv, []}, 30_000)
   end
 end

@@ -336,16 +336,7 @@ defmodule Fountain.Conversations.ConversationServer do
           end
 
         pid ->
-          # This pid is routinely on another pod, and mid-deploy some pods
-          # predate the tuple clause: they answer the catch-all with
-          # `:unknown_call`, which would leave the sprite running and billing.
-          # Retry the bare atom they understand. Only that catch-all produces
-          # `:unknown_call` here and it has no side effects, so no double
-          # terminate; #1980 keeps the mirror clause for old-pod callers.
-          case call_server(pid, {:terminate_conv, Keyword.take(opts, [:actor, :request_ip])}) do
-            {:error, :unknown_call} -> call_server(pid, :terminate_conv)
-            other -> other
-          end
+          call_server(pid, {:terminate_conv, Keyword.take(opts, [:actor, :request_ip])})
       end
 
     audit_lifecycle(conv_id, "conversation.terminated", result, opts)
@@ -1369,11 +1360,6 @@ defmodule Fountain.Conversations.ConversationServer do
     {:reply, reply, Pending.into_state(state, pending)}
   end
 
-  # Keep the legacy request during rollout; callers can adopt attribution
-  # only after all nodes understand the tuple form.
-  def handle_call(:terminate_conv, from, state),
-    do: handle_call({:terminate_conv, []}, from, state)
-
   def handle_call({:terminate_conv, opts}, _from, state) when is_list(opts) do
     case prepare_termination(state, opts) do
       {:ok, sandbox} -> terminate_machine(state, sandbox)
@@ -1480,12 +1466,6 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_cast({:sandbox_reset, sandbox_id, reason, by, message}, state) do
     MachineEvents.reset(state, sandbox_id, reason, by, message, &drop_connection/2)
   end
-
-  # Compatibility for senders deployed before the sandbox-qualified message.
-  # Roll out this receiver before migrating senders; the old tuple cannot
-  # distinguish an obsolete sandbox notification from one for this actor.
-  def handle_cast({:machine_gone, event, reason, message}, state),
-    do: handle_cast({:machine_gone, state.sandbox_id, event, reason, message}, state)
 
   def handle_cast({:machine_gone, sandbox_id, event, reason, message}, state) do
     MachineEvents.gone(

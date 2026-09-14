@@ -891,7 +891,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
       assert is_pid(:sys.get_state(pid).acp_peer)
 
-      assert :ok = GenServer.call(pid, :terminate_conv)
+      assert :ok = GenServer.call(pid, {:terminate_conv, []})
 
       # The adapter is EOF'd so it exits rather than lingering on the machine.
       assert_receive :stdin_closed, 1_000

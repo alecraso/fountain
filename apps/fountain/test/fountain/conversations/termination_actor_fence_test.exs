@@ -31,7 +31,7 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
   end
 
   for capacity <- [1, :unbounded] do
-    test "legacy termination fences #{inspect(capacity)} admission before adapter/provider work",
+    test "termination fences #{inspect(capacity)} admission before adapter/provider work",
          ctx do
       expect(Managoat.Sandbox, :close_stdin, fn :adapter ->
         refute Repo.in_transaction?()
@@ -48,7 +48,7 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
         :ok
       end)
 
-      assert {:stop, :normal, :ok, stopped} = terminate(ctx, :terminate_conv)
+      assert {:stop, :normal, :ok, stopped} = terminate(ctx, {:terminate_conv, []})
       assert stopped.current_command == nil
       assert Repo.reload!(ctx.conv).status == "terminated"
       assert Repo.reload!(ctx.sandbox).status == "terminated"
@@ -57,6 +57,16 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
       assert event.actor == "self"
       assert event.metadata["reason"] == "conversation_terminated"
     end
+  end
+
+  test "the obsolete atom cannot terminate a conversation", ctx do
+    reject(Managoat.Sandbox, :destroy, 1)
+
+    assert {:reply, {:error, :unknown_call}, unchanged} = terminate(ctx, :terminate_conv)
+    assert unchanged == ctx.state
+    assert Repo.reload!(ctx.conv).status == "idle"
+    assert Repo.reload!(ctx.sandbox).status == "ready"
+    assert events(ctx) == []
   end
 
   test "the attributed request records the caller on the committed fence", ctx do
@@ -86,7 +96,7 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
       end
 
       reject(Managoat.Sandbox, :destroy, 1)
-      assert {:stop, :normal, :ok, stopped} = terminate(ctx, :terminate_conv)
+      assert {:stop, :normal, :ok, stopped} = terminate(ctx, {:terminate_conv, []})
       assert stopped.handle == nil
       assert Repo.reload!(ctx.conv).status == "terminated"
       assert Repo.reload!(ctx.sandbox).status == "ready"
@@ -100,7 +110,10 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
     {:ok, _} = Conversations.update_conversation(ctx.conv, %{sandbox_id: replacement.id})
     reject(Managoat.Sandbox, :close_stdin, 1)
     reject(Managoat.Sandbox, :destroy, 1)
-    assert {:reply, {:error, :sandbox_unavailable}, unchanged} = terminate(ctx, :terminate_conv)
+
+    assert {:reply, {:error, :sandbox_unavailable}, unchanged} =
+             terminate(ctx, {:terminate_conv, []})
+
     assert unchanged == ctx.state
     assert Repo.reload!(ctx.conv).status == "idle"
     refute Repo.reload!(ctx.sandbox).reset_requested_at
@@ -135,7 +148,9 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
         end)
       end
 
-      assert {:stop, :normal, {:error, :sandbox_unavailable}, _} = terminate(ctx, :terminate_conv)
+      assert {:stop, :normal, {:error, :sandbox_unavailable}, _} =
+               terminate(ctx, {:terminate_conv, []})
+
       assert_received {:replacement_turn, turn}
       assert Repo.reload!(turn) == turn
       assert Repo.reload!(ctx.conv).sandbox_id == replacement.id
@@ -154,7 +169,9 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
       :ok
     end)
 
-    assert {:stop, :normal, {:error, :sandbox_unavailable}, _} = terminate(ctx, :terminate_conv)
+    assert {:stop, :normal, {:error, :sandbox_unavailable}, _} =
+             terminate(ctx, {:terminate_conv, []})
+
     assert Repo.reload(ctx.conv) == nil
     assert Repo.reload!(ctx.sandbox).status == "terminated"
     assert termination_stages(ctx) == []
@@ -165,7 +182,7 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
     reject(Managoat.Sandbox, :destroy, 1)
 
     assert {:ok, {:reply, {:error, :provider_transaction_open}, unchanged}} =
-             Repo.transaction(fn -> terminate(ctx, :terminate_conv) end)
+             Repo.transaction(fn -> terminate(ctx, {:terminate_conv, []}) end)
 
     assert unchanged == ctx.state
     assert Repo.reload!(ctx.conv).status == "idle"
@@ -176,13 +193,16 @@ defmodule Fountain.Conversations.TerminationActorFenceTest do
     Repo.delete!(ctx.sandbox)
     reject(Managoat.Sandbox, :close_stdin, 1)
     reject(Managoat.Sandbox, :destroy, 1)
-    assert {:reply, {:error, :sandbox_unavailable}, unchanged} = terminate(ctx, :terminate_conv)
+
+    assert {:reply, {:error, :sandbox_unavailable}, unchanged} =
+             terminate(ctx, {:terminate_conv, []})
+
     assert unchanged == ctx.state
   end
 
   test "a provider error still retires the fenced row for reconciliation", ctx do
     expect(Managoat.Sandbox, :destroy, fn _ -> {:error, :unavailable} end)
-    assert {:stop, :normal, :ok, _} = terminate(ctx, :terminate_conv)
+    assert {:stop, :normal, :ok, _} = terminate(ctx, {:terminate_conv, []})
     assert Repo.reload!(ctx.sandbox).status == "terminated"
     assert Repo.reload!(ctx.sandbox).reset_requested_at
   end
