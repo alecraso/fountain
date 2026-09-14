@@ -299,7 +299,10 @@ placeholder that keeps the vendor's prefix, such as
 `sk-ant-oat01-__claude_code_oauth_token__`.
 
 After a conversation, `GET /api/conversations/:id/egress` lists what left the
-sandbox through the broker. Each row shows the host, the binding that matched
+sandbox through the broker. URL paths, queries and fragments are withheld.
+The `path` field contains `/[REDACTED]`, including for older rows. A credential
+can be part of any path segment, even the first. Each row shows the host, the
+binding that matched
 and so the credential attached, the status, and the latency. A row for a host
 you allowed, but bound no credential to, names no binding. A refused host
 shows the refusal. The broker writes a row when the request ends, so a long

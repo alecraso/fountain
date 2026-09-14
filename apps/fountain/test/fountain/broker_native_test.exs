@@ -541,7 +541,7 @@ defmodule Fountain.BrokerNativeTest do
       assert {:ok, %{events: [event], next: nil}} = Broker.request_log(conv.id)
       assert event.method == "GET"
       assert event.host == "api.github.com"
-      assert event.path == "/user"
+      assert event.path == "/[REDACTED]"
       assert event.service == "github-api"
 
       # The names of the variables whose values were attached, never a value.
@@ -617,8 +617,8 @@ defmodule Fountain.BrokerNativeTest do
           })
         end)
 
-      assert log =~ "broker: conv conv-1 GET api.github.com/user injected github-api"
-      assert log =~ "broker: conv conv-1 POST example.com/x denied"
+      assert log =~ "broker: conv conv-1 GET api.github.com/[REDACTED] injected github-api"
+      assert log =~ "broker: conv conv-1 POST example.com/[REDACTED] denied"
       refute log =~ "secret"
     end
   end
@@ -640,7 +640,7 @@ defmodule Fountain.BrokerNativeTest do
       {:ok, rig: Fountain.BrokerProxyRig.start()}
     end
 
-    test "a tunnelled request logs its path and drops the query", ctx do
+    test "a tunnelled request redacts its path and drops the query", ctx do
       %{user: user, conv: conv, rig: rig} = ctx
       {:ok, session} = Broker.prepare(conv.id, %{}, %{}, user_id: user.id)
 
@@ -658,8 +658,52 @@ defmodule Fountain.BrokerNativeTest do
       assert echo["query"] == "access_token=squirrel_in_the_query"
 
       assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
-      assert event.path == "/user"
+      assert event.path == "/[REDACTED]"
       refute inspect(event) =~ "squirrel_in_the_query"
+    end
+
+    for target <- [
+          "/bot8199:telegram-path-secret/sendMessage?key=query-secret",
+          "/signed-first-secret/resource/arbitrary-segment-secret?signature=query-secret"
+        ] do
+      test "raw credentials in #{target} reach the origin but never Logger or stored rows", ctx do
+        %{user: user, conv: conv, rig: rig} = ctx
+        {:ok, session} = Broker.prepare(conv.id, %{}, %{}, user_id: user.id)
+        target = unquote(target)
+        previous = Logger.level()
+        Logger.configure(level: :info)
+        on_exit(fn -> Logger.configure(level: previous) end)
+
+        log =
+          capture_log(fn ->
+            echo =
+              rig
+              |> Fountain.BrokerProxyRig.tunnel(session)
+              |> Fountain.BrokerProxyRig.request(
+                "GET #{target} HTTP/1.1\r\n" <>
+                  "Host: #{rig.origin_host}\r\nConnection: close\r\n\r\n"
+              )
+
+            assert echo["path"] == URI.parse(target).path
+            assert echo["query"] == URI.parse(target).query
+            assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
+            assert event.path == "/[REDACTED]"
+            assert event.method == "GET"
+            assert event.host == "localhost"
+            assert event.status == 200
+            assert is_integer(event.latency_ms)
+          end)
+
+        assert log =~ "GET localhost/[REDACTED] passthrough"
+        row = Repo.one!(Fountain.Broker.Native.Request)
+        assert row.path == "/[REDACTED]"
+
+        for secret <-
+              ~w(telegram-path-secret signed-first-secret arbitrary-segment-secret query-secret) do
+          refute log =~ secret
+          refute inspect(row) =~ secret
+        end
+      end
     end
 
     test "so does an absolute-form plain request", ctx do
@@ -678,7 +722,7 @@ defmodule Fountain.BrokerNativeTest do
       assert echo["query"] == "access_token=squirrel_in_the_query"
 
       assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
-      assert event.path == "/user"
+      assert event.path == "/[REDACTED]"
       refute inspect(event) =~ "squirrel_in_the_query"
     end
   end
@@ -833,7 +877,7 @@ defmodule Fountain.BrokerNativeTest do
       {:ok, rig: Fountain.BrokerProxyRig.start()}
     end
 
-    test "is substituted in the path and the query, and logged as the placeholder", ctx do
+    test "is substituted in the path and the query, and redacted from the log", ctx do
       %{user: user, conv: conv, rig: rig} = ctx
       placeholder = Broker.placeholder("TELEGRAM_TOKEN")
 
@@ -859,11 +903,10 @@ defmodule Fountain.BrokerNativeTest do
       assert echo["path"] == "/bot8199:tg-secret-value/sendMessage"
       assert echo["query"] == "key=8199:tg-secret-value"
 
-      # Telemetry is derived from the target the client sent, before
-      # substitution, so a placeholder in a path is logged as the placeholder
-      # and a placeholder in a query is not logged at all.
+      # The origin receives the substituted credential, while the log
+      # withholds the whole path even when the client used a placeholder.
       assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
-      assert event.path == "/bot#{placeholder}/sendMessage"
+      assert event.path == "/[REDACTED]"
       assert event.service == "telegram-token-localhost-#{rig.origin_port}"
       assert event.credential_keys == ["TELEGRAM_TOKEN"]
       assert event.status == 200
