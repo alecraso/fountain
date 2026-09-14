@@ -123,6 +123,7 @@ public struct BlockKind: WireValue {
   public static let error: Self = "error"
   public static let raw: Self = "raw"
   public static let permissionRequest: Self = "permission_request"
+  public static let plan: Self = "plan"
 }
 
 public struct EventKind: WireValue {

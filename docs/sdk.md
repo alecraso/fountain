@@ -491,9 +491,9 @@ connection drops mid-turn.
 
 ## Credit error migration
 
-This change prepares TypeScript 2.0.0, Python 0.3.0 and Elixir 0.3.0.
-These are upcoming breaking releases; this cleanup does not publish packages.
-Replace subscription-era error checks with the credit names below.
+The credit error names start at TypeScript 2.0.0, Python 0.3.0, Elixir 0.3.0
+and Swift 0.17.0. The first three SDKs have independent version lines; Swift
+releases with the server. Replace subscription-era checks with the names below.
 
 | Client | Removed name | Credit error | Purchase URL |
 |---|---|---|---|
@@ -510,6 +510,5 @@ release containing the credit-only server contract (`c3349343`).
 `subscription_required` has no special mapping; it follows the HTTP status.
 The response still exposes its original code and purchase URL.
 
-Swift's next package tag containing this change must be a breaking minor
-release while the package is 0.x. Until then, use a reviewed commit to adopt
-the new source API. Existing tags keep their original error names.
+Swift v0.17.0 includes these source API changes. Earlier tags keep their
+original error names.
