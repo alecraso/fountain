@@ -82,14 +82,22 @@ defmodule Fountain.SandboxSkillsTest do
   test "a nil skills list mounts the bundled skills alone" do
     test = self()
     stub(Managoat.Sandbox, :exec, fn _, _, _, _ -> {:ok, "", 0} end)
-    stub(Managoat.Sandbox, :write_file, fn _h, path, _b -> send(test, {:wrote, path}) && :ok end)
+
+    stub(Managoat.Sandbox, :write_file, fn _h, path, _b ->
+      assert path in [
+               "/home/sprite/.codex/skills/fountain/SKILL.md",
+               "/home/sprite/.codex/skills/create-team/SKILL.md",
+               "/home/sprite/.codex/skills/.fountain-managed-skills"
+             ]
+
+      send(test, {:wrote, path})
+      :ok
+    end)
 
     assert :ok = SandboxSkills.mount(@handle, "codex", nil)
     assert_receive {:wrote, "/home/sprite/.codex/skills/fountain/SKILL.md"}
     assert_receive {:wrote, "/home/sprite/.codex/skills/create-team/SKILL.md"}
     assert_receive {:wrote, "/home/sprite/.codex/skills/.fountain-managed-skills"}
-    assert_receive {:wrote, "/home/sprite/.codex/skills/.fountain-managed-skills"}
-    refute_receive {:wrote, _}
   end
 
   defmodule DiskRuntime do

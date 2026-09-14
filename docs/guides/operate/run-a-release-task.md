@@ -74,8 +74,9 @@ GitHub source-lock entries for unnamed skills. Once a manifest exists, it is
 authoritative: retries do not merge old names back into it. This protects a
 personal file placed under a name that Fountain previously removed.
 
-The applied selection advances only after reconciliation succeeds. A failed
-ownership write leaves the old skills in place. Unknown historical ownership
+Wake records the applied selection only after reconciliation succeeds. Fresh
+provision can record that selection after a best-effort mount, so the database
+field alone does not prove that installation completed. Unknown historical ownership
 returns `legacy_skill_ownership_unknown` and leaves the manifest absent. This
 includes unnamed legacy GitHub skills without source-lock evidence, and disks
 with neither an applied selection nor a historical Agent version. Restore the original source lock from a
@@ -84,6 +85,32 @@ ownership. An invalid manifest returns `invalid_skill_manifest` without skill
 writes or deletion. Preserve it for investigation and restore a known valid
 backup or rebuild. Removing it would cause legacy recovery to run again.
 Reconciliation never supplies an absent build fingerprint.
+
+Reconciliation and manifest upgrades lock the sandbox across connected application
+nodes. Concurrent calls return `skill_reconciliation_busy` without changing files.
+
+Before each GitHub install, the manifest records the source and the names
+already on disk and in its source lock. Each install commits its discovered names before the next
+install starts. An interrupted install leaves a `pending` manifest. Automatic
+retries refuse this state with `skill_installation_incomplete` and preserve it.
+Remote installation can continue after its application caller dies. Before an
+explicit upgrade, quiesce the sandbox and stop all surviving remote installers.
+Operator recovery uses only new source-lock names for newly created directories. Stale lock
+entries cannot establish ownership of personal replacements. Inline destinations
+are recorded before their files are written. Completed manifests still use
+the existing ownership map and never merge historical names back into it.
+
+If new files lack new source-lock evidence, the explicit upgrade returns
+`skill_installation_incomplete`. Preserve the pending manifest and files.
+Restore trustworthy install evidence or use the explicit rebuild path below.
+Do not replace the pending manifest with an empty map.
+Failed ownership commits retain their evidence for operator recovery, even if
+the next selection removes the interrupted skill. A malformed or partial manifest fails closed
+with `invalid_skill_manifest` and needs a known valid backup or rebuild.
+
+Older releases do not understand the pending format. Stop old processes that
+can reconcile a disk before that disk resumes skill changes on the new release.
+For shared sandboxes, include every conversation owner in that check.
 
 To apply a different configuration, start a new conversation on a fresh
 sandbox, without an explicit old `sandbox_id`. A persistent agent home can
@@ -129,8 +156,8 @@ handle = Managoat.Sandbox.build_handle(
 SandboxSkills.manifest_status(handle, conv.runtime)
 ```
 
-The result is `{:ok, :present}`, `{:ok, :missing}`, `{:ok, :invalid}`, or a
-provider error. It contains no skill contents. The command reads the actual
+The result is `{:ok, :present}`, `{:ok, :missing}`, `{:ok, :pending}`,
+`{:ok, :invalid}`, or a provider error. It contains no skill contents. The command reads the actual
 provider disk and can wake a suspended machine; it does not write files or
 change database status. A sleeping or offline disk that has not been inspected
 remains unverified. Record the sandbox ID, runtime, observation time and result
@@ -148,12 +175,15 @@ SandboxSkills.upgrade_manifest(handle, conv.runtime, previous)
 SandboxSkills.manifest_status(handle, conv.runtime)
 ```
 
-Confirm that either the applied selection or the historical Agent version
-exists before this manual upgrade. With neither, ownership is unknown; restore
+For an absent manifest, confirm that either the applied selection or the
+historical Agent version exists. With neither, ownership is unknown; restore
 that evidence or rebuild. Do not substitute the current Agent's skills.
-`upgrade_manifest/3` leaves a valid existing manifest unchanged and is safe to
-retry while the disk remains quiesced. It changes no build fingerprint or
-`applied_skills` database field. Resume through normal wake to reconcile the
+`upgrade_manifest/3` leaves a completed valid manifest unchanged. It can also
+recover ownership for a pending install after all remote installers stop. It
+does not install or delete skills. That pending record carries its own provenance and needs no historical Agent
+version. Both operations are safe to retry while the disk remains quiesced.
+They change no build fingerprint or `applied_skills` database field.
+Resume through normal wake to reconcile the
 selected skills and record them after success.
 
 Keep separate evidence for absent build fingerprints, applied selections and

@@ -71,7 +71,7 @@ defmodule Fountain.SandboxSkills do
   rebuilt. Reconciling deletes what Fountain put there and is no longer
   selected, and only that.
 
-  Three things make "only that" true:
+  Ownership comes from these records:
 
   - **A manifest, written at the skills root.** It maps each selected skill
     to the directory names its install produced, so a later pass knows what
@@ -85,6 +85,12 @@ defmodule Fountain.SandboxSkills do
     A present manifest is authoritative; historical names are never merged
     back into it. Anything neither can account for is left where
     it is: an entry with no ownership record is somebody else's.
+  - **An install in progress.** Before a GitHub install starts, the manifest
+    records its source and the names already on disk. Each install commits
+    its discovered names before the next one starts. Automatic retries refuse
+    pending installs: remote execution may outlive its caller. An explicit
+    upgrade on a quiesced sandbox recovers new names from new source-lock
+    evidence; ambiguous or missing evidence stops the upgrade.
   - **Only direct children of the skills root are ever removed**, each one
     matched against a conservative name pattern. Neither a forged manifest
     nor a legacy skill name can turn reconciliation into a delete somewhere
@@ -114,6 +120,13 @@ defmodule Fountain.SandboxSkills do
 
   def reconcile(handle, runtime_module, skills, previous) when is_atom(runtime_module) do
     root = runtime_module.skills_root()
+
+    with_skill_lock(handle, root, fn ->
+      do_reconcile(handle, runtime_module, root, skills, previous)
+    end)
+  end
+
+  defp do_reconcile(handle, runtime_module, root, skills, previous) do
     manifest = Path.join(root, @manifest_name)
     selected = bundled() ++ (skills || [])
 
@@ -121,23 +134,24 @@ defmodule Fountain.SandboxSkills do
          obsolete = obsolete_names(managed, selected),
          {:ok, _} <- run(handle, remove(root, obsolete)),
          {:ok, installed} <- install_selected(handle, runtime_module, root, selected, managed) do
-      Managoat.Sandbox.write_file(handle, manifest, Jason.encode!(installed))
+      write_manifest(handle, manifest, installed)
     end
   end
 
   @doc """
   Inspect the ownership manifest using an already-owned sandbox handle.
 
-  Returns `:missing`, `:present` or `:invalid`, never skill contents. This
-  performs provider I/O and can wake a sleeping disk. It does not install,
+  Returns `:missing`, `:present`, `:pending` or `:invalid`, never skill contents.
+  This performs provider I/O and can wake a sleeping disk. It does not install,
   delete or write anything, and says nothing about build fingerprints.
   """
   @spec manifest_status(Managoat.Sandbox.Handle.t(), String.t() | module()) ::
-          {:ok, :missing | :present | :invalid} | {:error, term()}
+          {:ok, :missing | :present | :pending | :invalid} | {:error, term()}
   def manifest_status(handle, runtime) do
     with {:ok, module} <- runtime_module(runtime) do
       case read_manifest(handle, Path.join(module.skills_root(), @manifest_name)) do
         {:ok, nil} -> {:ok, :missing}
+        {:ok, {:pending, _, _}} -> {:ok, :pending}
         {:ok, _managed} -> {:ok, :present}
         {:error, :invalid_skill_manifest} -> {:ok, :invalid}
         {:error, _} = error -> error
@@ -151,18 +165,40 @@ defmodule Fountain.SandboxSkills do
   `previous` must be the recorded applied selection or the conversation's
   historical Agent version, never the agent's current mutable configuration.
   Names and matching GitHub source-lock entries seed an absent manifest.
-  Present valid manifests are left byte-for-byte unchanged; invalid manifests
-  are refused. Repeating this after reconciliation cannot reclaim names that
-  Fountain has since removed. Call through the conversation's serialized wake
-  path, or with the machine quiesced so no reconciliation races the migration.
+  Completed valid manifests are left byte-for-byte unchanged; invalid manifests
+  are refused. An interrupted install recovers only its recorded source and
+  newly created names before committing ownership. A completed reconciliation
+  cannot reclaim names that Fountain has since removed. This is an operator
+  command: quiesce the machine and stop any surviving remote installers before
+  recovering a pending install. A caller dying does not stop remote execution.
   """
   @spec upgrade_manifest(Managoat.Sandbox.Handle.t(), String.t() | module(), [map()] | nil) ::
           :ok | {:error, term()}
   def upgrade_manifest(handle, runtime, previous) do
-    with {:ok, module} <- runtime_module(runtime),
-         {:ok, _} <-
-           ensure_manifest(handle, Path.join(module.skills_root(), @manifest_name), previous) do
-      :ok
+    with {:ok, module} <- runtime_module(runtime) do
+      root = module.skills_root()
+
+      with_skill_lock(handle, root, fn ->
+        with {:ok, _} <- ensure_manifest(handle, Path.join(root, @manifest_name), previous, true),
+             do: :ok
+      end)
+    end
+  end
+
+  # Conversation processes can share a sandbox. Use the sandbox identity across
+  # connected nodes, not the conversation, and refuse competing mutations.
+  defp with_skill_lock(handle, root, fun) do
+    lock = {{__MODULE__, handle.provider, handle.name, root}, self()}
+    nodes = [node() | Node.list()]
+
+    if :global.set_lock(lock, nodes, 0) do
+      try do
+        fun.()
+      after
+        :global.del_lock(lock, nodes)
+      end
+    else
+      {:error, :skill_reconciliation_busy}
     end
   end
 
@@ -171,18 +207,58 @@ defmodule Fountain.SandboxSkills do
   defp runtime_module(runtime),
     do: Fountain.RuntimeDispatch.for_agent(%{runtime: runtime, user_id: nil})
 
-  defp ensure_manifest(handle, manifest, previous) do
-    with {:ok, managed} <- read_manifest(handle, manifest) do
-      if is_nil(managed) do
+  defp ensure_manifest(handle, manifest, previous, recover_pending \\ false) do
+    case read_manifest(handle, manifest) do
+      {:ok, nil} ->
         with {:ok, recovered} <- legacy_manifest(handle, previous),
-             :ok <- Managoat.Sandbox.write_file(handle, manifest, Jason.encode!(recovered)) do
+             :ok <- write_manifest(handle, manifest, recovered) do
           {:ok, recovered}
         end
-      else
-        {:ok, managed}
-      end
+
+      {:ok, {:pending, managed, pending}} when recover_pending ->
+        recover_install(handle, manifest, managed, pending)
+
+      {:ok, {:pending, _, _}} ->
+        {:error, :skill_installation_incomplete}
+
+      result ->
+        result
     end
   end
+
+  defp recover_install(handle, manifest, managed, pending) do
+    with {:ok, current} <- run(handle, listing(Path.dirname(manifest))),
+         added = entries(current) -- pending["before"],
+         {:ok, recovered} <- interrupted_names(handle, pending, added),
+         key = identity(pending),
+         next = Map.put(managed, key, Enum.uniq(recovered ++ Map.get(managed, key, []))),
+         :ok <- write_manifest(handle, manifest, next) do
+      {:ok, next}
+    end
+  end
+
+  defp interrupted_names(_handle, %{"name" => name}, _added) when is_binary(name),
+    do: {:ok, [name]}
+
+  # No new names means execution never started, or only rewrote existing files.
+  # Otherwise the recorded source's lock entries must identify the new names:
+  # do not adopt arbitrary files created while the sandbox was unattended.
+  defp interrupted_names(_handle, _pending, []), do: {:ok, []}
+
+  defp interrupted_names(handle, pending, added) do
+    with {:ok, recovered} <- legacy_manifest(handle, [pending]),
+         names = Enum.filter(Map.fetch!(recovered, identity(pending)), &(&1 in added)),
+         false <- names == [] or Enum.any?(names, &(&1 in pending["locked_before"])) do
+      {:ok, names}
+    else
+      {:error, :legacy_skill_ownership_unknown} -> {:error, :skill_installation_incomplete}
+      true -> {:error, :skill_installation_incomplete}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp write_manifest(handle, path, state),
+    do: Managoat.Sandbox.write_file(handle, path, Jason.encode!(state))
 
   defp read_manifest(handle, manifest) do
     # The newline distinguishes an empty (invalid) file from an absent file.
@@ -222,22 +298,7 @@ defmodule Fountain.SandboxSkills do
     if unnamed == [] do
       {:ok, named_manifest(previous)}
     else
-      script = ~S"""
-      if [ -n "${XDG_STATE_HOME:-}" ]; then
-        skills_lock="$XDG_STATE_HOME/skills/.skill-lock.json"
-      else
-        skills_lock="$HOME/.agents/.skill-lock.json"
-      fi
-      if [ -f "$skills_lock" ]; then cat -- "$skills_lock"; fi
-      """
-
-      with {:ok, raw} <- run(handle, script) do
-        locked =
-          case Jason.decode(raw) do
-            {:ok, %{"skills" => skills}} when is_map(skills) -> skills
-            _ -> %{}
-          end
-
+      with {:ok, locked} <- source_lock(handle) do
         recovered =
           Map.new(unnamed, fn entry ->
             names =
@@ -261,14 +322,51 @@ defmodule Fountain.SandboxSkills do
     end
   end
 
+  defp source_lock(handle, strict \\ false) do
+    script = ~S"""
+    if [ -n "${XDG_STATE_HOME:-}" ]; then
+      skills_lock="$XDG_STATE_HOME/skills/.skill-lock.json"
+    else
+      skills_lock="$HOME/.agents/.skill-lock.json"
+    fi
+    if [ -f "$skills_lock" ]; then cat -- "$skills_lock"; fi
+    """
+
+    with {:ok, raw} <- run(handle, script) do
+      case Jason.decode(raw) do
+        {:ok, %{"skills" => skills}} when is_map(skills) -> {:ok, skills}
+        _ when raw == "" or not strict -> {:ok, %{}}
+        _ -> {:error, :skill_installation_incomplete}
+      end
+    end
+  end
+
+  defp locked_names_before(_handle, %{"name" => name}) when is_binary(name), do: {:ok, []}
+
+  defp locked_names_before(handle, skill) do
+    with {:ok, locked} <- source_lock(handle, true) do
+      {:ok,
+       Enum.flat_map(locked, fn
+         {name, %{"source" => source, "sourceType" => "github"}} ->
+           if source == skill["source"] and safe_name?(name), do: [name], else: []
+
+         _ ->
+           []
+       end)}
+    end
+  end
+
   defp decode_manifest(""), do: {:ok, nil}
 
   defp decode_manifest(raw) do
     case Jason.decode(raw) do
+      {:ok, %{"version" => 1, "managed" => managed, "installing" => pending}} ->
+        if valid_managed?(managed) and valid_pending?(pending),
+          do: {:ok, {:pending, managed, pending}},
+          else: {:error, :invalid_skill_manifest}
+
       {:ok, map} when is_map(map) ->
-        if Enum.all?(map, fn {_key, values} ->
-             is_list(values) and Enum.all?(values, &safe_name?/1)
-           end) do
+        if valid_managed?(map) do
           {:ok, map}
         else
           {:error, :invalid_skill_manifest}
@@ -278,6 +376,24 @@ defmodule Fountain.SandboxSkills do
         {:error, :invalid_skill_manifest}
     end
   end
+
+  defp valid_managed?(map) when is_map(map),
+    do: Enum.all?(map, fn {_key, values} -> valid_names?(values) end)
+
+  defp valid_managed?(_), do: false
+
+  defp valid_pending?(%{
+         "source" => source,
+         "name" => name,
+         "before" => before,
+         "locked_before" => locked
+       }),
+       do:
+         is_binary(source) and source != "" and (is_nil(name) or safe_name?(name)) and
+           valid_names?(before) and valid_names?(locked)
+
+  defp valid_pending?(_), do: false
+  defp valid_names?(values), do: is_list(values) and Enum.all?(values, &safe_name?/1)
 
   # A name is obsolete when it belonged to a skill that is no longer selected
   # and no selected skill claims it. Two skills can produce the same directory
@@ -294,17 +410,25 @@ defmodule Fountain.SandboxSkills do
 
     # GitHub installs first, as in the library: their blocking exec is also the
     # readiness barrier before the sandbox accepts inline file writes.
-    Enum.reduce_while(remote ++ inline, {:ok, %{}}, fn skill, {:ok, installed} ->
-      case install_skill(handle, runtime, root, skill, managed) do
-        {:ok, names} -> {:cont, {:ok, Map.put(installed, identity(skill), names)}}
-        {:error, _} = error -> {:halt, error}
-      end
-    end)
+    result =
+      Enum.reduce_while(remote ++ inline, {:ok, managed}, fn skill, {:ok, installed} ->
+        case install_skill(handle, runtime, root, skill, installed) do
+          {:ok, next} -> {:cont, {:ok, next}}
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
+
+    with {:ok, installed} <- result,
+         do: {:ok, Map.take(installed, Enum.map(normalize(selected), &identity/1))}
   end
 
-  defp install_skill(handle, runtime, _root, %{"content" => _} = skill, _managed) do
-    with :ok <- Managoat.Runtimes.Skills.install(handle, [skill], runtime: runtime),
-         do: {:ok, names(skill)}
+  defp install_skill(handle, runtime, root, %{"content" => _} = skill, managed) do
+    next = Map.put(managed, identity(skill), names(skill))
+
+    # Inline installs have an explicit destination: record it before writing.
+    with :ok <- write_manifest(handle, Path.join(root, @manifest_name), next),
+         :ok <- Managoat.Runtimes.Skills.install(handle, [skill], runtime: runtime),
+         do: {:ok, next}
   end
 
   # A remote install names its own directories, so they are read off the disk
@@ -312,14 +436,32 @@ defmodule Fountain.SandboxSkills do
   # too, so a reinstall the network refused does not make the copy on disk
   # look unowned and get deleted on the next pass.
   defp install_skill(handle, runtime, root, skill, managed) do
+    manifest = Path.join(root, @manifest_name)
+
     with {:ok, before} <- run(handle, listing(root)),
+         {:ok, locked} <- locked_names_before(handle, skill),
+         pending = %{
+           "source" => skill["source"],
+           "name" => skill["name"],
+           "before" => entries(before),
+           "locked_before" => locked
+         },
+         :ok <-
+           write_manifest(handle, manifest, %{
+             "version" => 1,
+             "managed" => managed,
+             "installing" => pending
+           }),
          :ok <- Managoat.Runtimes.Skills.install(handle, [skill], runtime: runtime),
-         {:ok, after_install} <- run(handle, listing(root)) do
-      {:ok,
-       Enum.uniq(
-         (entries(after_install) -- entries(before)) ++
-           names(skill) ++ Map.get(managed, identity(skill), [])
-       )}
+         {:ok, after_install} <- run(handle, listing(root)),
+         owned =
+           Enum.uniq(
+             (entries(after_install) -- entries(before)) ++
+               names(skill) ++ Map.get(managed, identity(skill), [])
+           ),
+         next = Map.put(managed, identity(skill), owned),
+         :ok <- write_manifest(handle, manifest, next) do
+      {:ok, next}
     end
   end
 
