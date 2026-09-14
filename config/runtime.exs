@@ -1020,16 +1020,6 @@ config :fountain, :credits,
   turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
   packs_cents: credit_packs
 
-# Claimable principals (ADR 0044). Defaults match config.exs; a deployment
-# that opens none of these never has to set any of them.
-config :fountain, Fountain.Principals,
-  default_ttl_seconds: whole_number.("PRINCIPAL_DEFAULT_TTL_SECONDS", 86_400),
-  max_ttl_seconds: whole_number.("PRINCIPAL_MAX_TTL_SECONDS", 604_800),
-  max_grant_cents: whole_number.("PRINCIPAL_MAX_GRANT_CENTS", 500),
-  max_outstanding_per_application: whole_number.("PRINCIPAL_MAX_OUTSTANDING", 500),
-  max_created_per_hour: whole_number.("PRINCIPAL_MAX_PER_HOUR", 500),
-  purge_after_days: whole_number.("PRINCIPAL_PURGE_AFTER_DAYS", 7)
-
 # Platform inference keys (#1388, ADR 0038 decision 3, amending ADR 0008).
 #
 # Fountain runs a tenant's agent on one of these when the tenant has no
@@ -1058,17 +1048,6 @@ config :fountain,
 config :fountain,
        :platform_inference_daily_cents,
        whole_number.("PLATFORM_INFERENCE_DAILY_CENTS", 5_000)
-
-# The deployment's ChatGPT grant for the codex runtime (ADR 0047), connected
-# from /admin/inference. Fountain refreshes the access token this many seconds
-# ahead of its expiry — it must exceed the longest turn the deployment expects,
-# because codex cannot refresh in this mode and a turn that outlives the token
-# fails at the proxy — and renews a grant nobody has used for this many days,
-# so it never idles past the auth server's eight-day window.
-config :fountain,
-  platform_chatgpt_refresh_margin_seconds:
-    whole_number.("PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS", 900),
-  platform_chatgpt_keepalive_days: whole_number.("PLATFORM_CHATGPT_KEEPALIVE_DAYS", 6)
 
 # Per-model inference rates, overriding the compiled card in
 # `Fountain.Credits.InferenceRates`. One entry per comma:

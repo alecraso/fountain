@@ -30,7 +30,7 @@ defmodule Fountain.ChatGPTAccounts do
   current access token on `chatgpt.com` (`Fountain.Broker`).
 
     * `platform_access_token/0` -- the current access token, refreshed when
-      it is within `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS` of its expiry,
+      it is within `platform_refresh_margin_seconds/0` of its expiry,
       through `Fountain.PlatformChatGPT.Refresher` so the deployment's many
       conversations queue on one round-trip rather than each making their
       own. The rotated refresh token is persisted *before* the new access
@@ -48,7 +48,7 @@ defmodule Fountain.ChatGPTAccounts do
       admin mutations, each leaving an `admin.platform_chatgpt.*` row on the
       privilege trail. Never a token, never a claim that is a secret.
     * `platform_keepalive/0` -- refresh a grant nobody has used for
-      `PLATFORM_CHATGPT_KEEPALIVE_DAYS`, so it never idles past the auth
+      `platform_keepalive_days/0`, so it never idles past the auth
       server's window (`Fountain.Workers.PlatformChatGPTKeepalive`).
     * `platform_status/0` -- what the admin page shows.
 
@@ -543,7 +543,7 @@ defmodule Fountain.ChatGPTAccounts do
   # ── refresh ──────────────────────────────────────────────────────────────
 
   @doc """
-  Refresh the grant now if nobody has for `PLATFORM_CHATGPT_KEEPALIVE_DAYS`,
+  Refresh the grant now if nobody has for `platform_keepalive_days/0`,
   whatever the access token's expiry says. `{:ok, :refreshed}`,
   `{:ok, :skipped}` (nothing to do: not connected, not a refreshable grant,
   or renewed recently), or the refresh's error.
@@ -893,23 +893,23 @@ defmodule Fountain.ChatGPTAccounts do
     DateTime.diff(DateTime.utc_now(), at, :day) >= platform_keepalive_days()
   end
 
-  @doc "How far ahead of the access token's expiry a refresh happens (`PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS`, default 900)."
+  @doc """
+  How far ahead of the access token's expiry a refresh happens: fifteen
+  minutes. It must exceed the longest turn the deployment expects, because
+  codex cannot refresh in this mode and a turn that outlives the token fails
+  at the proxy. It used to be `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS`;
+  nobody set it.
+  """
   @spec platform_refresh_margin_seconds() :: non_neg_integer()
-  def platform_refresh_margin_seconds do
-    case Application.get_env(:fountain, :platform_chatgpt_refresh_margin_seconds) do
-      n when is_integer(n) and n >= 0 -> n
-      _ -> 900
-    end
-  end
+  def platform_refresh_margin_seconds, do: 900
 
-  @doc "How long a grant may go unrefreshed before the keepalive renews it (`PLATFORM_CHATGPT_KEEPALIVE_DAYS`, default 6)."
+  @doc """
+  How long a grant may go unrefreshed before the keepalive renews it: six
+  days, inside the auth server's eight-day window. It used to be
+  `PLATFORM_CHATGPT_KEEPALIVE_DAYS`; nobody set it.
+  """
   @spec platform_keepalive_days() :: non_neg_integer()
-  def platform_keepalive_days do
-    case Application.get_env(:fountain, :platform_chatgpt_keepalive_days) do
-      n when is_integer(n) and n >= 0 -> n
-      _ -> 6
-    end
-  end
+  def platform_keepalive_days, do: 6
 
   # A workspace token is opaque or a JWT; either way the account id comes
   # from the token's claims when it has them, else from the admin.

@@ -163,12 +163,6 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `BUZZ_IDENTITY_CEILING` | `10` | No. | The most hosted Buzz agents one account may run at once. Each one is a permanent process on the Fountain pods. |
 | `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
 | `CREDIT_PACKS_CENTS` | `1000,2500,10000` | No. | The credit packs a tenant can buy, in cents, as a list. |
-| `PRINCIPAL_DEFAULT_TTL_SECONDS` | `86400` | No. | How long a claimable principal lasts when the application names no `expires_in`. |
-| `PRINCIPAL_MAX_TTL_SECONDS` | `604800` | No. | The longest a claimable principal may last. Fountain clamps a longer `expires_in` to this. |
-| `PRINCIPAL_MAX_GRANT_CENTS` | `500` | No. | The most an application may put into one principal, in cents. |
-| `PRINCIPAL_MAX_OUTSTANDING` | `500` | No. | The most unclaimed principals one application may hold at once. |
-| `PRINCIPAL_MAX_PER_HOUR` | `500` | No. | The most principals one application may open each hour. |
-| `PRINCIPAL_PURGE_AFTER_DAYS` | `7` | No. | How long a closed grant stays readable before Fountain deletes the principal. |
 
 <!-- vale STE.IngForms = YES -->
 
@@ -263,11 +257,6 @@ the request to `chatgpt.com`. Each connect and disconnect leaves an
 A personal subscription is one account for every tenant on the deployment.
 That pattern is behind reported account bans, and it is an operator's own
 risk. The page says so.
-
-| Variable | Default | Required | Effect |
-|---|---|---|---|
-| `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS` | `900` | No. | How many seconds before its expiry Fountain renews the access token. Set it longer than your longest turn, because codex cannot renew the token itself. |
-| `PLATFORM_CHATGPT_KEEPALIVE_DAYS` | `6` | No. | How many days an idle account may go without a renewal. A daily job renews it after that, so the account does not lapse while nobody runs codex. |
 
 ### What a tenant pays
 

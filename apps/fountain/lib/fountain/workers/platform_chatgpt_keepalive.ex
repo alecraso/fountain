@@ -8,7 +8,7 @@ defmodule Fountain.Workers.PlatformChatGPTKeepalive do
   shows. Fountain is the only holder of the refresh token, so if no codex
   conversation runs for a week the grant would lapse with nothing to renew
   it. This daily job renews any grant unrefreshed for
-  `PLATFORM_CHATGPT_KEEPALIVE_DAYS` (default 6), one refresh at most.
+  `ChatGPTAccounts.platform_keepalive_days/0` (six), one refresh at most.
 
   A grant the server refuses is marked `revoked` by the context with the
   reason code; this job only reports it.
