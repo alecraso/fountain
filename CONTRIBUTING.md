@@ -213,8 +213,9 @@ app: `mix format` through `subdirectories: ["apps/*"]`, credo through
 `apps/*/lib/`, dialyzer and `mix test` because they run at the root. In CI
 the library's tests run from `scripts/test-libraries.sh` in one partition
 and their coverage export joins the merged gate, so a library with no tests
-fails the run rather than passing unmeasured. Add a `[Unreleased]` entry
-and update the "Built so far" block in decisions/0037.
+fails the run rather than passing unmeasured. Add a changelog fragment
+(see *Changelog* below) and update the "Built so far" block in
+decisions/0037.
 
 ## Graduating a library
 
@@ -301,7 +302,7 @@ and `CLAUDE.md`):
 - `mix deps.get`, then `mix deps.unlock --unused`;
 - the layout block in `CLAUDE.md`, the "Built so far" block in
   decisions/0037 (then `scripts/decisions-index.sh` and
-  `okf validate decisions`), and a `[Unreleased]` line here in `CHANGELOG.md`;
+  `okf validate decisions`), and a changelog fragment under `changelog.d/`;
 - the gates: `mix compile --warnings-as-errors`, `mix format --check-formatted`,
   `mix credo --strict`, `MIX_ENV=dev mix dialyzer`, the full root suite with
   every remaining library's banner at `0 failures`,
@@ -452,6 +453,30 @@ Label a PR `sdk-no-release` where the distinction needs saying out loud.
 
 Every change goes through a PR and the CI gate must pass. Do not push directly
 to `main`.
+
+### Changelog
+
+A PR that changes something a user or operator can observe adds a fragment
+file under [`changelog.d/`](changelog.d/README.md) and does not edit
+`CHANGELOG.md`. The fragment uses the changelog's own `### Section` headings
+and bullets, so `changelog.d/2105-retired-urls-404.md` might read:
+
+```markdown
+### Fixed
+
+- Retired browser URLs now return 404 instead of redirecting (#2105).
+```
+
+`python3 scripts/changelog.py check` validates it. The release-bump workflow
+rolls every fragment, plus anything left under `[Unreleased]`, into the dated
+section for the new version and deletes the fragments, so `CHANGELOG.md`
+changes once per release. CI refuses a PR that edits `CHANGELOG.md` directly;
+to fix a typo in a shipped entry, put the `changelog:manual` label on the PR.
+
+This replaced the shared `[Unreleased]` section every PR used to insert a
+line into. With ~26 merges a day, two PRs adding a bullet at the top of the
+same subsection was the most common merge conflict on main, and hand
+resolutions left the section with three `### Added` headings.
 
 If your change is architecturally significant, or constrains future work, write
 an ADR using [`decisions/0001-template.md`](decisions/0001-template.md) and

@@ -823,6 +823,26 @@ relative `.md` links) and is inherited from the MkDocs site these pages used to
 be; check a page at `/docs` if it uses anything fancier. Nothing else renders
 them, so `/docs` is the answer, not a second opinion.
 
+## Changelog
+
+`CHANGELOG.md` is written by the release, not by PRs. A PR that changes
+something a user or operator can observe adds a fragment under
+`changelog.d/` (the README there has the format: the changelog's own
+`### Section` headings and bullets, one file per PR, any `.md` name but
+`README.md`). `python3 scripts/changelog.py check` validates it, and the
+`workflow-checks` job refuses a PR that edits `CHANGELOG.md` itself; the
+`changelog:manual` label is the door for a typo fix in a shipped entry. The
+release-bump workflow runs `scripts/changelog.py release`, which rolls
+`[Unreleased]` and every fragment into the dated section and deletes them.
+Before that roll, `git log <lastTag>..main` against the fragments still finds
+the PRs that shipped without one; nothing enforces that a PR writes a
+fragment, only that it does not write the file.
+
+The old process, every PR inserting at the top of the same subsection, was
+the most common merge conflict on main once the merge queue stopped rebasing.
+Links in a fragment are absolute URLs: the rolled changelog is also the
+`/docs/changelog` page, where a relative link resolves under `/docs`.
+
 ## Decisions
 
 Architecturally significant choices live in `decisions/NNNN-<title>.md`. When a decision is contentious or needs to constrain future work, write an ADR. Use `decisions/0001-template.md` as the template.

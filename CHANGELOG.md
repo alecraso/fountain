@@ -209,21 +209,265 @@ upgrade, is in
   (`conversations.configuration_revision`, `sandboxes.build_fingerprint`,
   `sandboxes.applied_skills`) (#1565).
 
-### Fixed
+- **An account registers its own OAuth clients** (#1125, ADR 0021 amended).
+  "Sign in with Fountain" no longer needs an operator to edit `OAUTH_CLIENTS`
+  and redeploy. Register an app in the console under Account, then OAuth apps,
+  with `fountain oauth-client create`, or over `/api/oauth/clients`, and the
+  response carries the generated `client_id` the app sends. The registration
+  also admits the app's redirect origins to `/api`, so one registration covers
+  both the sign-in and the calls that follow it and `API_CORS_ORIGINS` needs
+  no entry.
 
-- **A tenant secret named after an inference credential is no longer billed as
-  platform inference** (ADR 0053 decision 5, #2018). An environment or vault
-  secret called `ANTHROPIC_API_KEY` wins over the account's credential in the
-  sandbox, which is documented behaviour, but selection could not see it: on a
-  deployment holding platform keys the turn was selected as platform-served,
-  stamped, priced against the tenant's credits and counted against
-  `PLATFORM_INFERENCE_DAILY_CENTS`, while the tenant's own secret served it.
-  The door gate refused such a launch once the deployment had spent its day,
-  for the same reason. Both now resolve the tenant's secret as their own
-  credential. The managed ChatGPT grant keeps ADR 0052's reservation and stays
-  protected, including static workspace tokens on the managed path. Ordinary
-  tenant overrides resolve their source; managed credentials keep their
-  custody protections.
+  A new client is in **development mode**: it signs in only the account that
+  registered it, and every other account gets an error page rather than a
+  redirect. That is what makes a self-chosen redirect URI safe, and it is why
+  an owner may name a sandbox's HTTPS URL or an `http://localhost` one. A
+  loopback URI matches on any port (RFC 8252). Only an operator publishes a
+  client for other accounts to use, and only an operator changes or removes it
+  afterwards. One account holds at most 25. Registration needs a full-scope
+  key, because a client is a standing route to a full-scope key after consent.
+
+  The consent page's `form-action` header now names the one redirect origin
+  this request asked for rather than every registered client's.
+
+- **A start that meets a capacity ceiling can wait instead of failing**
+  (#1033, `decisions/0042`). Set `queue: true` on `POST /api/conversations`:
+  at the tenant sandbox cap or the fleet ceiling, Fountain answers `202` with
+  a sandbox request and its position rather than `429` or `503`, and starts
+  the conversation when a slot frees. Callers that do not ask keep the error
+  they handle today. A teammate schedule's cron firing uses the queue on its
+  own, because nobody is there to retry it; the page's and the API's "Run
+  now" still gets the refusal. `GET /api/sandbox-queue`,
+  `GET /api/sandbox-queue/:id` and `DELETE /api/sandbox-queue/:id` list, read
+  and cancel that work. The queue delays the cap and never raises it: ten
+  requests per tenant (`SANDBOX_QUEUE_MAX_DEPTH`), one hour each
+  (`SANDBOX_QUEUE_MAX_WAIT_SECONDS`), every replay back through the same
+  reservation, credit and inference gates, and a full queue keeps the
+  immediate error. Starts carrying images or naming a `sandbox_id` never
+  queue.
+
+- Wire the prepared bounded execution journal into atomic turn admission,
+  tracked adapter setup, guarded ACP callbacks, durable cancellation, recovery
+  retirement and parent deletion. Bounded turns skip separate title inference,
+  cannot reuse a warm process, and require an ACP reply for success. Public
+  enforcement remains disabled pending provider release and complete acceptance.
+
+- Prepare a supervised bounded-command transport that binds provider identity
+  before stdin, rechecks journal authority for each write, and retains uncertain
+  operations. Successful bounded replies now require connection retirement before
+  a fresh successor. Public activation remains gated.
+
+- Commit deadline failure events and delivery jobs with the failed turn. Late
+  completion and interruption reuse the original event, and notification retries
+  retain its id. Public bounded execution remains disabled.
+
+- Add a supervised execution-deadline coordinator with separate expiration and
+  termination task pools. Local task timeouts and restarts retain uncertain
+  remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
+  a host ceiling, and `FOUNTAIN_EXECUTION_DEADLINE_WORKER=false` turns it off
+  anywhere. Public bounded execution remains disabled until session identity,
+  event delivery, and lifecycle integration are complete.
+
+- **An `acp` runtime launches a named command, so a deterministic program can
+  run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
+  `runtime_command` field carries the command it runs. The field is required
+  for that runtime and a 422 naming the field on every other one, which
+  resolves its own executable from a pinned table. `model` is optional there:
+  no inference credential is resolved, no model is pinned on the session, and
+  a turn succeeds on an account that holds no API key. Fountain installs no
+  adapter for it, and the command owns its own configuration; skills still
+  mount, and their path arrives as `FOUNTAIN_SKILLS_DIR`. Everything the
+  protocol carries is unchanged, including tool-call blocks on the transcript
+  and the SSE feed, `session/cancel` on interrupt, and the agent's permission
+  policy. With `CREDITS_ENABLED` the turn is priced by sandbox time alone and
+  `turn.usage` is null.
+
+  `runtime_command` is a **free string** rather than an entry in a catalog of
+  blessed commands. It is resolved inside the sandbox, under the same
+  isolation an environment's `setup_script` already runs under, so a catalog
+  would restrict a self-hoster and protect nobody. On a self-hosted runner
+  with the default backend that isolation is a directory and the daemon's own
+  user, which is what trusted mode already means for a setup script; the
+  runtime docs say so beside the field.
+
+  **Client note.** `Agent.model` is now nullable, in the response and in the
+  create and update bodies, so an agent converted to `acp` can clear the
+  model it no longer uses with `{"model": null}`. In the TypeScript SDK
+  `Agent["model"]` is `string | null`, and `AgentRequest["model"]` and
+  `AgentUpdate["model"]` are `string | null` and optional. A client that
+  assumed a string needs a null check. Nothing else on the wire changed
+  shape.
+
+- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
+  dependency set for typed execution limits and confirmed session termination.
+  Fountain deadline enforcement remains disabled pending transport and lifecycle
+  integration.
+
+- Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
+  toolchain setup run within an explicit bound. It persists through API/spec
+  round trips and invalidates checkpoints when changed. The overall provisioning
+  deadline and failed-setup handling remain in force.
+
+- `claude-fable-5-1` is suggested for anthropic again, so `GET /api/catalog`
+  lists it. It was removed on 2026-09-07 because the claude adapter refused
+  it; the refusal was not the adapter version but a cold cache. The Claude
+  Code binary learns an org's "additional models" (Fable among them) from a
+  fetch it makes after a session starts and caches for the next launch, so
+  the first session in a fresh sandbox never listed Fable on any adapter
+  version. Two `managoat_runtimes` releases fix that: 0.3.3 moves the adapter
+  pin to 0.75.1 (the bundled CLI must be 2.1.255 or later for Fable 5.1), and
+  0.3.4 warms the cache at provisioning. Verified with a real turn on the new
+  pin. `claude-fable-5` stays unsuggested: the adapter refuses it even with
+  the cache warm.
+
+- Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
+- Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
+
+- `sandbox_api_access: "none"` on conversation creation omits the Fountain
+  sandbox callback credential before provisioning and on every wake. It requires
+  a fresh ephemeral sandbox, is immutable, and refuses machine sharing and
+  channel resumes with a different setting. The catalog advertises support;
+  existing launches retain `owner` behavior. Applications processing mutually
+  untrusted work can keep all Fountain API authority on their service host.
+
+- A `fountain apply` manifest can declare webhook endpoints. A `Webhook`
+  document is keyed by its `spec.url`, and the apply that creates one hands
+  back its signing secret on that result row and never again. A manifest that
+  holds a `Webhook` needs a full-scope credential, which is what
+  `POST /api/webhooks` needs, and a refused request writes none of the
+  manifest's other resources either (#1636).
+
+- A `fountain apply` manifest can declare a teammate's schedules. A `Schedule`
+  document names its teammate, its cron and its prompt, and is keyed by name
+  under that teammate. A teammate name that two teammates answer to fails that
+  row rather than binding to one of them (#1636).
+
+- A `fountain apply` manifest can declare team membership. A `Teammate`
+  document names its agent, environment and vault, and the apply puts the agent
+  on the team, which opens its conversation and provisions its computer.
+  Re-applying moves the name and the bindings and provisions no second
+  computer (#1636).
+- Conversations carry free-form `labels`, a map of at most 32 key/value
+  strings. Set them on creation or with `PATCH /api/conversations/:id/labels`,
+  which merges. A running agent stamps its own conversation with the
+  `_fountain/labels` ACP extension notification, and a sandbox callback token
+  can label only the conversation it was minted for, on every door that writes
+  labels. `GET /api/conversations`
+  and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
+  filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
+  and the console's conversation lists render them as chips.
+- Permission requests can outlive the turn that raised them. An agent that ends
+  a turn with stop reason `waiting` keeps its request open, the conversation
+  goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
+  lists such requests as `pending_requests`, and answering one opens a new turn
+  carrying the request id and the chosen option, which wakes the sandbox. The
+  wait is bounded by `_meta.fountain.timeout` on the request and by an
+  `ask_timeout` in the permission policy, the shorter of the two, else the
+  existing 5 minute ceiling, and at most a year either way. An answer is
+  refused, and the request kept, when the conversation cannot take the turn
+  that carries it.
+
+- **An application can start a computer before its visitor has an account, and
+  the visitor keeps that exact computer when they register** (#1551, ADR 0044).
+  A **claimable principal** is a `users` row with no identity, opened by a
+  trusted application over `POST /api/claimable-users` and funded out of that
+  application's own credit balance. It is a full tenant from its first request
+  — its own DEK, agents, environments, vaults, conversations and sandboxes, all
+  scoped away from every other principal — and it comes back with a
+  `principal`-scoped API key plus a one-time claim token.
+  `POST /api/claimable-users/:id/claim` attaches a registered account as the
+  principal's owner and **moves nothing**: the sandbox, the disk, the agent, the
+  conversations and every id survive the claim, because the tenant id is what a
+  sprite name is built from and a resource-by-resource transfer would hand the
+  visitor a different machine. Both a brand-new account and one that already
+  owns work claim the same way, since an owner may hold more than one principal.
+  The new scope is deliberately narrow: a principal reaches the resource
+  surface a computer is built from and nothing behind `:require_full_scope`, so
+  it cannot mint a credential, buy credit, widen its own limits, or see another
+  principal. Money follows the owner without a ledger row moving — an unclaimed
+  principal spends the application's introductory grant, a claimed one spends
+  the account's balance. `GET /api/claimable-users/:id` is the reconcile route
+  for an application that lost a response, `DELETE` abandons a grant and
+  refunds what it still holds, and an unclaimed grant expires on its own with
+  the same teardown. Guide: **Start before sign-in**.
+
+- **`BROKER_TENANTS` takes `*`, so the ratchet has an end state** (ADR 0019
+  §9). The variable was a comma separated list of user ids and nothing else,
+  which is what made widening deliberate: an operator adds one id, proves it,
+  and adds the next. That is the right shape for a rollout and the wrong
+  shape for its conclusion, since the only way to say *everyone* was to
+  enumerate every account and to keep enumerating each new one. `*` on its
+  own now means every tenant. Blank still means nobody, and still is what
+  keeps the listener inert on a deployment that turns it on without naming
+  anyone. The wildcard is parsed to the atom `:all` rather than kept as a
+  member of the list, and a `*` mixed into a list is a boot error: as a list
+  member it would broker exactly one tenant whose id was the string `"*"`,
+  while reading at a glance like it brokered all of them.
+
+  One thing does not change, and it is the reason to read this before setting
+  it. A provider with no `:network_policy` capability still cannot host a
+  brokered conversation, because the `allow: [broker]` floor is what makes a
+  placeholder worthless off the box. Self-hosted runners advertise
+  `[:suspend, :attach]`, so `*` refuses every conversation placed on one with
+  `{:broker, :backend_lacks_network_policy}`. `BROKER_ALLOW_UNENFORCED` is
+  the development escape hatch and remains the wrong answer in production.
+
+- **The credit workers report on themselves, and money movement is measured
+  at the ledger** (#1169). Under ADR 0031 the balance is the gate, so
+  `CreditPricer`, `CreditExpirer` and `Credits.Rent` are load-bearing, and the
+  only thing watching them was `FountainObanJobsRaising` — which needs a job
+  to *raise*. A pricer that ran happily and priced nothing (a bad rate config,
+  an empty `SandboxUsage`, a query matching zero rows) tripped nothing, and
+  the failure mode is free compute with no signal. Two events answer the two
+  different questions. `[:fountain, :credits, :worker, :run]` carries a
+  wall-clock `last_run_unix` per worker, so a rule can alert on staleness and
+  on a worker that never fires at all. `[:fountain, :credits, :posted]` is
+  emitted by `Credits.post/4` at the ledger write, tagged by reason, so cents
+  burned cannot drift from the ledger and one event covers turns, inference,
+  messages, rent, expiry, grants and purchases. Stripe webhook rejections and
+  failures are counted by coarse kind, and email delivery by outcome — the
+  latter needs no call-site change, because Swoosh already spans every
+  delivery. The per-replica gauge trap applies to `last_run_unix`: it exists
+  only on the pod that ran the job, so every rule over it needs `max`.
+
+- **Hosted Buzz agents are bounded and gated** (#1017). Each enabled Buzz
+  identity is a supervised `buzz-acp` OS process on Fountain's own pods, so
+  the cost is standing rather than metered and `SandboxUsage` reports zero for
+  it. One account could stand up unbounded permanent processes, and
+  `BootSweep` restarted every one of them on each deploy. Standing up a *new*
+  agent now calls `Billing.check_spend/1` and a `BUZZ_IDENTITY_CEILING`
+  (default 10), both `402`; a converging deploy of an agent that already
+  exists is exempt, because it adds no process and refusing it would strand a
+  running harness on stale credentials. `Workers.BuzzHarnessSweep` stops the
+  harnesses of an account that cannot spend and starts them again when it can,
+  keeping the identity row so a top-up restores the agent intact rather than
+  needing a fresh deploy; the boot sweep asks the same question, so a deploy
+  no longer undoes it. The admin users table grows a **Slots** column showing
+  teammate contacts and hosted agents per tenant, which also renders the
+  contact count that had been assigned and never displayed. Pricing the slot
+  is still open, deliberately: the ceiling should run for a cycle before
+  anyone picks a number.
+
+- **Fountain can sit behind LiteLLM as an OpenAI-compatible upstream.** The
+  `examples/litellm-gateway` configuration maps `fountain/<agent>` to every
+  agent on an account, forwards `X-Fountain-Thread`, gives long-running turns
+  an appropriate timeout, and disables gateway retries. Its smoke script sends
+  two turns through LiteLLM and queries Fountain directly to prove both turns
+  landed in one conversation. The new gateway guide explains the same setup.
+
+- **`safety_identifier` is a third thread key for OpenAI chat completions.**
+  Fountain reads it after `X-Fountain-Thread` and `user`, giving clients behind
+  OpenAI-compatible gateways a current body-level fallback when they cannot
+  set custom headers. Requests with no key are still rejected.
+
+- **Standalone consumers for the Managoat libraries** (#1365). The
+  [`managoat_examples`](https://github.com/managoat/managoat_examples)
+  repository has three plain Mix projects with Hex dependencies and no
+  Fountain dependency: a local ACP adapter over an Erlang `Port`, an ACP
+  session inside `Managoat.Sandbox` with a credential-free Fake path and an
+  opt-in Sprites path, and MCP authorization discovery with dynamic client
+  registration. Its CI compiles all three with warnings as errors and runs
+  the Fake sandbox turn.
 
 ### Changed
 
@@ -360,168 +604,69 @@ upgrade, is in
   description changed with it, in the OpenAPI document and in the generated
   TypeScript types.
 
-### Added
+- OpenAPI operations declare shared pipeline failures and controller refusals. The schema guard no longer exempts missing response statuses.
+- The API manual is a workflow guide linking to the generated reference at `/api/docs`; existing section anchors remain available.
+- Portable Prometheus rules cover stage and reattach failures, per-provider turn failure rates, and slow first output. Thresholds have executable alert fixtures.
 
-- **An account registers its own OAuth clients** (#1125, ADR 0021 amended).
-  "Sign in with Fountain" no longer needs an operator to edit `OAUTH_CLIENTS`
-  and redeploy. Register an app in the console under Account, then OAuth apps,
-  with `fountain oauth-client create`, or over `/api/oauth/clients`, and the
-  response carries the generated `client_id` the app sends. The registration
-  also admits the app's redirect origins to `/api`, so one registration covers
-  both the sign-in and the calls that follow it and `API_CORS_ORIGINS` needs
-  no entry.
+- Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
 
-  A new client is in **development mode**: it signs in only the account that
-  registered it, and every other account gets an error page rather than a
-  redirect. That is what makes a self-chosen redirect URI safe, and it is why
-  an owner may name a sandbox's HTTPS URL or an `http://localhost` one. A
-  loopback URI matches on any port (RFC 8252). Only an operator publishes a
-  client for other accounts to use, and only an operator changes or removes it
-  afterwards. One account holds at most 25. Registration needs a full-scope
-  key, because a client is a standing route to a full-scope key after consent.
+- **Credential brokerage is on for every account on the hosted platform**
+  (ADR 0019 §9, home-cloud#163). It was limited access, enrolled by hand, and
+  named one tenant from 2026-08-25. The docs said so on six pages; they now
+  say what is true. `BROKER_TENANTS` is `*` there, the wildcard #1553 added.
+  Nothing changes for a self-hosted instance, where the broker stays off
+  until an operator sets `BROKER_LISTEN_PORT` and names tenants.
 
-  The consent page's `form-action` header now names the one redirect origin
-  this request asked for rather than every registered client's.
+  The reason to widen was the inference credential rather than tenant
+  secrets. Gate 3 covers every conversation, so the platform's own keys stop
+  entering a sandbox in the clear for everyone at once; at the time of the
+  flip every brokerable tenant secret in the deployment belonged to one
+  account and `secret_bindings` was empty. `Feature status` now lists two
+  features rather than three.
 
-- **A start that meets a capacity ceiling can wait instead of failing**
-  (#1033, `decisions/0042`). Set `queue: true` on `POST /api/conversations`:
-  at the tenant sandbox cap or the fleet ceiling, Fountain answers `202` with
-  a sandbox request and its position rather than `429` or `503`, and starts
-  the conversation when a slot frees. Callers that do not ask keep the error
-  they handle today. A teammate schedule's cron firing uses the queue on its
-  own, because nobody is there to retry it; the page's and the API's "Run
-  now" still gets the refusal. `GET /api/sandbox-queue`,
-  `GET /api/sandbox-queue/:id` and `DELETE /api/sandbox-queue/:id` list, read
-  and cancel that work. The queue delays the cap and never raises it: ten
-  requests per tenant (`SANDBOX_QUEUE_MAX_DEPTH`), one hour each
-  (`SANDBOX_QUEUE_MAX_WAIT_SECONDS`), every replay back through the same
-  reservation, credit and inference gates, and a full queue keeps the
-  immediate error. Starts carrying images or naming a `sandbox_id` never
-  queue.
+- **`mix precommit` now assembles the production release** (#1477). It was the
+  documented pre-push gate and it could not see a whole class of breakage:
+  anything that exists only in `MIX_ENV=prod`. `apps/fountain` scopes the
+  OpenTelemetry family `only: :prod`, so `chatterbox` — reached through
+  grpcbox under `opentelemetry_exporter` — is in no dev or test dependency
+  graph, and when the hackney 4 bump pulled in `h2` with the same four module
+  names, `mix release` refused to assemble while compile, format, credo,
+  sobelow, dialyzer and all 4,117 tests stayed green (#1472). The new step is
+  the assemble alone, not CI's boot check: duplicate modules and the
+  application-mode validation are decided at assemble time, and assembling
+  needs no secrets, because `mix release` copies `config/runtime.exs` in as a
+  config provider rather than evaluating it. It costs ~9s in a warm tree; a
+  fresh checkout pays one prod compile (~2 min) and then caches it under
+  `_build/prod`.
 
-- Wire the prepared bounded execution journal into atomic turn admission,
-  tracked adapter setup, guarded ACP callbacks, durable cancellation, recovery
-  retirement and parent deletion. Bounded turns skip separate title inference,
-  cannot reuse a warm process, and require an ACP reply for success. Public
-  enforcement remains disabled pending provider release and complete acceptance.
-
-- Prepare a supervised bounded-command transport that binds provider identity
-  before stdin, rechecks journal authority for each write, and retains uncertain
-  operations. Successful bounded replies now require connection retirement before
-  a fresh successor. Public activation remains gated.
-
-- Commit deadline failure events and delivery jobs with the failed turn. Late
-  completion and interruption reuse the original event, and notification retries
-  retain its id. Public bounded execution remains disabled.
-
-- Add a supervised execution-deadline coordinator with separate expiration and
-  termination task pools. Local task timeouts and restarts retain uncertain
-  remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
-  a host ceiling, and `FOUNTAIN_EXECUTION_DEADLINE_WORKER=false` turns it off
-  anywhere. Public bounded execution remains disabled until session identity,
-  event delivery, and lifecycle integration are complete.
-
-- **An `acp` runtime launches a named command, so a deterministic program can
-  run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
-  `runtime_command` field carries the command it runs. The field is required
-  for that runtime and a 422 naming the field on every other one, which
-  resolves its own executable from a pinned table. `model` is optional there:
-  no inference credential is resolved, no model is pinned on the session, and
-  a turn succeeds on an account that holds no API key. Fountain installs no
-  adapter for it, and the command owns its own configuration; skills still
-  mount, and their path arrives as `FOUNTAIN_SKILLS_DIR`. Everything the
-  protocol carries is unchanged, including tool-call blocks on the transcript
-  and the SSE feed, `session/cancel` on interrupt, and the agent's permission
-  policy. With `CREDITS_ENABLED` the turn is priced by sandbox time alone and
-  `turn.usage` is null.
-
-  `runtime_command` is a **free string** rather than an entry in a catalog of
-  blessed commands. It is resolved inside the sandbox, under the same
-  isolation an environment's `setup_script` already runs under, so a catalog
-  would restrict a self-hoster and protect nobody. On a self-hosted runner
-  with the default backend that isolation is a directory and the daemon's own
-  user, which is what trusted mode already means for a setup script; the
-  runtime docs say so beside the field.
-
-  **Client note.** `Agent.model` is now nullable, in the response and in the
-  create and update bodies, so an agent converted to `acp` can clear the
-  model it no longer uses with `{"model": null}`. In the TypeScript SDK
-  `Agent["model"]` is `string | null`, and `AgentRequest["model"]` and
-  `AgentUpdate["model"]` are `string | null` and optional. A client that
-  assumed a string needs a null check. Nothing else on the wire changed
-  shape.
-
-- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
-  dependency set for typed execution limits and confirmed session termination.
-  Fountain deadline enforcement remains disabled pending transport and lifecycle
-  integration.
-
-
-- Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
-  toolchain setup run within an explicit bound. It persists through API/spec
-  round trips and invalidates checkpoints when changed. The overall provisioning
-  deadline and failed-setup handling remain in force.
-
-- `claude-fable-5-1` is suggested for anthropic again, so `GET /api/catalog`
-  lists it. It was removed on 2026-09-07 because the claude adapter refused
-  it; the refusal was not the adapter version but a cold cache. The Claude
-  Code binary learns an org's "additional models" (Fable among them) from a
-  fetch it makes after a session starts and caches for the next launch, so
-  the first session in a fresh sandbox never listed Fable on any adapter
-  version. Two `managoat_runtimes` releases fix that: 0.3.3 moves the adapter
-  pin to 0.75.1 (the bundled CLI must be 2.1.255 or later for Fable 5.1), and
-  0.3.4 warms the cache at provisioning. Verified with a real turn on the new
-  pin. `claude-fable-5` stays unsuggested: the adapter refuses it even with
-  the cache warm.
-
-- Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
-- Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
-
-- `sandbox_api_access: "none"` on conversation creation omits the Fountain
-  sandbox callback credential before provisioning and on every wake. It requires
-  a fresh ephemeral sandbox, is immutable, and refuses machine sharing and
-  channel resumes with a different setting. The catalog advertises support;
-  existing launches retain `owner` behavior. Applications processing mutually
-  untrusted work can keep all Fountain API authority on their service host.
-
-- A `fountain apply` manifest can declare webhook endpoints. A `Webhook`
-  document is keyed by its `spec.url`, and the apply that creates one hands
-  back its signing secret on that result row and never again. A manifest that
-  holds a `Webhook` needs a full-scope credential, which is what
-  `POST /api/webhooks` needs, and a refused request writes none of the
-  manifest's other resources either (#1636).
-
-- A `fountain apply` manifest can declare a teammate's schedules. A `Schedule`
-  document names its teammate, its cron and its prompt, and is keyed by name
-  under that teammate. A teammate name that two teammates answer to fails that
-  row rather than binding to one of them (#1636).
-
-- A `fountain apply` manifest can declare team membership. A `Teammate`
-  document names its agent, environment and vault, and the apply puts the agent
-  on the team, which opens its conversation and provisions its computer.
-  Re-applying moves the name and the bindings and provisions no second
-  computer (#1636).
-- Conversations carry free-form `labels`, a map of at most 32 key/value
-  strings. Set them on creation or with `PATCH /api/conversations/:id/labels`,
-  which merges. A running agent stamps its own conversation with the
-  `_fountain/labels` ACP extension notification, and a sandbox callback token
-  can label only the conversation it was minted for, on every door that writes
-  labels. `GET /api/conversations`
-  and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
-  filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
-  and the console's conversation lists render them as chips.
-- Permission requests can outlive the turn that raised them. An agent that ends
-  a turn with stop reason `waiting` keeps its request open, the conversation
-  goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
-  lists such requests as `pending_requests`, and answering one opens a new turn
-  carrying the request id and the chosen option, which wakes the sandbox. The
-  wait is bounded by `_meta.fountain.timeout` on the request and by an
-  `ask_timeout` in the permission policy, the shorter of the two, else the
-  existing 5 minute ceiling, and at most a year either way. An answer is
-  refused, and the request kept, when the conversation cannot take the turn
-  that carries it.
+- **The connection and the transcript have left `ConversationServer`, and the
+  server is what is left** (#1377, tracker #1369, last). The ACP connection
+  that outlives the turn (#817) is `Fountain.Conversations.Connection`: the
+  peer, its monitor, the command underneath it and the quiet timer that closes
+  a background cycle (#1301), with the functions that reuse the connection,
+  close it, lose it and open an autonomous turn. What the sandbox says on its
+  way to the transcript is `Fountain.Conversations.Output`: the durable log
+  budget (#331), the truncation marker, the reattach replay skip and the stage
+  events. The server keeps the process — `init/1`, the provisioning watchdog,
+  the reattach orchestration, the callbacks, and the terminal paths that end a
+  turn. No stage, log line, telemetry event, timer or audit event changed. The
+  pin drops from 3,048 to 2,835, and the tracker closes.
 
 ### Fixed
+
+- **A tenant secret named after an inference credential is no longer billed as
+  platform inference** (ADR 0053 decision 5, #2018). An environment or vault
+  secret called `ANTHROPIC_API_KEY` wins over the account's credential in the
+  sandbox, which is documented behaviour, but selection could not see it: on a
+  deployment holding platform keys the turn was selected as platform-served,
+  stamped, priced against the tenant's credits and counted against
+  `PLATFORM_INFERENCE_DAILY_CENTS`, while the tenant's own secret served it.
+  The door gate refused such a launch once the deployment had spent its day,
+  for the same reason. Both now resolve the tenant's secret as their own
+  credential. The managed ChatGPT grant keeps ADR 0052's reservation and stays
+  protected, including static workspace tokens on the managed path. Ordinary
+  tenant overrides resolve their source; managed credentials keep their
+  custody protections.
 
 - A prompt automatically continues once on a fresh session when the runtime's
   saved session is missing. The transcript announces the lost agent memory;
@@ -693,164 +838,6 @@ upgrade, is in
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
 - A scoped fetch reads a malformed id as nil rather than raising out of the query, so a path segment or header that is not an id answers 404 where it used to answer 500 with a dropped connection. An id field that a caller fills with something other than a uuid is refused by the changeset, naming the field and the value. A vault name in an agent's `allowed_vault_ids` through `POST /api/apply`, where the document spec is free-form, reached the database layer and answered with a 500 and a dropped connection. A parent conversation header that is not an id is now the same 404 an unknown parent already gets.
-
-### Changed
-
-- OpenAPI operations declare shared pipeline failures and controller refusals. The schema guard no longer exempts missing response statuses.
-- The API manual is a workflow guide linking to the generated reference at `/api/docs`; existing section anchors remain available.
-- Portable Prometheus rules cover stage and reattach failures, per-provider turn failure rates, and slow first output. Thresholds have executable alert fixtures.
-
-- Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
-
-- **Credential brokerage is on for every account on the hosted platform**
-  (ADR 0019 §9, home-cloud#163). It was limited access, enrolled by hand, and
-  named one tenant from 2026-08-25. The docs said so on six pages; they now
-  say what is true. `BROKER_TENANTS` is `*` there, the wildcard #1553 added.
-  Nothing changes for a self-hosted instance, where the broker stays off
-  until an operator sets `BROKER_LISTEN_PORT` and names tenants.
-
-  The reason to widen was the inference credential rather than tenant
-  secrets. Gate 3 covers every conversation, so the platform's own keys stop
-  entering a sandbox in the clear for everyone at once; at the time of the
-  flip every brokerable tenant secret in the deployment belonged to one
-  account and `secret_bindings` was empty. `Feature status` now lists two
-  features rather than three.
-
-### Added
-
-- **An application can start a computer before its visitor has an account, and
-  the visitor keeps that exact computer when they register** (#1551, ADR 0044).
-  A **claimable principal** is a `users` row with no identity, opened by a
-  trusted application over `POST /api/claimable-users` and funded out of that
-  application's own credit balance. It is a full tenant from its first request
-  — its own DEK, agents, environments, vaults, conversations and sandboxes, all
-  scoped away from every other principal — and it comes back with a
-  `principal`-scoped API key plus a one-time claim token.
-  `POST /api/claimable-users/:id/claim` attaches a registered account as the
-  principal's owner and **moves nothing**: the sandbox, the disk, the agent, the
-  conversations and every id survive the claim, because the tenant id is what a
-  sprite name is built from and a resource-by-resource transfer would hand the
-  visitor a different machine. Both a brand-new account and one that already
-  owns work claim the same way, since an owner may hold more than one principal.
-  The new scope is deliberately narrow: a principal reaches the resource
-  surface a computer is built from and nothing behind `:require_full_scope`, so
-  it cannot mint a credential, buy credit, widen its own limits, or see another
-  principal. Money follows the owner without a ledger row moving — an unclaimed
-  principal spends the application's introductory grant, a claimed one spends
-  the account's balance. `GET /api/claimable-users/:id` is the reconcile route
-  for an application that lost a response, `DELETE` abandons a grant and
-  refunds what it still holds, and an unclaimed grant expires on its own with
-  the same teardown. Guide: **Start before sign-in**.
-
-- **`BROKER_TENANTS` takes `*`, so the ratchet has an end state** (ADR 0019
-  §9). The variable was a comma separated list of user ids and nothing else,
-  which is what made widening deliberate: an operator adds one id, proves it,
-  and adds the next. That is the right shape for a rollout and the wrong
-  shape for its conclusion, since the only way to say *everyone* was to
-  enumerate every account and to keep enumerating each new one. `*` on its
-  own now means every tenant. Blank still means nobody, and still is what
-  keeps the listener inert on a deployment that turns it on without naming
-  anyone. The wildcard is parsed to the atom `:all` rather than kept as a
-  member of the list, and a `*` mixed into a list is a boot error: as a list
-  member it would broker exactly one tenant whose id was the string `"*"`,
-  while reading at a glance like it brokered all of them.
-
-  One thing does not change, and it is the reason to read this before setting
-  it. A provider with no `:network_policy` capability still cannot host a
-  brokered conversation, because the `allow: [broker]` floor is what makes a
-  placeholder worthless off the box. Self-hosted runners advertise
-  `[:suspend, :attach]`, so `*` refuses every conversation placed on one with
-  `{:broker, :backend_lacks_network_policy}`. `BROKER_ALLOW_UNENFORCED` is
-  the development escape hatch and remains the wrong answer in production.
-
-- **The credit workers report on themselves, and money movement is measured
-  at the ledger** (#1169). Under ADR 0031 the balance is the gate, so
-  `CreditPricer`, `CreditExpirer` and `Credits.Rent` are load-bearing, and the
-  only thing watching them was `FountainObanJobsRaising` — which needs a job
-  to *raise*. A pricer that ran happily and priced nothing (a bad rate config,
-  an empty `SandboxUsage`, a query matching zero rows) tripped nothing, and
-  the failure mode is free compute with no signal. Two events answer the two
-  different questions. `[:fountain, :credits, :worker, :run]` carries a
-  wall-clock `last_run_unix` per worker, so a rule can alert on staleness and
-  on a worker that never fires at all. `[:fountain, :credits, :posted]` is
-  emitted by `Credits.post/4` at the ledger write, tagged by reason, so cents
-  burned cannot drift from the ledger and one event covers turns, inference,
-  messages, rent, expiry, grants and purchases. Stripe webhook rejections and
-  failures are counted by coarse kind, and email delivery by outcome — the
-  latter needs no call-site change, because Swoosh already spans every
-  delivery. The per-replica gauge trap applies to `last_run_unix`: it exists
-  only on the pod that ran the job, so every rule over it needs `max`.
-
-- **Hosted Buzz agents are bounded and gated** (#1017). Each enabled Buzz
-  identity is a supervised `buzz-acp` OS process on Fountain's own pods, so
-  the cost is standing rather than metered and `SandboxUsage` reports zero for
-  it. One account could stand up unbounded permanent processes, and
-  `BootSweep` restarted every one of them on each deploy. Standing up a *new*
-  agent now calls `Billing.check_spend/1` and a `BUZZ_IDENTITY_CEILING`
-  (default 10), both `402`; a converging deploy of an agent that already
-  exists is exempt, because it adds no process and refusing it would strand a
-  running harness on stale credentials. `Workers.BuzzHarnessSweep` stops the
-  harnesses of an account that cannot spend and starts them again when it can,
-  keeping the identity row so a top-up restores the agent intact rather than
-  needing a fresh deploy; the boot sweep asks the same question, so a deploy
-  no longer undoes it. The admin users table grows a **Slots** column showing
-  teammate contacts and hosted agents per tenant, which also renders the
-  contact count that had been assigned and never displayed. Pricing the slot
-  is still open, deliberately: the ceiling should run for a cycle before
-  anyone picks a number.
-
-- **Fountain can sit behind LiteLLM as an OpenAI-compatible upstream.** The
-  `examples/litellm-gateway` configuration maps `fountain/<agent>` to every
-  agent on an account, forwards `X-Fountain-Thread`, gives long-running turns
-  an appropriate timeout, and disables gateway retries. Its smoke script sends
-  two turns through LiteLLM and queries Fountain directly to prove both turns
-  landed in one conversation. The new gateway guide explains the same setup.
-
-- **`safety_identifier` is a third thread key for OpenAI chat completions.**
-  Fountain reads it after `X-Fountain-Thread` and `user`, giving clients behind
-  OpenAI-compatible gateways a current body-level fallback when they cannot
-  set custom headers. Requests with no key are still rejected.
-
-- **Standalone consumers for the Managoat libraries** (#1365). The
-  [`managoat_examples`](https://github.com/managoat/managoat_examples)
-  repository has three plain Mix projects with Hex dependencies and no
-  Fountain dependency: a local ACP adapter over an Erlang `Port`, an ACP
-  session inside `Managoat.Sandbox` with a credential-free Fake path and an
-  opt-in Sprites path, and MCP authorization discovery with dynamic client
-  registration. Its CI compiles all three with warnings as errors and runs
-  the Fake sandbox turn.
-
-### Changed
-
-- **`mix precommit` now assembles the production release** (#1477). It was the
-  documented pre-push gate and it could not see a whole class of breakage:
-  anything that exists only in `MIX_ENV=prod`. `apps/fountain` scopes the
-  OpenTelemetry family `only: :prod`, so `chatterbox` — reached through
-  grpcbox under `opentelemetry_exporter` — is in no dev or test dependency
-  graph, and when the hackney 4 bump pulled in `h2` with the same four module
-  names, `mix release` refused to assemble while compile, format, credo,
-  sobelow, dialyzer and all 4,117 tests stayed green (#1472). The new step is
-  the assemble alone, not CI's boot check: duplicate modules and the
-  application-mode validation are decided at assemble time, and assembling
-  needs no secrets, because `mix release` copies `config/runtime.exs` in as a
-  config provider rather than evaluating it. It costs ~9s in a warm tree; a
-  fresh checkout pays one prod compile (~2 min) and then caches it under
-  `_build/prod`.
-
-- **The connection and the transcript have left `ConversationServer`, and the
-  server is what is left** (#1377, tracker #1369, last). The ACP connection
-  that outlives the turn (#817) is `Fountain.Conversations.Connection`: the
-  peer, its monitor, the command underneath it and the quiet timer that closes
-  a background cycle (#1301), with the functions that reuse the connection,
-  close it, lose it and open an autonomous turn. What the sandbox says on its
-  way to the transcript is `Fountain.Conversations.Output`: the durable log
-  budget (#331), the truncation marker, the reattach replay skip and the stage
-  events. The server keeps the process — `init/1`, the provisioning watchdog,
-  the reattach orchestration, the callbacks, and the terminal paths that end a
-  turn. No stage, log line, telemetry event, timer or audit event changed. The
-  pin drops from 3,048 to 2,835, and the tracker closes.
-
-### Fixed
 
 - Stop ACP turns before inference when an explicit model is rejected or cannot
   be selected. Apply saved model changes to reused sessions and expose per-turn
