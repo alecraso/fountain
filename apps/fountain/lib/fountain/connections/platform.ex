@@ -4,8 +4,8 @@ defmodule Fountain.Connections.Platform do
   OAuth client for, so a tenant connects by clicking rather than by
   registering an app. Each is a `Fountain.Connections.Provider` struct built
   from config, `user_id: nil`, with its slug as the reserved id — the same
-  shape a tenant row has, so `Fountain.Connections.OAuth` drives every kind
-  with one code path.
+  shape a tenant row has, so the one OAuth client (`Managoat.McpAuth.Client`,
+  behind `Fountain.Connections.OAuth`) drives every kind with one code path.
 
   The registry is the host's own providers followed by every installed
   extension's (`Fountain.Extension.connection_providers/0`, ADR 0054): a
