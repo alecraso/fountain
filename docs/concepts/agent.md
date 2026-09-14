@@ -157,6 +157,12 @@ Fountain writes a version each time an agent's config changes. Open the
 History page from the agent's edit page to see them. Each version shows what
 changed, field by field, against the version before it.
 
+Deleting an environment or vault also writes a version for each agent whose
+configuration changes. The deleted environment stops being the default, and
+the deleted resource leaves the agent's allowlist. An emptied allowlist stays
+empty; it does not become unrestricted. Older versions keep their original
+configuration.
+
 A rollback applies an old version's config as a new edit. Fountain does not
 rewrite history: the rollback itself becomes the newest version. Fountain
 checks the old config again on the way back in, and refuses a version that

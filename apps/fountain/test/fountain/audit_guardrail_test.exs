@@ -44,6 +44,7 @@ defmodule Fountain.AuditGuardrailTest do
   @must_audit [
     {"agent create", &__MODULE__.do_agent_create/1, "agent.created"},
     {"agent update", &__MODULE__.do_agent_update/1, "agent.updated"},
+    {"agent source reference cleanup", &__MODULE__.do_agent_source_cleanup/1, "agent.updated"},
     {"agent delete", &__MODULE__.do_agent_delete/1, "agent.deleted"},
     {"agent rollback", &__MODULE__.do_agent_rollback/1, "agent.updated"},
     {"sandbox request enqueue", &__MODULE__.do_sandbox_request_enqueue/1,
@@ -299,6 +300,12 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_agent_create(user),
     do: {:ok, _} = Agents.create_agent(agent_attrs(%{"user_id" => user.id}))
+
+  def do_agent_source_cleanup(user) do
+    env = insert_env(user_id: user.id)
+    insert_agent(user_id: user.id, environment_id: env.id)
+    Agents.delete_source_and_version_agents(env)
+  end
 
   def do_agent_update(user) do
     agent = insert_agent(user_id: user.id)
