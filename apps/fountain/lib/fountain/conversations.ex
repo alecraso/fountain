@@ -1914,6 +1914,14 @@ defmodule Fountain.Conversations do
         # read, so it is refused here rather than started wrong (#1565). A
         # caller with no revision to offer is not checked.
         if not is_nil(revision) and conv.configuration_revision != revision do
+          # A configuration reload acknowledges the prompt before continuing.
+          # An unresolved execution must refuse it while the caller can still
+          # hear that refusal (#2009).
+          # ownership: the caller owns this conversation; its parent lock
+          # above serializes this read with journal changes.
+          if ExecutionGuard._unsafe_open_execution?(conv_id),
+            do: Repo.rollback(:execution_fenced)
+
           Repo.rollback(:configuration_changed)
         end
 
