@@ -214,27 +214,6 @@ broker_listen_port =
       end
   end
 
-# BROKER_URL selected a whole backend, so a deployment still carrying it is
-# told rather than left to broker nothing in silence.
-if blank_to_nil.(System.get_env("BROKER_URL")) do
-  raise "BROKER_URL is set, but the Agent Vault backend was removed in #1487. " <>
-          "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL instead; see docs/configuration.md."
-end
-
-# BROKER_TOKEN is only a warning, and the difference matters. It never turned
-# anything on by itself: it was the credential BROKER_URL used. Refusing to
-# boot over a leftover one punishes an upgrade for a variable that was doing
-# nothing, and it is the kind of value that outlives a deployment change by
-# sitting in a secret store rather than in a manifest. That is exactly how it
-# crash-looped this deployment's own rollout: the variable had been dropped
-# from the Deployment, and arrived anyway through `envFrom`.
-if blank_to_nil.(System.get_env("BROKER_TOKEN")) do
-  IO.warn(
-    "BROKER_TOKEN is set and is ignored: the Agent Vault backend was removed in #1487. " <>
-      "Remove it from your secret store; it is a credential for a service that no longer exists."
-  )
-end
-
 if broker_listen_port && is_nil(broker_proxy_url) do
   raise "BROKER_LISTEN_PORT is set, so BROKER_PROXY_URL must be set too"
 end
@@ -1343,8 +1322,6 @@ if config_env() == :prod and server? do
 
   host = phx_host
 
-  config :fountain, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
-
   # Scheme and port come from PUBLIC_URL rather than being pinned to https/443,
   # so a self-hoster terminating on plain HTTP or a non-standard port generates
   # correct URLs. For the hosted deployment PUBLIC_URL is https, and URI.parse
@@ -1423,18 +1400,13 @@ if config_env() == :prod and server? do
   # third-party vendor plus exporter noise in the logs. The SDK still honours
   # OTEL_TRACES_EXPORTER itself (with higher precedence than this), so
   # export can be forced on or off either way.
-  otel_configured? =
-    Enum.any?(
-      ~w(OTEL_EXPORTER_OTLP_ENDPOINT HONEYCOMB_ENDPOINT HONEYCOMB_API_KEY),
-      &System.get_env/1
-    )
+  otel_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT")
+  otel_configured? = not is_nil(otel_endpoint)
 
-  otel_endpoint =
-    System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") ||
-      System.get_env("HONEYCOMB_ENDPOINT", "https://api.honeycomb.io")
-
-  # Parse "key=val,key2=val2" header strings produced by OTEL_EXPORTER_OTLP_HEADERS,
-  # then layer on Honeycomb-specific headers if HONEYCOMB_API_KEY is set.
+  # Parse "key=val,key2=val2" header strings from OTEL_EXPORTER_OTLP_HEADERS.
+  # A vendor that authenticates by header takes it here (Honeycomb:
+  # x-honeycomb-team=<key>); the HONEYCOMB_* shortcuts that used to add it
+  # are gone.
   otel_headers =
     case System.get_env("OTEL_EXPORTER_OTLP_HEADERS") do
       nil ->
@@ -1451,12 +1423,6 @@ if config_env() == :prod and server? do
         end)
     end
 
-  otel_headers =
-    case System.get_env("HONEYCOMB_API_KEY") do
-      nil -> otel_headers
-      key -> [{"x-honeycomb-team", key} | otel_headers]
-    end
-
   config :opentelemetry,
     span_processor: :batch,
     traces_exporter: if(otel_configured?, do: :otlp, else: :none),
@@ -1465,10 +1431,12 @@ if config_env() == :prod and server? do
       {"deployment.environment", System.get_env("FLY_APP_NAME", "prod")}
     ]
 
-  config :opentelemetry_exporter,
-    otlp_protocol: :http_protobuf,
-    otlp_endpoint: otel_endpoint,
-    otlp_headers: otel_headers
+  if otel_configured? do
+    config :opentelemetry_exporter,
+      otlp_protocol: :http_protobuf,
+      otlp_endpoint: otel_endpoint,
+      otlp_headers: otel_headers
+  end
 end
 
 # The first-party extensions (ADR 0043). Naming a module here is the whole of

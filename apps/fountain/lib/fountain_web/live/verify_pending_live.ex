@@ -15,7 +15,7 @@ defmodule FountainWeb.VerifyPendingLive do
     * `Accounts.verify_email/1` broadcasts on `Accounts.verification_topic/1`,
       which is instant; and
     * a five-second poll backstops it, because the broadcast only crosses nodes
-      when BEAM clustering is actually configured (`DNS_CLUSTER_QUERY`), and a
+      when BEAM clustering is actually configured (`CLUSTER_DNS_QUERY`), and a
       page that silently fails to advance is the dead end this replaced.
 
   Both paths re-read the user from the database rather than trusting the

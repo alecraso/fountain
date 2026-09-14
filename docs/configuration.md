@@ -55,8 +55,6 @@ message.
 | `BROKER_SESSION_TTL_SECONDS` | `21600` | — | How long a proxy session token lives. Fountain mints a new one on each provision and each reattach, and again before a turn when the current one is near its end. Both backends accept 300 to 604800. |
 | `BROKER_LOG_RETENTION_HOURS` | `168` | — | How long the egress request log keeps a row. `GET /api/conversations/:id/egress` reads it, and `/admin/broker` sums it. A daily job deletes older rows. New request rows store `/[REDACTED]` as the path; the API also hides paths in older rows. Existing database paths remain until this sweep removes them. Historical server logs follow the log storage system's retention policy. |
 | `BROKER_ALLOW_UNENFORCED` | `false` | — | A `true` lets a brokered conversation run on a provider that has no network policy, for example a self-hosted runner. The sandbox then holds placeholders and a proxy address, but nothing stops a process from a direct connection that avoids the proxy. For development only. |
-| `BROKER_URL` | — | — | **Retired.** It selected the Agent Vault backend. Fountain now runs the proxy itself, so this backend no longer exists. Boot refuses it, because a deployment that still sets it would otherwise broker nothing and say nothing. Remove it, and set `BROKER_LISTEN_PORT`. |
-| `BROKER_TOKEN` | — | — | **Retired.** It was the credential `BROKER_URL` used. Boot warns and ignores it. Remove it from your secret store: it is a credential for a service that no longer exists. |
 | `E2B_API_KEY` | — | For the `e2b` provider. | The [E2B](https://e2b.dev) API key. Its presence turns the provider on. |
 | `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane. |
 | `E2B_TEMPLATE` | `base` | — | The template that Fountain creates a new E2B sandbox from. The stock `base` template has no agent CLI, so build one from `images/e2b/` for real use. |
@@ -376,7 +374,6 @@ You need this for more than one replica, and for nothing else. Read
 |---|---|---|---|
 | `CLUSTER_DNS_QUERY` | — | Multi-replica. | The DNS name that Fountain polls to discover a peer. In Kubernetes that is a headless service. Empty or unset, the cluster is off. |
 | `RELEASE_NAME` | Set by the release. | — | The node basename that peer discovery uses. It must match what each node registered as. The release sets it, so override it only when you know why. |
-| `DNS_CLUSTER_QUERY` | — | — | A second, separate discovery mechanism, which is Phoenix's `DNSCluster`. Leave it unset when you use `CLUSTER_DNS_QUERY`. |
 
 ## Observability
 
@@ -389,8 +386,6 @@ You need this for more than one replica, and for nothing else. Read
 | `OTEL_SERVICE_NAME` | `fountain` | — | The service name on an exported trace. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `HONEYCOMB_ENDPOINT` | — | The OTLP target for a trace export, over HTTP with protobuf. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | — | — | The `key=val,key=val` headers on a trace export. |
-| `HONEYCOMB_ENDPOINT` | `https://api.honeycomb.io` | — | The Honeycomb shortcut for the endpoint above. |
-| `HONEYCOMB_API_KEY` | — | — | The Honeycomb shortcut that adds the `x-honeycomb-team` header. |
 
 Fountain configures a trace export in production, while it serves, and nowhere
 else. It is **off by default**. It exports a span only when you explicitly set

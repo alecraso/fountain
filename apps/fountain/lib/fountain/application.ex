@@ -86,7 +86,6 @@ defmodule Fountain.Application do
     ] ++
       broker_children() ++
       [
-        {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Fountain.PubSub},
         # Fire-and-forget work started from a request and never awaited: the
         # `last_used_at` stamp on an API key, the password-reset email. These
