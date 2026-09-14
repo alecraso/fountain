@@ -39,16 +39,6 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
         Fountain.InferenceCredentials.put_credential(conv.user_id, <<0::256>>, kind, value)
     end
 
-    # Turn 1 fires title generation, which is a live HTTPS call to the model
-    # provider. Every other test here leaves `credentials` empty, so it used to
-    # bail at `:no_credentials` before reaching the network — the moment a test
-    # supplies a key-shaped credential it dials out for real. Nothing in this
-    # file asserts on titles, so stub the boundary rather than let an offline
-    # or egress-restricted runner decide how long the call takes to fail.
-    Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
-      {:error, :stubbed_in_test}
-    end)
-
     ref = stub_acp_transport()
 
     {pid, _mon, :alive} = start_server(conv, initial_prompt: "first", runtime: runtime)
@@ -833,6 +823,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       assert is_nil(:sys.get_state(pid).current_turn)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      assert Conversations._unsafe_get_conversation!(conv.id).title ==
+               "Research Xfinity internet promotion pricing"
+
       assert [%{origin: "user"}] = Conversations._unsafe_list_turns(conv.id)
 
       # With no turn to attach it to, the line is dropped, not persisted.
@@ -840,6 +834,77 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
                Conversations._unsafe_list_log_events(conv.id),
                &(&1.data =~ "session_info_update")
              )
+    end
+
+    test "Unicode titles cannot disrupt an active turn or the idle connection", ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+      prompt_id = drive_to_prompt(pid, ref)
+      title = String.duplicate("👨‍👩‍👧‍👦", 40)
+      assert length(String.codepoints(title)) == 280
+
+      notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => title})
+      assert :sys.get_state(pid).current_turn.status == "running"
+
+      assert Conversations._unsafe_get_conversation!(conv.id).title ==
+               String.duplicate("👨‍👩‍👧‍👦", 36)
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "New " <> title})
+      assert is_nil(:sys.get_state(pid).current_turn)
+
+      assert Conversations._unsafe_get_conversation!(conv.id).title ==
+               "New " <> String.duplicate("👨‍👩‍👧‍👦", 35)
+
+      assert [%{status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
+    end
+
+    test "active and idle harness titles redact secrets before storage and API serialization",
+         ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+      prompt_id = drive_to_prompt(pid, ref)
+      secret = "synthetic-harness-title-secret"
+      Fountain.Conversations.Redaction.put(conv.id, [{"PRIVATE_TOKEN", secret}])
+      on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
+
+      notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "Active " <> secret})
+
+      fresh = Conversations._unsafe_get_conversation!(conv.id)
+      assert fresh.title == "Active [REDACTED]"
+      assert FountainWeb.ConversationJSON.data(fresh).title == "Active [REDACTED]"
+      events = Conversations._unsafe_list_log_events(conv.id)
+      assert Enum.any?(events, &String.contains?(&1.data || "", "Active [REDACTED]"))
+      refute Enum.any?(events, &String.contains?(&1.data || "", secret))
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "Idle " <> secret})
+      fresh = Conversations._unsafe_get_conversation!(conv.id)
+      assert fresh.title == "Idle [REDACTED]"
+      assert FountainWeb.ConversationJSON.data(fresh).title == "Idle [REDACTED]"
+      assert is_nil(:sys.get_state(pid).current_turn)
+      assert [%{status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
+    end
+
+    test "a title persistence exception leaves the turn running without logging its contents",
+         ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+      prompt_id = drive_to_prompt(pid, ref)
+      secret = "secret-in-database-error-parameters"
+
+      Mimic.stub(Conversations, :_unsafe_update_harness_title, fn _, _ ->
+        raise Postgrex.Error, message: secret
+      end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "Title"})
+        end)
+
+      assert log =~ "session title update failed (Postgrex.Error)"
+      refute log =~ secret
+      assert :sys.get_state(pid).current_turn.status == "running"
+      assert is_nil(Conversations._unsafe_get_conversation!(conv.id).title)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert [%{status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
     end
 
     test "session metadata mid-turn still lands on the transcript (#1300)", %{
@@ -850,6 +915,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       prompt_id = drive_to_prompt(pid, ref)
 
       notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "Early title"})
+      assert Conversations._unsafe_get_conversation!(conv.id).title == "Early title"
 
       assert Enum.any?(
                Conversations._unsafe_list_log_events(conv.id),

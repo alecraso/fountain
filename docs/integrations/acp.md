@@ -106,6 +106,48 @@ Two adjustments follow, and both are about the machine boundary.
 A dropped SSE connection is not a lost turn. The server closes an idle stream
 after 60 s, and the adapter reconnects and continues from where it stopped.
 
+### Conversation titles from the harness
+
+Fountain uses the sandbox harness's standard ACP
+[`session_info_update`](https://agentclientprotocol.com/protocol/v1/session-list#updating-session-metadata)
+to name conversations. It makes no separate inference request for a title.
+The harness can send this notification during a turn or after the prompt
+response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+    "sessionId": "the-harness-session-id",
+    "update": {
+      "sessionUpdate": "session_info_update",
+      "title": "Fix login redirect"
+    }
+  }
+}
+```
+
+The title is saved on the conversation and refreshes the sidebar. A later
+notification can revise a harness title; an omitted `title` leaves it alone,
+and `null` clears it. Fountain redacts registered secrets before normalizing
+or shortening the title. It collapses whitespace, removes NUL characters,
+and limits titles to 120 characters. Complex emoji and combining characters
+may shorten this further to fit storage, without splitting a character.
+A blank title also clears it. A failed title update leaves the turn running.
+
+Explicit titles, including existing titles whose origin is unknown, stay
+unchanged. Renaming a conversation claims its title, even when the name is
+unchanged. Teammate names are never changed by these notifications. If a
+harness supplies no title, the existing untitled display fallback applies.
+Metadata arriving after a turn ends updates the title without opening a new
+turn or extending a background turn's quiet timer. The notification is stored
+in the transcript only while a turn is open.
+
+For other harness-created values, ACP supports custom data in
+[`_meta`](https://agentclientprotocol.com/protocol/v1/extensibility#the-_meta-field).
+Fountain does not map arbitrary `_meta` values to conversation fields.
+
 ## `_meta` extensions on `session/new`
 
 These are out-of-band fields that a chat harness sends. Fountain ignores each

@@ -3736,7 +3736,7 @@ export interface components {
             source?: "ui" | "api" | "agent";
             /** @enum {string} */
             status: "pending" | "running" | "idle" | "failed" | "terminated";
-            /** @description Generated from the first turn; null until one exists. */
+            /** @description Optional display title, set explicitly or supplied by the harness over ACP. Harness titles may be revised or cleared; null when no title is set. */
             title?: string | null;
             turn_count?: number;
             /** @description last_active_at is later than last_read_at (true if never read). */
