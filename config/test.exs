@@ -59,9 +59,9 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 # toggles it per-test via the application env.
 config :fountain, :credits_enabled, true
 
-# `/` serves the marketing page in :test (MARKETING_SITE is not read in :test —
-# see config/runtime.exs), so the existing homepage tests keep covering the
-# pitch. The plain front door is covered by flipping this off per-test.
+# The public chrome links the marketing site's pages in :test (MARKETING_SITE
+# is not read in :test — see config/runtime.exs); the chrome without them is
+# covered by flipping this off per-test.
 config :fountain, :marketing_site, true
 
 # Legal identity pinned (LEGAL_* env vars are not read in :test — see

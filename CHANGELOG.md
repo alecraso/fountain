@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Upgrade notes
 
+- **The marketing pages left the server** (ADR 0034, amended). `/launch`,
+  `/oss-launch`, `/buzz-launch`, `/integrations`, `/built-with`,
+  `/self-hosted`, `/faq`, `/code-review-bot` and `/case-studies/*` are no
+  longer routes: on the project's own host a static site
+  ([managoat/site](https://github.com/managoat/site)) serves them in front
+  of the app, and on every other deployment, where they used to redirect into
+  the manual, they now return 404. `/` is the plain front door everywhere.
+  `MARKETING_SITE=true` keeps one job: the manual's header and footer link
+  the site's pages. Nothing in `docs/` linked the retired routes.
+
 - **A sandbox without a recorded build fingerprint now requires an explicit
   rebuild before configuration reapply** (#2102). The API returns
   `409 rebuild_required` with `field: "environment"` and a missing-build-evidence
@@ -155,6 +165,12 @@ upgrade, is in
   custody protections.
 
 ### Changed
+
+- The marketing templates, their data module, the paper skin and the app
+  screenshots moved to [managoat/site](https://github.com/managoat/site);
+  about 9,900 lines, including the tests, left `apps/fountain`. The
+  `MarketingController` is now `FrontDoorController` (`/`, `/terms`,
+  `/privacy`) and the `marketing` layout is `public`, which `/docs` wears.
 
 - Sandbox application code now uses `machine_name` across providers (#2108).
   Existing database columns, API fields, event metadata and provider names retain

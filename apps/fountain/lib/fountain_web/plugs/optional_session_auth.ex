@@ -4,7 +4,7 @@ defmodule FountainWeb.Plugs.OptionalSessionAuth do
   authentication. Sets `conn.assigns.current_user` to the user if a valid
   session exists, or `nil` if not. Never redirects.
 
-  Used on public pages (e.g. the marketing site) that need to show different
+  Used on public pages (the front door, the manual) that need to show different
   UI for logged-in users without gating access.
   """
 

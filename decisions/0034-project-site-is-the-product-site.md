@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "The open-source project has no site of its own; managoat.com and /docs carry it"
-description: "With the hosted instance branded Managoat, Fountain the AGPL project keeps its name but gets no separate domain or GitHub Pages site. The product site is the project site: one 'Open source' page under /docs states the licence split and links the repo, and the README points back. Built in the PR that adds this file."
+description: "With the hosted instance branded Managoat, Fountain the AGPL project keeps its name but gets no separate domain or GitHub Pages site. The product site is the project site: one 'Open source' page under /docs states the licence split and links the repo, and the README points back. Amended 2026-09-14: the marketing pages are a static site of their own (managoat/site) on the same host, in front of the app at the ingress; the app serves the front door, the legal pages and /docs."
 tags: [open-source, docs, brand, product]
 status: stable
 adr: "0034"
@@ -13,8 +13,9 @@ verified: { by: human:jhgaylor, at: 2026-08-25T22:00:00-04:00 }
 
 # 0034 — The open-source project has no site of its own; managoat.com and /docs carry it
 
-**Status:** Accepted, built in the PR that adds this file. Nothing described
-here is unbuilt.
+**Status:** Accepted, built in the PR that adds this file. Amended
+2026-09-14 (see the end): the marketing pages left the app for a static site
+on the same host. Nothing described here is unbuilt.
 
 ## Context
 
@@ -85,7 +86,8 @@ Pattern 1, with pattern 2's naming:
   (`LICENSE`, `ee/LICENSE`, `NOTICE`, 0027).
 - Marketing copy on the hosted homepage is free to lead with Managoat, but
   the "open source" sentence and the repo link stay above the fold. That
-  copy lives with the hosted instance's branding and is not versioned here.
+  copy lives with the hosted instance's branding and is not versioned here
+  (since the 2026-09-14 amendment, literally: it is in `managoat/site`).
 - Search: "fountain agent sandbox" resolves to the repo and `/docs`;
   "managoat" resolves to the product. That is the intended split and the
   reason not to rename.
@@ -104,3 +106,39 @@ needed to keep a second site alive.
   are different things, kept in one place each" line.
 - #1008 / #1011 — the GitHub Pages retirement and tombstone; the last time a
   second publisher for the same content was tried.
+
+## Amendment, 2026-09-14: the marketing pages are a static site on the same host
+
+The decision above said "one domain" and, implicitly, "the app serves both":
+the pitch, the campaign pages, integrations, built-with, self-host, the
+questions page and the case study were Phoenix templates inside the AGPL
+server, gated by `MARKETING_SITE` so a self-host never rendered them. That put
+about 9,900 lines of one deployment's sales copy and its tests in the
+open-source repo, ran the engine's suite on every headline edit, and rebuilt
+the image for every one (#1399).
+
+What changed:
+
+- **The pages live in [managoat/site](https://github.com/managoat/site)**,
+  rendered to static HTML by a small Elixir project over the same HEEx
+  templates, and served by nginx. What the app read at request time (brand,
+  prices, the installed extensions, the session for the nav) is a constant
+  there.
+- **Same host, path-routed.** Traefik (home-cloud, `managoat-site`) sends `/`,
+  `/launch`, `/oss-launch`, `/buzz-launch`, `/integrations`, `/built-with`,
+  `/self-hosted`, `/faq`, `/code-review-bot`, `/case-studies/*` and `/site/*`
+  on `managoat.com` to the site and everything else to the app. "One domain"
+  stands; "the app serves both" does not.
+- **The app keeps what is not marketing:** a plain front door at `/`
+  (`FountainWeb.FrontDoorController`), the operator's legal pages
+  (`Fountain.Legal`, #517) and `/docs`. `MARKETING_SITE` survives with one
+  job: whether the manual's chrome links the site's pages.
+- **The docs stay here.** Phase 1 of #1399 (the manual leaving the image) is
+  not part of this; the three cross-repo couplings it would create are the
+  reason marketing went first.
+
+Trade-offs accepted: a signed-in reader of `managoat.com/` sees "Sign in"
+rather than "Go to app" (the login route forwards them); the pricing copy is
+a constant that must be changed with the deployment's `CREDIT_*` variables;
+the `/self-hosted` env-var table lost its in-repo guard, which now reads
+`docs/reference/feature-status.md` instead.

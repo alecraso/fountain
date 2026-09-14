@@ -59,8 +59,10 @@ defmodule Fountain.Extensions do
   What a surface asks when it needs to know whether a capability is present in
   this distribution *without naming a module*: an id is a value in
   configuration, not a code reference, so a core-owned caller can ask and
-  `Fountain.ExtensionGuardTest` stays green. That is what `id/0` is for, and
-  `Fountain.Marketing.available?/1` is the caller it was added for (#1525).
+  `Fountain.ExtensionGuardTest` stays green. That is what `id/0` is for. The
+  caller it was added for (#1525) was the marketing copy, which has since
+  left the repo for managoat/site; the question is still the one a core-owned
+  surface has to ask, so the function stays.
 
   `false` on a core distribution, and on a bundled one where the extension is
   configured but answers `enabled?/0` with `false`.

@@ -38,18 +38,10 @@ defmodule FountainWeb.BrandChromeTest do
     assert_email_sent(subject: "Verify your Managoat account")
   end
 
-  test "the marketing page and legal pages name the brand; the CLI stays fountain", %{conn: conn} do
+  test "the front door and legal pages name the brand", %{conn: conn} do
     home = conn |> get(~p"/") |> html_response(200)
-    assert home =~ "You did not set out to run a sandbox platform."
-    assert home =~ "Managoat scrubs secret values from stored output"
-    assert home =~ "Put Managoat behind the stack you already use."
-    assert home =~ "Give it a Managoat URL and key"
-    # The CLI keeps the engine's name on a branded deployment. The anchor moved
-    # to the protocols section when the surfaces card was replaced.
-    assert home =~ ">fountain acp</code>"
+    assert home =~ ~r/>\s*Managoat\s*<\/h1>/
     assert home =~ "© 2026 Managoat."
-    assert home =~ ~s(data-role="hosted-brand")
-    assert home =~ "Managoat is the hosted Fountain. The engine is open source"
     assert home =~ "Built on Fountain. Open source and yours to run."
 
     for path <- [~p"/terms", ~p"/privacy"] do
@@ -61,7 +53,7 @@ defmodule FountainWeb.BrandChromeTest do
     end
   end
 
-  test "without the brand the marketing site credits nobody", %{conn: conn} do
+  test "without the brand the front door credits nobody", %{conn: conn} do
     Application.delete_env(:fountain, :product_name)
     home = conn |> get(~p"/") |> html_response(200)
     assert home =~ "© 2026 Fountain."

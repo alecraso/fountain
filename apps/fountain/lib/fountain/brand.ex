@@ -39,19 +39,23 @@ defmodule Fountain.Brand do
     end
   end
 
+  @doc "The engine's repository, which the public chrome links on the marketing site."
+  @spec repo_url() :: String.t()
+  def repo_url, do: "https://github.com/managoat/fountain"
+
   @doc "True when the deployment is branded as something other than the engine."
   @spec hosted?() :: boolean()
   def hosted?, do: name() != @engine
 
   # The files a brand supplies, and nothing else: the console header and the
-  # marketing chrome use the app icon, the root layout links the favicons and
+  # public chrome use the app icon, the root layout links the favicons and
   # the touch icon, and every Open Graph card carries the 1200×630 card. The
   # names are fixed so that a bundle is a directory with these seven files in
   # it, whatever brand it is for.
   #
   # `mark-mono.png` is the odd one: a single-colour drawing of the mark on a
-  # transparent ground, which is what the marketing site's paper skin puts in
-  # its chrome and behind its opening lines. The app icon is a coloured tile
+  # transparent ground, which is what the marketing site (managoat/site) puts
+  # in its chrome and behind its opening lines; the app only ships it. The app icon is a coloured tile
   # and cannot do that job — a page set in one ink cannot hold a second
   # palette in the corner — and the drawing is inverted rather than duplicated
   # for the dark theme, so one file serves both. A brand that supplies the

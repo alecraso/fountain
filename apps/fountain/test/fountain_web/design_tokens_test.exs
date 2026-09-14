@@ -123,7 +123,7 @@ defmodule FountainWeb.DesignTokensTest do
     end
   end
 
-  describe "the marketing scales" do
+  describe "the public-page scales" do
     setup do
       %{tokens: Map.new(declarations(File.read!(@source)))}
     end
