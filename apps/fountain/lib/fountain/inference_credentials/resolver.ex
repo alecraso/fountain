@@ -155,7 +155,9 @@ defmodule Fountain.InferenceCredentials.Resolver do
   defp platform(provider, runtime, own, opts) do
     selected =
       if provider == "openai" and runtime == "codex" and Keyword.get(opts, :brokered, true) do
-        case Fountain.PlatformChatGPT.credential(refresh: Keyword.get(opts, :refresh, true)) do
+        case Fountain.ChatGPTAccounts.platform_credential(
+               refresh: Keyword.get(opts, :refresh, true)
+             ) do
           {:ok, token} -> {:ok, :codex_chatgpt_access_token, token}
           :none -> Fountain.PlatformInference.key_for(provider)
         end
