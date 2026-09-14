@@ -11,14 +11,33 @@ server releases.
 
 ---
 
-## [4.1.0] — 2026-09-14
+## [5.0.0] — 2026-09-14
+
+### Breaking changes
+
+- The public `Block.body` type now includes an array of plan entries alongside
+  `string | null | undefined`. Existing code that calls string methods on
+  `body` must check its type first. Checking `block.kind` alone does not narrow
+  `body`, because the generated `Block` type is not a discriminated union.
+
+  Replace `block.body?.trim() ?? ""` with a body-type check:
+
+  ```ts
+  function text(block: Block): string {
+    if (block.kind !== "text") return "";
+    return typeof block.body === "string" ? block.body.trim() : "";
+  }
+  ```
+
+  Read checklist entries only when `block.kind === "plan"` and
+  `Array.isArray(block.body)`. Each array is the full ordered snapshot;
+  an empty array clears the checklist.
 
 ### Added
 
-- `plan` blocks with full checklist arrays in `body`. The generated `Block.body`
-  type now includes an array of plan entries; check the block kind or body type
-  before treating it as text. Streaming block events preserve the checklist,
-  and the turn follower keeps it out of the assistant's text.
+- `plan` blocks with full checklist arrays in `body`. Streaming block events
+  preserve the checklist, and the turn follower keeps it out of the
+  assistant's text.
 
 ## [4.0.0] — 2026-09-14
 
