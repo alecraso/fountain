@@ -384,12 +384,12 @@ You need this for more than one replica, and for nothing else. Read
 | `SENTRY_ENVIRONMENT` | The build env. | — | The environment tag on a reported error. |
 | `FOUNTAIN_BUILD_SHA` | Set by the image build for a release image, or by the deployment for a main-line image. | — | Matches an error and a trace to a deploy. The app footer shows it too. |
 | `OTEL_SERVICE_NAME` | `fountain` | — | The service name on an exported trace. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `HONEYCOMB_ENDPOINT` | — | The OTLP target for a trace export, over HTTP with protobuf. |
-| `OTEL_EXPORTER_OTLP_HEADERS` | — | — | The `key=val,key=val` headers on a trace export. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | — | The OTLP target for a trace export, over HTTP with protobuf. Unset, nothing is exported. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | — | — | The `key=val,key=val` headers on a trace export. A vendor that authenticates by header takes its key here, for example `x-honeycomb-team=<key>` for Honeycomb. |
 
 Fountain configures a trace export in production, while it serves, and nowhere
 else. It is **off by default**. It exports a span only when you explicitly set
-`OTEL_EXPORTER_OTLP_ENDPOINT`, `HONEYCOMB_ENDPOINT` or `HONEYCOMB_API_KEY`.
+`OTEL_EXPORTER_OTLP_ENDPOINT`. Headers alone do not turn it on.
 
 The OTel SDK also honours its own standard variables, and those win. Set
 `OTEL_TRACES_EXPORTER=otlp` or `=none` to force the export on or off, whatever

@@ -1391,9 +1391,6 @@ if config_env() == :prod and server? do
   #   OTEL_EXPORTER_OTLP_ENDPOINT — e.g. "https://api.honeycomb.io"
   #   OTEL_EXPORTER_OTLP_HEADERS  — e.g. "x-honeycomb-team=<key>"
   #
-  # For Honeycomb specifically you can also set HONEYCOMB_API_KEY and the
-  # exporter config below will wire it up automatically.
-  #
   # OFF unless an export target is explicitly configured (#317): the exporter
   # used to default to :otlp aimed at api.honeycomb.io, so a self-hoster who
   # set none of these got continuous rejected span batches against a
