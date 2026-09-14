@@ -36,7 +36,7 @@ publishes the same version with a `-core` suffix.
 
 | Tag | Contains |
 |---|---|
-| `vX.Y.Z` and `vX.Y` | The server, the Buzz extension and the support extension, plus the `buzz-acp` and `buzz` executables the Buzz extension runs. |
+| `vX.Y.Z` and `vX.Y` | The server with Buzz, Support, Google/Gmail, Microsoft and Slack extensions, plus the Buzz executables. |
 | `vX.Y.Z-core` and `vX.Y-core` | The server. No extension, no extension route, no extension migration and no extension executable. |
 
 Use the bundled image unless you know you want the other one. The hosted
@@ -45,7 +45,11 @@ deployment runs it, and we triage a bug report against it.
 The core image is smaller and has less surface to attack. It is also what to
 build an extension of your own against. The cost: hosted Buzz agents
 (`/api/buzz/agents` and the Nostr harness) and the problem-report endpoint
-answer `404`, because the code that serves them is not installed.
+answer `404`, because the code that serves them is not installed. The Gmail
+MCP route is also absent. Core lists no Google, Microsoft or Slack platform
+connection provider; their OAuth environment variables are inert. You can
+revoke or delete retained connections locally. They contribute no token while
+their extension is absent.
 
 To move between them, pull the other tag and restart. Extension tables stay in
 the database. A core image does not create them. It also does not drop the ones
@@ -61,7 +65,7 @@ release's applications and extension executables when Docker builds the image.
 Setting it on a running container does not change its distribution.
 
 ```bash
-# Bundled: Fountain, Buzz and Support.
+# Bundled: Fountain with all first-party extensions.
 docker build --build-arg BUNDLE_EXTENSIONS=true -t fountain:bundled .
 
 # Core: Fountain without first-party extensions.
@@ -96,7 +100,7 @@ Did you move migrations into a Job with `MIGRATE_ON_BOOT=false`? Then the Job
 is the upgrade step. Read
 [Run migrations in a Job](database.md#run-migrations-in-a-job).
 
-## Vault policy migration (upcoming)
+## Vault policy migration
 
 Migration `20260913180000` adds generated `vault_access` columns to agents and
 saved agent versions. New authorization readers use the explicit mode. Existing
@@ -162,7 +166,8 @@ The hosted service's 2026-09-13 audit observed both ready replicas at commit
 and database clients belonged only to those replicas. No other Fountain writer
 workloads or jobs were inventoried. That establishes the hosted rollout boundary;
 self-hosted operators must establish it for their own processes and external
-writers. There is still no published release tag containing the writer floor.
+writers. The required bridge revision predates v0.17.0. There is no earlier release
+tag containing the writer floor; use a reviewed bridge commit for this rollout.
 
 To check the database prerequisite, this query must return one row with
 `convalidated = true`:
