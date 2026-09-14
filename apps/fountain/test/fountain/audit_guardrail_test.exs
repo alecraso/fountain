@@ -183,6 +183,9 @@ defmodule Fountain.AuditGuardrailTest do
     "Runners.touch/1 and reconnects" =>
       "a last-seen stamp on every heartbeat; a reconnect refreshes the same row",
     "Conversations.mark_read/2" => "reading is not a state change anyone audits",
+    "Conversations._unsafe_update_harness_title/2" =>
+      "harness-set display state, like a status transition; the ACP line that carried the " <>
+        "title lands in log_events while a turn is open, and an owner's rename is audited as before",
     "theme and display preferences" => "not tenant data anyone reconstructs an incident from"
   }
 
