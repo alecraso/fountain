@@ -471,7 +471,8 @@ and bullets, so `changelog.d/2105-retired-urls-404.md` might read:
 rolls every fragment, plus anything left under `[Unreleased]`, into the dated
 section for the new version and deletes the fragments, so `CHANGELOG.md`
 changes once per release. CI refuses a PR that edits `CHANGELOG.md` directly;
-to fix a typo in a shipped entry, put the `changelog:manual` label on the PR.
+to fix a typo in a shipped entry, put the `changelog:manual` label on the PR
+and re-run the `CI policy and alert tests` job.
 
 This replaced the shared `[Unreleased]` section every PR used to insert a
 line into. With ~26 merges a day, two PRs adding a bullet at the top of the

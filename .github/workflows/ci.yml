@@ -1874,6 +1874,10 @@ jobs:
     name: CI policy and alert tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # The changelog guard reads the PR's labels.
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
@@ -1896,18 +1900,27 @@ jobs:
         # the changelog:manual label (a typo in a shipped entry) are the two
         # doors. pull_request only: the merge group re-tests the same tree,
         # and a push to main has no PR to judge.
+        #
+        # The labels are read from the API, not the event payload: the
+        # payload freezes them at trigger time, so a label added after the
+        # push counted for nothing until the next push (#2158 hit this on
+        # its own first run). With a live read, re-running this job after
+        # labelling is enough.
         if: ${{ github.event_name == 'pull_request' }}
         env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
         run: |
           set -euo pipefail
           if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             git fetch --quiet --depth=1 origin "${BASE_SHA}"
           fi
           args=()
-          for label in ${LABELS}; do args+=(--label "${label}"); done
+          while IFS= read -r label; do
+            if [ -n "${label}" ]; then args+=(--label "${label}"); fi
+          done < <(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name')
           python3 scripts/changelog.py guard --base "${BASE_SHA}" --branch "${HEAD_REF}" "${args[@]}"
       # This job is required even for docs-only changes and reused trees.
       # The path-filtered Alert rules workflow alone cannot gate a merge.
