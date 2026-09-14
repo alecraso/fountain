@@ -9532,6 +9532,10 @@
           "required": false,
           "type": "boolean"
         },
+        "connections_manageable": {
+          "required": false,
+          "type": "boolean"
+        },
         "email": {
           "format": "email",
           "required": true,

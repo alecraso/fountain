@@ -46,7 +46,8 @@ defmodule FountainWeb.AuthMeController do
       # it is the same answer for every account here — still reported per
       # request, because it is what this client's sandboxes will do.
       brokered: Fountain.Broker.configured?(),
-      connections_enabled: Fountain.Connections.enabled_for?(user.id)
+      connections_enabled: Fountain.Connections.enabled_for?(user.id),
+      connections_manageable: Fountain.Connections.manageable_for?()
     })
   end
 end

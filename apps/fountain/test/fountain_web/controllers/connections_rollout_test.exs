@@ -53,6 +53,9 @@ defmodule FountainWeb.ConnectionsRolloutTest do
       Application.delete_env(:fountain, :broker_listen_port)
       flag(unquote(flag))
 
+      assert %{"connections_enabled" => false, "connections_manageable" => false} =
+               api(ctx.raw) |> get("/api/auth/me") |> json_response(200)
+
       routes =
         FountainWeb.Router.__routes__()
         |> Enum.filter(
@@ -288,12 +291,20 @@ defmodule FountainWeb.ConnectionsRolloutTest do
     flag(false)
     conn = build_conn() |> put_req_header("authorization", "Bearer " <> ctx.raw)
 
-    assert %{"brokered" => true, "connections_enabled" => false} =
+    assert %{
+             "brokered" => true,
+             "connections_enabled" => false,
+             "connections_manageable" => true
+           } =
              conn |> get("/api/auth/me") |> json_response(200)
 
     flag(true)
 
-    assert %{"brokered" => true, "connections_enabled" => true} =
+    assert %{
+             "brokered" => true,
+             "connections_enabled" => true,
+             "connections_manageable" => true
+           } =
              conn |> get("/api/auth/me") |> json_response(200)
 
     assert %{"data" => []} = conn |> get("/api/connections") |> json_response(200)

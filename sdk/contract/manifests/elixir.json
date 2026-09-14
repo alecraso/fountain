@@ -78,6 +78,7 @@
     "POST /api/vaults/{vault_id}/secrets"
   ],
   "schemas": {
+    "AuthMeResponse": { "fields": ["connections_enabled", "connections_manageable"] },
     "Agent": { "required": ["id"], "fields": ["name"] },
     "AgentListResponse": { "required": ["data"] },
     "AgentResponse": { "required": ["data"] },
