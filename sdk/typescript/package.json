@@ -1,6 +1,6 @@
 {
   "name": "@managoat/fountain-sdk",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Run a coding agent on a real computer, with your repos and your credentials, in one call.",
   "license": "Apache-2.0",
   "publishConfig": {
@@ -51,6 +51,7 @@
     "prepublishOnly": "node scripts/ci-publishes.mjs && npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
+    "@redocly/ajv": "8.11.2",
     "@types/node": "^26.4.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.7.0"

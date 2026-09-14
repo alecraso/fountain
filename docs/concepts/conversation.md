@@ -66,6 +66,12 @@ Log events stream in real time over
 ACP events into transcript blocks. Other streams remain available as raw
 event data. Historical vendor stdout formats no longer produce blocks.
 
+The additive `plan` block kind carries the full ordered checklist in `body`,
+including an empty list when the agent clears it. Each entry has `content` and
+`status` (`pending`, `in_progress`, or `completed`). Entries can also carry
+`priority`, `id`, and `activeForm`. Each snapshot can render independently in
+live output or event replay.
+
 ## The sandbox does not live forever, and that is two rules
 
 Both bounds act on the sandbox. Neither one ends the Conversation, which stays

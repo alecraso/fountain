@@ -25,6 +25,35 @@ defmodule Fountain.Conversations.BlocksTest do
     assert [%{kind: :text, body: "hi"}] = Blocks.for_event(ev)
   end
 
+  test "a plan is a complete JSON checklist in both replay and the API enum" do
+    entries = [
+      %{"content" => "Inspect", "status" => "completed", "priority" => "medium"},
+      %{"content" => "Test", "status" => "in_progress", "priority" => "high"}
+    ]
+
+    for update <- [
+          %{"sessionUpdate" => "plan", "entries" => entries},
+          %{
+            "sessionUpdate" => "tool_call_update",
+            "_meta" => %{"managoat_acp" => %{"plan" => entries}}
+          }
+        ] do
+      event = %{kind: "output", stream: "acp", data: acp(update)}
+      assert [block] = Blocks.for_event(event)
+      assert Blocks.to_json(block) == %{"kind" => "plan", "body" => entries}
+      assert Blocks.assistant_text([event]) == ""
+    end
+
+    assert "plan" in Blocks.kinds()
+    assert "plan" in FountainWeb.Schemas.Block.schema().properties.kind.enum
+
+    assert [%{body: []}] =
+             Blocks.for_event(%{
+               stream: "acp",
+               data: acp(%{"sessionUpdate" => "plan", "entries" => []})
+             })
+  end
+
   test "non-ACP streams do not produce blocks" do
     legacy =
       Jason.encode!(%{

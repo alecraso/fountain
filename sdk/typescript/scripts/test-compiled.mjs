@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Exercise the same tests on runtimes that cannot execute TypeScript directly.
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -20,6 +20,9 @@ try {
   // Keep the tests' relative fixture paths and source/package inspections.
   cpSync(join(sdk, "src"), join(output, "src"), { recursive: true });
   cpSync(join(sdk, "package.json"), join(output, "package.json"));
+  // A test that imports a package resolves it from the copy, not from here.
+  // rmSync unlinks the symlink without following it into the real directory.
+  symlinkSync(join(sdk, "node_modules"), join(output, "node_modules"), "dir");
   for (const fixtures of ["conformance", "contract"]) {
     cpSync(join(sdk, "..", fixtures), join(temporary, "sdk", fixtures), { recursive: true });
   }

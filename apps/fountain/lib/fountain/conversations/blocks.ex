@@ -21,6 +21,7 @@ defmodule Fountain.Conversations.Blocks do
   | kind | fields |
   |---|---|
   | `:text`, `:thinking` | `body` |
+  | `:plan` | `body` (the full ordered list of checklist entries) |
   | `:tool_use` | `id`, `name`, `summary`, `body` (the input) |
   | `:tool_result` | `tool_id`, `body`, `error?` |
   | `:init` | `summary`, `body` |
@@ -34,7 +35,7 @@ defmodule Fountain.Conversations.Blocks do
   because the two arrive as separate events.
   """
 
-  @kinds ~w(text thinking tool_use tool_result init result error raw permission_request)
+  @kinds ~w(text thinking tool_use tool_result init result error raw permission_request plan)
 
   @doc "Every `kind` a block can have — the wire enum."
   def kinds, do: @kinds

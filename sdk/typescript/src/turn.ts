@@ -101,7 +101,7 @@ export class TurnFollower {
   }
 
   private applyBlock(block: Block): RunEvent[] {
-    const body = block.body ?? "";
+    const body = typeof block.body === "string" ? block.body : "";
 
     if (block.kind === "text") {
       if (!body) return [];
