@@ -136,7 +136,7 @@ defmodule Fountain.SandboxFilesTest do
       expect_script(fn handle, script, args ->
         assert handle.name == ctx.sandbox.machine_name
         assert script =~ "shopt -s dotglob nullglob"
-        assert args == [@home <> "/src"]
+        assert args == [@home <> "/src", @home, "sandbox:" <> @home]
 
         {:ok,
          "file\t12\tREADME.md\0directory\t\tlib\0file\t3\t.env\0" <>
@@ -199,7 +199,11 @@ defmodule Fountain.SandboxFilesTest do
       on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
 
       expect_script(fn _, _, args ->
-        assert args == [@home <> "/sk-env-secret/sk-vault-secret/sk-live-secret"]
+        assert args == [
+                 @home <> "/sk-env-secret/sk-vault-secret/sk-live-secret",
+                 @home,
+                 "sandbox:" <> @home
+               ]
 
         {:ok,
          "file\t12\tz-sk-env-secret.txt\0directory\t\tsk-vault-secret\0" <>
@@ -279,6 +283,9 @@ defmodule Fountain.SandboxFilesTest do
       expect_script(fn _, _, _ -> {:ok, "", 5} end)
       assert {:error, :path_unreadable} = SandboxFiles.list(ctx.sandbox, "locked")
 
+      expect_script(fn _, _, _ -> {:ok, "", 9} end)
+      assert {:error, :path_outside_sandbox} = SandboxFiles.list(ctx.sandbox, "escape")
+
       expect_script(fn _, _, _ -> {:ok, "bash: boom", 127} end)
 
       assert {:error, {:sandbox_command_failed, 127, "bash: boom"}} =
@@ -300,7 +307,12 @@ defmodule Fountain.SandboxFilesTest do
       stub(Managoat.Sandbox, :host_path, fn _handle, path -> "/Users/me/box" <> path end)
 
       expect_script(fn _, _, args ->
-        assert args == ["/Users/me/box/home/sprite/src"]
+        assert args == [
+                 "/Users/me/box/home/sprite/src",
+                 "/Users/me/box/home/sprite",
+                 "sandbox:" <> @home
+               ]
+
         {:ok, "", 0}
       end)
 
@@ -335,7 +347,7 @@ defmodule Fountain.SandboxFilesTest do
         assert script =~ "head -c"
         # The cap plus the overlap: one byte less than the longest value,
         # `sk-live-abcdef`, so a value lying across the cap arrives whole.
-        assert args == ["#{262_144 + 13}", @home <> "/.env"]
+        assert args == ["#{262_144 + 13}", @home <> "/.env", @home, "sandbox:" <> @home]
         {:ok, "#{byte_size(body)}\n" <> b64(body), 0}
       end)
 
@@ -352,7 +364,7 @@ defmodule Fountain.SandboxFilesTest do
 
     test "max_bytes is clamped, and a file longer than it is truncated", ctx do
       expect_script(fn _, _, args ->
-        assert args == ["4194304", @home <> "/big"]
+        assert args == ["4194304", @home <> "/big", @home, "sandbox:" <> @home]
         {:ok, "9999999\n" <> b64("start"), 0}
       end)
 
@@ -379,6 +391,9 @@ defmodule Fountain.SandboxFilesTest do
 
       expect_script(fn _, _, _ -> {:ok, "", 5} end)
       assert {:error, :path_unreadable} = SandboxFiles.read(ctx.sandbox, "root-only")
+
+      expect_script(fn _, _, _ -> {:ok, "", 9} end)
+      assert {:error, :path_outside_sandbox} = SandboxFiles.read(ctx.sandbox, "escape")
     end
 
     test "output the script did not produce is a command failure, not a crash", ctx do
@@ -783,7 +798,7 @@ defmodule Fountain.SandboxFilesTest do
       body = @straddle_body
 
       for max_bytes <- 1..byte_size(body) do
-        expect_script(fn _, _, [n, _] ->
+        expect_script(fn _, _, [n, _, @home, "sandbox:" <> @home] ->
           n = String.to_integer(n)
           # The script is asked past the cap; it still cuts at what it is asked.
           assert n == max_bytes + byte_size(@straddled) - 1
@@ -871,7 +886,7 @@ defmodule Fountain.SandboxFilesTest do
       body = long <> "|" <> @straddled <> "|xyz|"
 
       for max_bytes <- 1..byte_size(body) do
-        expect_script(fn _, _, [n, _] ->
+        expect_script(fn _, _, [n, _, @home, "sandbox:" <> @home] ->
           n = String.to_integer(n)
           assert n == max_bytes + byte_size(long) - 1
           {:ok, "#{byte_size(body)}\n" <> b64(binary_part(body, 0, min(n, byte_size(body)))), 0}
@@ -908,7 +923,7 @@ defmodule Fountain.SandboxFilesTest do
       # answer past the cap is `[REDACTED]` being longer than the value.
       body = "ab12345678cd"
 
-      expect_script(fn _, _, [n, _] ->
+      expect_script(fn _, _, [n, _, @home, "sandbox:" <> @home] ->
         assert n == "#{12 + 7}"
         {:ok, "#{byte_size(body)}\n" <> b64(body), 0}
       end)
