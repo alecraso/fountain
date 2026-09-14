@@ -116,7 +116,20 @@ stage_test() { mix_in test test; }
 
 # ── the runner ────────────────────────────────────────────────────────────
 
-stage_names() { local s; for s in "${STAGES[@]}"; do echo "${s%%|*}"; done; }
+# Literal membership, never a pattern: `grep -qx` read the argument as a
+# regex, so `te.t` and `.*` passed validation, matched no canonical name at
+# selection time and printed PASSED over zero stages.
+is_stage() {
+  local s
+  for s in "${STAGES[@]}"; do [[ "${s%%|*}" == "$1" ]] && return 0; done
+  return 1
+}
+
+selected_has() {
+  local s
+  for s in "${selected[@]}"; do [[ "$s" == "$1" ]] && return 0; done
+  return 1
+}
 
 list_stages() {
   local s
@@ -137,7 +150,7 @@ for arg in "$@"; do
     -h|--help) usage; exit 0 ;;
     -*) echo "precommit: unknown option $arg" >&2; usage >&2; exit 64 ;;
     *)
-      if ! stage_names | grep -qx -- "$arg"; then
+      if ! is_stage "$arg"; then
         echo "precommit: no stage named '$arg'" >&2; usage >&2; exit 64
       fi
       selected+=("$arg")
@@ -148,12 +161,17 @@ done
 run_list=()
 for s in "${STAGES[@]}"; do
   name="${s%%|*}"
-  if [[ ${#selected[@]} -eq 0 ]] || printf '%s\n' "${selected[@]}" | grep -qx -- "$name"; then
+  if [[ ${#selected[@]} -eq 0 ]] || selected_has "$name"; then
     run_list+=("$name")
   fi
 done
 
 total=${#run_list[@]}
+# A verdict over zero stages is not a verdict. Unreachable once every name
+# is checked literally above; kept so a future selector bug fails loudly.
+if [[ $total -eq 0 ]]; then
+  echo "precommit: no stages selected" >&2; usage >&2; exit 64
+fi
 started=$SECONDS
 n=0
 for name in "${run_list[@]}"; do
