@@ -11,6 +11,11 @@
 
 ### Fixed
 
+- `POST /api/agents` and `PUT /api/agents/{id}` accept `"permission_policy":
+  null` and store an empty policy, which is what the OpenAPI document has
+  promised since the field existed. A null used to pass the schema and the
+  changeset and come back as a 500 from the database's not-null constraint
+  (#1899).
 - `scripts/sdk-contract/build.sh` refuses a document where a property says
   `nullable: true` and a standards validator would still reject `null` (#1899).
   In OpenAPI 3.0 `nullable` relaxes the type of the node it sits on, so a
