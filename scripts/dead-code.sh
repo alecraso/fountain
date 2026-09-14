@@ -19,10 +19,13 @@ elixir_report() {
   echo "## Elixir: public functions no compiled module calls (mix_unused)"
   echo
   # --force so the tracer sees every module, not just the ones that changed.
-  # The compile's own chatter goes to stderr; only the hints are the report.
+  # Keep compiler diagnostics visible and propagate analyzer failures. Only
+  # dead-code hints enter the report: mix_unused 0.4.1 cannot disable its
+  # Private analyzer through config, and a same-module caller is still live.
   (cd "$root/apps/fountain" &&
-    MIX_UNUSED=1 MIX_ENV=dev mix compile --force 2>/dev/null |
-    grep -A1 -E '^hint: ' | grep -v -- '^--$') || true
+    MIX_UNUSED=1 MIX_ENV=dev mix compile --force) |
+    tee /dev/stderr |
+    awk '/^hint: .* (is unused|is called only recursively)$/ { print; if (getline > 0) print }'
 }
 
 go_report() {
@@ -34,7 +37,7 @@ go_report() {
     # function in cli/api or cli/credentials may still be one another module
     # imports (apps/fountain_buzz/cli does), so read those lines as API, not
     # dead code.
-    (cd "$root/$mod" && go run "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION" -test ./...) || true
+    (cd "$root/$mod" && go run "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION" -test ./...)
     echo
   done
 }

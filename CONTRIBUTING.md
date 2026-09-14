@@ -126,7 +126,11 @@ scripts/dead-code.sh go         # unreachable functions in the two Go modules
 The Elixir half is `mix_unused`, a compiler tracer `apps/fountain/mix.exs`
 turns on only under `MIX_UNUSED=1`; the Go half is `golang.org/x/tools`'s
 `deadcode`. `.github/workflows/dead-code.yml` runs both on the first of the
-month and keeps the reports as artifacts. Neither blocks anything.
+month and keeps the reports as artifacts. Findings do not block a merge.
+An analyzer execution failure fails the report job and marks its summary
+incomplete; it is not a clean scan. Compiler and tool diagnostics stay in
+the job log. Elixir advice to make a live function private is excluded from
+the report and its counts.
 
 Read the Elixir report as a list of candidates, not verdicts. The tracer sees
 only static calls inside `apps/fountain`, so five shapes read as unused when

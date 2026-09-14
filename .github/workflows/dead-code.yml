@@ -1,6 +1,7 @@
 name: Dead code report
 
-# Advisory, never blocking. On the first of the month (and on demand) this
+# Findings are advisory; tool failures fail this report, not merge CI.
+# On the first of the month (and on demand) this
 # publishes two reports as artifacts: public Elixir functions no compiled
 # module calls (mix_unused, enabled only under MIX_UNUSED=1 in
 # apps/fountain/mix.exs) and unreachable Go functions (x/tools deadcode).
@@ -58,6 +59,8 @@ jobs:
         run: mix deps.get
 
       - name: Report
+        id: report
+        shell: bash
         run: scripts/dead-code.sh elixir | tee dead-code-elixir.md
 
       - name: Summarise
@@ -69,15 +72,20 @@ jobs:
             echo "By namespace (top 15):"
             echo
             echo '```'
-            grep '^hint: ' dead-code-elixir.md \
+            awk '/^hint: / {print}' dead-code-elixir.md \
               | sed -E 's/^hint: ([A-Za-z]+\.[A-Za-z]+)\..*/\1/' \
-              | sort | uniq -c | sort -rn | head -15
+              | sort | uniq -c | sort -rn | sed -n '1,15p'
             echo '```'
             echo
             echo "The full report is the \`dead-code-elixir\` artifact. Candidates, not verdicts: see CONTRIBUTING.md, \"Finding dead code\"."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Mark incomplete analysis
+        if: failure() && steps.report.outcome == 'failure'
+        run: echo '## Elixir report incomplete; analysis failed. See the Report step diagnostics.' >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.report.outcome != 'skipped'
         with:
           name: dead-code-elixir
           path: dead-code-elixir.md
@@ -98,6 +106,8 @@ jobs:
             apps/fountain_buzz/cli/go.sum
 
       - name: Report
+        id: report
+        shell: bash
         run: scripts/dead-code.sh go | tee dead-code-go.md
 
       - name: Summarise
@@ -113,7 +123,12 @@ jobs:
             echo "Exported functions in \`cli/api\` and \`cli/credentials\` are imported by \`apps/fountain_buzz/cli\`; read those as API, not dead code."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Mark incomplete analysis
+        if: failure() && steps.report.outcome == 'failure'
+        run: echo '## Go report incomplete; analysis failed. See the Report step diagnostics.' >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.report.outcome != 'skipped'
         with:
           name: dead-code-go
           path: dead-code-go.md
