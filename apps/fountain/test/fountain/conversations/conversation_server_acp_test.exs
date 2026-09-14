@@ -487,6 +487,64 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert length(Conversations._unsafe_list_turns(conv.id)) == 2
     end
 
+    test "a refused reuse announces the same turn once and later turns still start (#1924)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      old_peer = :sys.get_state(pid).acp_peer
+
+      # The actor sees a live peer, but the peer is no longer idle when asked
+      # to accept the prompt. Its real refusal must respawn against turn 2.
+      :sys.replace_state(old_peer, &%{&1 | phase: :prompting})
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      assert :sys.get_state(pid).acp_peer != old_peer
+      %{"id" => init_id, "method" => "initialize"} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+      %{"id" => resume_id, "method" => "session/resume"} = next_write()
+      reply(pid, ref, resume_id, %{"models" => %{}})
+      %{"id" => set_id, "method" => "session/set_model"} = next_write()
+      reply(pid, ref, set_id, %{})
+      %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert ["started", "done", "started", "done"] = turn_stage_states(conv.id)
+      assert [first, second] = Conversations._unsafe_list_turns(conv.id)
+      assert first.status == "completed"
+      assert second.status == "completed"
+      assert second.prompt == "again"
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "one more", []})
+      %{"id" => set_id, "method" => "session/set_model"} = next_write()
+      reply(pid, ref, set_id, %{})
+      %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+      notify(pid, ref, %{"sessionUpdate" => "agent_message_chunk", "text" => "third turn output"})
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert ["started", "done", "started", "done", "started", "done"] =
+               turn_stage_states(conv.id)
+
+      turns = Conversations._unsafe_list_turns(conv.id)
+      assert Enum.map(turns, & &1.status) == ["completed", "completed", "completed"]
+
+      events = Conversations._unsafe_list_log_events(conv.id)
+      third_id = List.last(turns).id
+
+      assert [start, output, done] =
+               Enum.filter(events, fn event ->
+                 (event.stage == "turn" and Jason.decode!(event.data)["turn_id"] == third_id) or
+                   (event.kind == "output" and event.data =~ "third turn output")
+               end)
+
+      assert start.state == "started"
+      assert Jason.decode!(start.data)["connection"] == "reused"
+      assert output.kind == "output"
+      assert done.state == "done"
+    end
+
     for active <- [false, true], malformed <- [false, true] do
       test "saved policy refusal preserves active=#{active}, malformed=#{malformed}", ctx do
         prompt_id = drive_to_prompt(ctx.pid, ctx.ref)
