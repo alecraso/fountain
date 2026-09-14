@@ -42,7 +42,15 @@ defmodule Fountain.Conversations.SavedAllowanceAdmissionTest do
     conv.id |> ExecutionAllowance.new_changeset(%{max_model_turns: 2}) |> Repo.insert!()
     expected = {:error, {:execution_limits_unsupported, ["max_model_turns"]}}
     assert TurnMachine.open(conv.id, conv.sandbox_id, "user prompt") == expected
-    assert Connection.open_autonomous_turn(conv.id, conv.user_id, conv.sandbox_id) == expected
+
+    assert Connection.open_autonomous_turn(
+             conv.id,
+             conv.user_id,
+             conv.sandbox_id,
+             conv.configuration_revision,
+             conv.inference_source
+           ) == expected
+
     assert Conversations._unsafe_list_turns(conv.id) == []
     assert Repo.reload!(conv).status == "idle"
 

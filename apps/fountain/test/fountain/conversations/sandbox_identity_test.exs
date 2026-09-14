@@ -8,7 +8,7 @@ defmodule Fountain.Conversations.SandboxIdentityTest do
   setup do
     user = insert_verified_user()
     sandbox = insert_sandbox(user_id: user.id, status: "starting")
-    handle = %Handle{provider: :sprites, name: sandbox.sprite_name}
+    handle = %Handle{provider: :sprites, name: sandbox.machine_name}
     %{sandbox: sandbox, handle: handle}
   end
 
@@ -17,7 +17,7 @@ defmodule Fountain.Conversations.SandboxIdentityTest do
 
     expect(Managoat.Sandbox.Sprites, :get, fn handle ->
       refute Repo.in_transaction?()
-      assert handle.name == c.sandbox.sprite_name
+      assert handle.name == c.sandbox.machine_name
       {:ok, %{raw: %{"name" => handle.name, "id" => id}}}
     end)
 
@@ -104,7 +104,7 @@ defmodule Fountain.Conversations.SandboxIdentityTest do
     for attrs <- [
           %{user_id: insert_verified_user().id},
           %{provider: "e2b"},
-          %{sprite_name: "replacement"}
+          %{machine_name: "replacement"}
         ] do
       current = c.sandbox |> Ecto.Changeset.change(attrs) |> Repo.update!()
 
@@ -161,9 +161,9 @@ defmodule Fountain.Conversations.SandboxIdentityTest do
     for response <- [
           {:ok, %{status: :running}},
           {:ok, %{raw: %{"id" => "unscoped"}}},
-          {:ok, %{raw: %{"name" => c.sandbox.sprite_name, "id" => nil}}},
-          {:ok, %{raw: %{"name" => c.sandbox.sprite_name, "id" => ""}}},
-          {:ok, %{raw: %{"name" => c.sandbox.sprite_name, "id" => String.duplicate("a", 257)}}}
+          {:ok, %{raw: %{"name" => c.sandbox.machine_name, "id" => nil}}},
+          {:ok, %{raw: %{"name" => c.sandbox.machine_name, "id" => ""}}},
+          {:ok, %{raw: %{"name" => c.sandbox.machine_name, "id" => String.duplicate("a", 257)}}}
         ] do
       stub(Managoat.Sandbox.Sprites, :get, fn _ -> response end)
 

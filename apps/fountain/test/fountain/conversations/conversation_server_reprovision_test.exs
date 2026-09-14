@@ -31,7 +31,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
 
     {pid, _ref, :alive} = start_server(conv)
 
-    name = sandbox.sprite_name
+    name = sandbox.machine_name
     assert_receive {:sprite_destroyed, ^name}, 5_000
     assert_receive {:sprite_created, ^name}, 5_000
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"

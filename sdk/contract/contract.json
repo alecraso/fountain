@@ -51,6 +51,85 @@
         }
       }
     },
+    "DELETE /api/account/inference-credential-sets/{id}": {
+      "operation_id": "FountainWeb.InferenceCredentialSetController.delete",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "CredentialSetDeletionError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "DELETE /api/account/inference-credential-sets/{id}/credentials/{provider}": {
+      "operation_id": "FountainWeb.InferenceCredentialController.delete_in_set",
+      "path_params": [
+        "id",
+        "provider"
+      ],
+      "responses": {
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "DELETE /api/account/inference-credentials/{provider}": {
       "operation_id": "FountainWeb.InferenceCredentialController.delete",
       "path_params": [
@@ -292,6 +371,46 @@
           }
         },
         "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "DELETE /api/claimable-users/{id}/inference-credentials/{provider}": {
+      "operation_id": "FountainWeb.ClaimableUserController.delete_inference_credential",
+      "path_params": [
+        "id",
+        "provider"
+      ],
+      "responses": {
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
           "application/json": {
             "ref": "Error"
           }
@@ -1007,6 +1126,37 @@
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "GET /api/account/inference-credential-sets": {
+      "operation_id": "FountainWeb.InferenceCredentialSetController.index",
+      "path_params": [],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "InferenceCredentialSetListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
           "application/json": {
             "ref": "Error"
           }
@@ -4019,6 +4169,57 @@
         }
       }
     },
+    "PATCH /api/account/inference-credential-sets/{id}": {
+      "operation_id": "FountainWeb.InferenceCredentialSetController.update",
+      "path_params": [
+        "id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "InferenceCredentialSetUpdateRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "InferenceCredentialSetResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "PATCH /api/agents/{id}": {
       "operation_id": "FountainWeb.AgentController.update (2)",
       "path_params": [
@@ -4765,6 +4966,50 @@
         "406": {
           "application/json": {
             "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "POST /api/account/inference-credential-sets": {
+      "operation_id": "FountainWeb.InferenceCredentialSetController.create",
+      "path_params": [],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "InferenceCredentialSetCreateRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "201": {
+          "application/json": {
+            "ref": "InferenceCredentialSetResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "429": {
@@ -7643,6 +7888,68 @@
         }
       }
     },
+    "PUT /api/account/inference-credential-sets/{id}/credentials/{provider}": {
+      "operation_id": "FountainWeb.InferenceCredentialController.update_in_set",
+      "path_params": [
+        "id",
+        "provider"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "InferenceCredentialRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "InferenceCredentialResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "502": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "504": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "PUT /api/account/inference-credentials/{provider}": {
       "operation_id": "FountainWeb.InferenceCredentialController.update",
       "path_params": [
@@ -7830,6 +8137,54 @@
             "ref": "BuzzIdentityResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "PUT /api/claimable-users/{id}/inference-credentials/{provider}": {
+      "operation_id": "FountainWeb.ClaimableUserController.put_inference_credential",
+      "path_params": [
+        "id",
+        "provider"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "InferenceCredentialRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "204": {},
         "401": {
           "application/json": {
             "ref": "Error"
@@ -8327,6 +8682,15 @@
           "required": false,
           "type": "array"
         },
+        "allowed_inference_credential_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nullable": true,
+          "required": false,
+          "type": "array"
+        },
         "allowed_vault_ids": {
           "items": {
             "format": "uuid",
@@ -8364,6 +8728,12 @@
         "id": {
           "format": "uuid",
           "required": true,
+          "type": "string"
+        },
+        "inference_credential_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
           "type": "string"
         },
         "inserted_at": {
@@ -8512,6 +8882,15 @@
           "required": false,
           "type": "array"
         },
+        "allowed_inference_credential_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nullable": true,
+          "required": false,
+          "type": "array"
+        },
         "allowed_vault_ids": {
           "items": {
             "format": "uuid",
@@ -8526,6 +8905,12 @@
           "type": "string"
         },
         "environment_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "inference_credential_id": {
           "format": "uuid",
           "nullable": true,
           "required": false,
@@ -8664,6 +9049,15 @@
           "required": false,
           "type": "array"
         },
+        "allowed_inference_credential_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nullable": true,
+          "required": false,
+          "type": "array"
+        },
         "allowed_vault_ids": {
           "items": {
             "format": "uuid",
@@ -8678,6 +9072,12 @@
           "type": "string"
         },
         "environment_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "inference_credential_id": {
           "format": "uuid",
           "nullable": true,
           "required": false,
@@ -10722,6 +11122,12 @@
           "required": false,
           "type": "array"
         },
+        "inference_credential_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "labels": {
           "additionalProperties": {
             "type": "string"
@@ -10910,6 +11316,29 @@
       },
       "type": "object"
     },
+    "CredentialSetDeletionError": {
+      "properties": {
+        "error": {
+          "enum": [
+            "credential_set_is_default"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "message": {
+          "required": true,
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "is_default"
+          ],
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "CreditsCheckoutRequest": {
       "properties": {
         "cents": {
@@ -11076,15 +11505,6 @@
         "agent_count": {
           "required": false,
           "type": "integer"
-        },
-        "allowed_environment_ids": {
-          "items": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "nullable": true,
-          "required": false,
-          "type": "array"
         },
         "env_vars": {
           "additionalProperties": {
@@ -11451,6 +11871,90 @@
         "data": {
           "ref": "InferenceCredentialStatus",
           "required": true
+        }
+      },
+      "type": "object"
+    },
+    "InferenceCredentialSet": {
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "required": true,
+          "type": "string"
+        },
+        "is_default": {
+          "required": true,
+          "type": "boolean"
+        },
+        "name": {
+          "required": true,
+          "type": "string"
+        },
+        "providers": {
+          "items": {
+            "enum": [
+              "anthropic_api_key",
+              "claude_code_oauth_token",
+              "gemini_api_key",
+              "openai_api_key"
+            ],
+            "type": "string"
+          },
+          "required": true,
+          "type": "array"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InferenceCredentialSetCreateRequest": {
+      "properties": {
+        "name": {
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InferenceCredentialSetListResponse": {
+      "properties": {
+        "data": {
+          "items": {
+            "ref": "InferenceCredentialSet"
+          },
+          "required": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "InferenceCredentialSetResponse": {
+      "properties": {
+        "data": {
+          "ref": "InferenceCredentialSet",
+          "required": true
+        }
+      },
+      "type": "object"
+    },
+    "InferenceCredentialSetUpdateRequest": {
+      "properties": {
+        "is_default": {
+          "required": false,
+          "type": "boolean"
+        },
+        "name": {
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"

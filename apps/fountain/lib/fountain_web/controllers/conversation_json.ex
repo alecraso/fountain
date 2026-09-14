@@ -118,7 +118,7 @@ defmodule FountainWeb.ConversationJSON do
   def sandbox_data(%Sandbox{} = s) do
     %{
       id: s.id,
-      sprite_name: s.sprite_name,
+      sprite_name: s.machine_name,
       status: s.status,
       provider: s.provider,
       # The identity the disk was built from (ADR 0023): what a launch must

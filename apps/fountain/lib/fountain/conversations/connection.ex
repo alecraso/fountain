@@ -310,13 +310,15 @@ defmodule Fountain.Conversations.Connection do
   A real turn row, so the log budget, redaction and stage events all apply;
   `origin: "autonomous"` and a marker prompt tell it from a user turn.
   Returns the row, the span opened over it and the tracer reading it; the
-  caller holds them and arms the quiet timer.
+  caller holds them and arms the quiet timer. Its loaded revision and source
+  must match the persisted configuration, including an explicitly unbound source.
   """
-  @spec open_autonomous_turn(String.t(), String.t(), String.t() | nil) ::
+  @spec open_autonomous_turn(String.t(), String.t(), String.t(), integer(), map() | nil) ::
           {map(), term(), term()} | {:error, term()}
-  def open_autonomous_turn(conversation_id, user_id, sandbox_id \\ nil) do
+  def open_autonomous_turn(conversation_id, user_id, sandbox_id, revision, inference_source) do
     # Ownership: a server's own conversation, established at init. The server
-    # passes its sandbox so an old connection cannot follow a moved row.
+    # passes its sandbox, revision and source so an old connection cannot
+    # adopt configuration committed before its peer has been refreshed.
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
     capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
@@ -326,6 +328,7 @@ defmodule Fountain.Conversations.Connection do
       turn_number: turn_number,
       prompt: "(background task follow-up)",
       origin: "autonomous",
+      inference_source: inference_source,
       status: "running",
       started_at: now()
     }
@@ -333,8 +336,9 @@ defmodule Fountain.Conversations.Connection do
     with {:ok, turn} <-
            Conversations._unsafe_create_turn_on_sandbox(
              attrs,
-             sandbox_id || conv.sandbox_id,
-             capacity
+             sandbox_id,
+             capacity,
+             revision
            ) do
       turn_span =
         TurnMachine.open_span(user_id, conv, turn, :autonomous, TurnMachine.agent_for(conv))

@@ -76,7 +76,7 @@ defmodule Fountain.Conversations.BoundedTranscriptTest do
   end
 
   test "changed sandbox identity refuses transcript writes", c do
-    c.sandbox |> Ecto.Changeset.change(sprite_name: "replacement") |> Repo.update!()
+    c.sandbox |> Ecto.Changeset.change(machine_name: "replacement") |> Repo.update!()
     assert :ok = output(c, "old machine")
     assert rows(c) == []
   end

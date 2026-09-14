@@ -168,7 +168,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
     {:ok, _} = ExecutionGuard._unsafe_interrupt(c.conv.id)
     Repo.delete!(c.conv)
-    c.sandbox |> Ecto.Changeset.change(sprite_name: "replacement-sandbox") |> Repo.update!()
+    c.sandbox |> Ecto.Changeset.change(machine_name: "replacement-sandbox") |> Repo.update!()
 
     assert {:ok, %{permitted: false, execution: %{state: "uncertain"}}} =
              ExecutionGuard._unsafe_claim_termination(execution.id)
@@ -328,6 +328,14 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
     save_allowance(conv.id, %{"wall_time_seconds" => 60})
 
+    {:ok, source, _} =
+      Fountain.InferenceCredentials.resolve(c.user.id, agent.model, agent.runtime)
+
+    Ecto.Changeset.change(c.sandbox,
+      codex_inference_source: Fountain.InferenceCredentials.Source.dump(source)
+    )
+    |> Repo.update!()
+
     {pid, _transport, _ref, execution} = start_bounded(%{c | conv: conv})
 
     assert_receive {:spawn_argv,
@@ -413,7 +421,9 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
       Fountain.Conversations.Connection.open_autonomous_turn(
         c.conv.id,
         c.user.id,
-        c.sandbox.id
+        c.sandbox.id,
+        c.conv.configuration_revision,
+        c.conv.inference_source
       )
 
     assert turn.origin == "autonomous"
@@ -430,14 +440,16 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
              Fountain.Conversations.Connection.open_autonomous_turn(
                c.conv.id,
                c.user.id,
-               c.sandbox.id
+               c.sandbox.id,
+               c.conv.configuration_revision,
+               c.conv.inference_source
              )
 
     assert Repo.aggregate(Turn, :count) == 1
   end
 
   defp start_bounded(c) do
-    stub_happy_sprite(c.sandbox.sprite_name)
+    stub_happy_sprite(c.sandbox.machine_name)
     stub(Sandbox.Sprites, :stop_command, fn _ -> :ok end)
     {pid, _mon, :alive} = start_server(c.conv)
     on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)

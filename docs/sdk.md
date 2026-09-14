@@ -186,6 +186,15 @@ Here are the fields that need a word.
 | `sandbox_mode` | `ephemeral` (default) or `persistent`. Persistent gives the agent one machine of its own, and each conversation lands on it. |
 | `allowed_vault_ids` | Which vaults a conversation can attach. A `null` permits each one, `[]` permits none, and a list is an allowlist. A vault value overrides the environment, so this is what scopes who can override a config that somebody reviewed. |
 | `allowed_environment_ids` | The same shape. It covers a launch of the agent under a different environment. |
+| `inference_credential_id` | The agent's credential set ID. `null` selects the account default. |
+| `allowed_inference_credential_ids` | Which sets a launch may request. `null` permits any tenant-owned set, `[]` forbids a different set, and a list permits those IDs. The agent's own set remains allowed. |
+
+A launch can supply `inference_credential_id` in the conversation create
+request. Set IDs belong to the authenticated account; an allowlist does not
+grant access to another tenant's set. An omitted selection uses the agent's
+set, then the account default. Existing conversations retain their resolved
+source on wake and resume. See [credential sets](concepts/secrets.md#credential-sets)
+for source replacement and shared Codex workspace constraints.
 
 Each collection reads the same way.
 
@@ -385,7 +394,7 @@ try {
 | `ConversationBusyError` | `conversation_busy` (400) | Yes. The turn in flight must finish. |
 | `NotReadyError` | `provisioning`, `sprite_probe_failed`, `fleet_full` (503) | Yes. It carries the server's `Retry-After`. |
 | `QuotaExceededError` | `sandbox_quota_exceeded` (429) | Yes. Terminate a conversation first. |
-| `SubscriptionRequiredError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
+| `InsufficientCreditsError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
 | `ValidationError` | 422 | No. Read `fieldErrors`. |
 | `AuthError` and `NotFoundError` | 401 and 404 | No. |
 | `ConnectionError` | It never reached the server. | In a browser, the cause is usually CORS. |
@@ -479,3 +488,28 @@ your own turn's events, and no other. Keep the `text` blocks, and no other
 kind. Join ACP chunks with nothing between them.
 Start a new paragraph after a tool call. Resume from the last event id when a
 connection drops mid-turn.
+
+## Credit error migration
+
+This change prepares TypeScript 2.0.0, Python 0.3.0 and Elixir 0.3.0.
+These are upcoming breaking releases; this cleanup does not publish packages.
+Replace subscription-era error checks with the credit names below.
+
+| Client | Removed name | Credit error | Purchase URL |
+|---|---|---|---|
+| TypeScript | `SubscriptionRequiredError` | `InsufficientCreditsError` | `error.upgradeUrl` |
+| Python | `SubscriptionRequiredError` | `InsufficientCreditsError` | `error.upgrade_url` |
+| Elixir | `:subscription_required` | `:insufficient_credits` | `Fountain.Error.upgrade_url(error)` |
+| Swift `Fountain` | `.subscriptionRequired` | `.insufficientCredits` | `error.upgradeURL` |
+| Swift `FountainKit` | No case rename | `.insufficientCredits(body, upgradeURL:)` | Associated `upgradeURL` value |
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.
+
+Swift's next package tag containing this change must be a breaking minor
+release while the package is 0.x. Until then, use a reviewed commit to adopt
+the new source API. Existing tags keep their original error names.

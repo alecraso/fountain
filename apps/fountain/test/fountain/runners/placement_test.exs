@@ -52,7 +52,7 @@ defmodule Fountain.Runners.PlacementTest do
 
     sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
     assert sandbox.provider == "runner"
-    assert {:ok, runner_id} = Runners.parse_sandbox_name(sandbox.sprite_name)
+    assert {:ok, runner_id} = Runners.parse_sandbox_name(sandbox.machine_name)
     assert runner_id == runner.id
   end
 
@@ -97,7 +97,7 @@ defmodule Fountain.Runners.PlacementTest do
              })
 
     sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
-    assert {:ok, runner_id} = Runners.parse_sandbox_name(sandbox.sprite_name)
+    assert {:ok, runner_id} = Runners.parse_sandbox_name(sandbox.machine_name)
     assert runner_id == runner.id
   end
 
@@ -114,7 +114,7 @@ defmodule Fountain.Runners.PlacementTest do
     assert {:ok, conv} =
              Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
-    minted = Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name
+    minted = Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name
 
     assert {:error, :sprite_name_not_supported} =
              Conversations.start_conversation(%{
@@ -136,7 +136,7 @@ defmodule Fountain.Runners.PlacementTest do
              })
 
     # The override still decides the name; it decides only the suffix (#1632).
-    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name ==
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name ==
              "fountain-" <> binary_part(user.id, 0, 8) <> "-pinned-name"
   end
 end

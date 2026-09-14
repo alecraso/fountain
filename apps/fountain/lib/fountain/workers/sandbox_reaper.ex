@@ -137,7 +137,7 @@ defmodule Fountain.Workers.SandboxReaper do
         })
 
       Logger.info(
-        "reaper: released stuck sandbox #{sandbox.id} (#{sandbox.sprite_name}) " <>
+        "reaper: released stuck sandbox #{sandbox.id} (#{sandbox.machine_name}) " <>
           "after #{@stuck_after_minutes}m in #{sandbox.status}"
       )
 
@@ -168,7 +168,7 @@ defmodule Fountain.Workers.SandboxReaper do
       actor: "system:sandbox_reaper",
       metadata:
         metadata
-        |> Map.put("sprite_name", sandbox.sprite_name)
+        |> Map.put("sprite_name", sandbox.machine_name)
         |> Map.put("provider", sandbox.provider)
     })
   end
@@ -285,7 +285,7 @@ defmodule Fountain.Workers.SandboxReaper do
 
     with :suspend <- Lifecycle.idle_action(provider),
          :ok <-
-           Managoat.Sandbox.suspend(Managoat.Sandbox.build_handle(provider, sandbox.sprite_name)) do
+           Managoat.Sandbox.suspend(Managoat.Sandbox.build_handle(provider, sandbox.machine_name)) do
       park(sandbox)
       :parked
     else
@@ -295,7 +295,7 @@ defmodule Fountain.Workers.SandboxReaper do
 
       {:error, reason} ->
         Logger.warning(
-          "reaper: suspend call failed for #{sandbox.sprite_name} (#{inspect(reason)}); " <>
+          "reaper: suspend call failed for #{sandbox.machine_name} (#{inspect(reason)}); " <>
             "expiring instead"
         )
 
@@ -313,7 +313,7 @@ defmodule Fountain.Workers.SandboxReaper do
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
 
     Logger.info(
-      "reaper: parked idle sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
+      "reaper: parked idle sandbox #{sandbox.id} (#{sandbox.machine_name}) — " <>
         "ready with no live server past the idle bound"
     )
 
@@ -330,7 +330,7 @@ defmodule Fountain.Workers.SandboxReaper do
       })
 
     Logger.info(
-      "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
+      "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.machine_name}) — " <>
         "ready with no live server, #{reason}"
     )
 
@@ -349,7 +349,7 @@ defmodule Fountain.Workers.SandboxReaper do
   defp destroy_dead_sprites(live_by_provider) do
     Sandbox
     |> where([s], s.status in ^@terminal_statuses)
-    |> select([s], {s.id, s.sprite_name, s.provider})
+    |> select([s], {s.id, s.machine_name, s.provider})
     |> Repo.all()
     |> Enum.filter(fn {_id, name, provider} ->
       case Map.fetch(live_by_provider, provider_atom(provider)) do
@@ -365,18 +365,18 @@ defmodule Fountain.Workers.SandboxReaper do
 
   defp provider_atom(provider), do: Conversations.sandbox_provider_atom(%{provider: provider})
 
-  defp destroy(sandbox_id, sprite_name, provider) do
+  defp destroy(sandbox_id, machine_name, provider) do
     # build_handle/2 is pure — we already know the sandbox exists (it came
     # out of the listing), so there is nothing to look up first.
-    case Managoat.Sandbox.destroy(Managoat.Sandbox.build_handle(provider, sprite_name)) do
+    case Managoat.Sandbox.destroy(Managoat.Sandbox.build_handle(provider, machine_name)) do
       :ok ->
-        Logger.info("reaper: destroyed leaked sprite #{sprite_name} (sandbox #{sandbox_id})")
+        Logger.info("reaper: destroyed leaked sprite #{machine_name} (sandbox #{sandbox_id})")
         true
 
       {:error, reason} ->
         # Left for the next run rather than retried here; the row stays terminal
         # either way, so nothing is lost by being slow about it.
-        Logger.warning("reaper: destroy failed for #{sprite_name}: #{inspect(reason)}")
+        Logger.warning("reaper: destroy failed for #{machine_name}: #{inspect(reason)}")
         false
     end
   end
@@ -389,7 +389,7 @@ defmodule Fountain.Workers.SandboxReaper do
       known =
         Sandbox
         |> where([s], s.provider == ^Atom.to_string(provider))
-        |> select([s], s.sprite_name)
+        |> select([s], s.machine_name)
         |> Repo.all()
         |> MapSet.new()
 

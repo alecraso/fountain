@@ -19,7 +19,7 @@ defmodule Fountain.Conversations.ForcedHomeFenceTest do
   for capacity <- [1, :unbounded] do
     test "agent deletion fences #{inspect(capacity)} admission before provider deletion", ctx do
       expect(Managoat.Sandbox.Sprites, :destroy, fn handle ->
-        assert handle.name == ctx.home.sprite_name
+        assert handle.name == ctx.home.machine_name
         refute Repo.in_transaction?()
         assert Repo.reload!(ctx.home).reset_requested_at
         assert Repo.reload!(ctx.home).status == "ready"

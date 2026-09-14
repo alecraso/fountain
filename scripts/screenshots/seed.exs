@@ -83,7 +83,7 @@ make_conv = fn a, title, channel, running ->
     insert_sandbox(
       user_id: user.id,
       status: "suspended",
-      sprite_name: "acorn-" <> String.downcase(a.name),
+      machine_name: "acorn-" <> String.downcase(a.name),
       environment_id: env.id
     )
 

@@ -3,7 +3,7 @@ import Foundation
 /// What a followed turn produced.
 public struct RunResult: Sendable, Equatable {
   public let conversationID: String
-  /// Where a human reads the transcript.
+  /// The configured Conversations app link, or the deployment dashboard.
   public let url: URL
   public let turnNumber: Int
   /// The answer: tool noise dropped, paragraphs joined.
@@ -44,7 +44,7 @@ public final class Run: @unchecked Sendable {
   public let conversation: Conversation
   /// Which turn of the conversation this is (1 for a fresh one).
   public let turnNumber: Int
-  /// Where a human reads the transcript.
+  /// The configured Conversations app link, or the deployment dashboard.
   public let url: URL
 
   private let client: APIClient

@@ -238,7 +238,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       insert_turn(conv, %{status: "completed"})
       sandbox = age_rows(sandbox, conv, 60 * 24 * 83)
 
-      stub_sprites([sandbox.sprite_name])
+      stub_sprites([sandbox.machine_name])
       capture_destroys()
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
@@ -371,14 +371,14 @@ defmodule Fountain.Workers.SandboxReaperTest do
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, sandbox: sandbox)
       age_rows(sandbox, conv, 60 * 24 * 83)
-      stub_sprites([sandbox.sprite_name])
+      stub_sprites([sandbox.machine_name])
       capture_destroys()
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
       end)
 
-      assert destroyed_names() == [sandbox.sprite_name]
+      assert destroyed_names() == [sandbox.machine_name]
     end
   end
 
@@ -388,28 +388,28 @@ defmodule Fountain.Workers.SandboxReaperTest do
       # the result and mark the row terminal regardless, so a transient failure
       # at sprites.dev strands the sprite permanently.
       sandbox = insert_sandbox(status: "terminated")
-      stub_sprites([sandbox.sprite_name])
+      stub_sprites([sandbox.machine_name])
       capture_destroys()
 
       capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
 
-      assert destroyed_names() == [sandbox.sprite_name]
+      assert destroyed_names() == [sandbox.machine_name]
     end
 
     test "destroys for failed sandboxes as well as terminated" do
       sandbox = insert_sandbox(status: "failed")
-      stub_sprites([sandbox.sprite_name])
+      stub_sprites([sandbox.machine_name])
       capture_destroys()
 
       capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
 
-      assert destroyed_names() == [sandbox.sprite_name]
+      assert destroyed_names() == [sandbox.machine_name]
     end
 
     test "never destroys a sprite whose sandbox is still live" do
       ready = insert_sandbox(status: "ready")
       pending = insert_sandbox(status: "pending")
-      stub_sprites([ready.sprite_name, pending.sprite_name])
+      stub_sprites([ready.machine_name, pending.machine_name])
       capture_destroys()
 
       capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
@@ -434,7 +434,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
     test "untracked sprites are counted so the drift is visible" do
       # Inert is not the same as ignored — an operator still has to be able to
       # see that 102 sprites have no row, which is what production looked like.
-      insert_sandbox(status: "ready", sprite_name: "known-1")
+      insert_sandbox(status: "ready", machine_name: "known-1")
 
       test = self()
 
@@ -468,13 +468,13 @@ defmodule Fountain.Workers.SandboxReaperTest do
     test "one destroy failure does not stop the rest" do
       doomed = insert_sandbox(status: "terminated")
       other = insert_sandbox(status: "terminated")
-      stub_sprites([doomed.sprite_name, other.sprite_name])
+      stub_sprites([doomed.machine_name, other.machine_name])
 
       test = self()
       stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
 
       stub(Sprites, :destroy, fn {:handle, name} ->
-        if name == doomed.sprite_name do
+        if name == doomed.machine_name do
           {:error, :boom}
         else
           send(test, {:destroyed, name})
@@ -484,7 +484,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
 
       capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
 
-      assert destroyed_names() == [other.sprite_name]
+      assert destroyed_names() == [other.machine_name]
     end
   end
 

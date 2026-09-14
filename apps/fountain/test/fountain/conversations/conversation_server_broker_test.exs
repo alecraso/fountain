@@ -99,7 +99,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
   describe "reattaching an existing machine" do
     setup %{user: user, agent: agent} do
-      sandbox = insert_sandbox(user_id: user.id, status: "ready", sprite_name: "existing")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready", machine_name: "existing")
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
       stub_happy_sprite("existing")
       stub(Fountain.Broker, :preflight, fn -> :ok end)
@@ -219,7 +219,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
           end
 
         replacement =
-          insert_sandbox(user_id: user.id, status: "ready", sprite_name: "replacement")
+          insert_sandbox(user_id: user.id, status: "ready", machine_name: "replacement")
 
         {:ok, _} = Conversations.update_conversation(conv, %{sandbox_id: replacement.id})
 
@@ -439,9 +439,13 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub_happy_sprite()
       _ref = stub_turn_boundary()
 
-      Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
-        {:ok, %{claude_code_oauth_token: "sk-ant-oat01-realtoken"}}
-      end)
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(
+          user.id,
+          <<0::256>>,
+          :claude_code_oauth_token,
+          "sk-ant-oat01-realtoken"
+        )
 
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
@@ -589,7 +593,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         conv = insert_conversation(user_id: user.id, agent: agent, sandbox_api_access: "owner")
         sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
         test = self()
-        handle = stub_happy_sprite(sandbox.sprite_name)
+        handle = stub_happy_sprite(sandbox.machine_name)
         stub(Fountain.Broker, :preflight, fn -> :ok end)
         stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
 
@@ -637,7 +641,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
           end
 
         replacement =
-          insert_sandbox(user_id: user.id, status: "ready", sprite_name: "replacement")
+          insert_sandbox(user_id: user.id, status: "ready", machine_name: "replacement")
 
         {:ok, _} =
           Conversations.update_conversation(conv, %{sandbox_id: replacement.id, status: "idle"})
@@ -952,7 +956,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       {:ok, _} =
         Vaults.upsert_secret(vault, %{"key" => "GITHUB_TOKEN", "value" => "ghp_parked"}, @dek)
 
-      sandbox = insert_sandbox(user_id: user.id, status: "ready", sprite_name: "parked")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready", machine_name: "parked")
 
       conv =
         insert_conversation(

@@ -171,6 +171,10 @@ fountain conv delete <id>
 
 You can repeat `-i` and `--image`. Each one takes a local file path.
 
+Conversation output uses ACP. Setup and provisioning diagnostics and stderr
+remain visible. Historical vendor stdout has no formatted transcript.
+Its stored `data` remains available through `GET /api/conversations/:id/events`.
+
 ## Sandboxes
 
 A sandbox is the computer a conversation runs on. One persistent sandbox can
@@ -432,9 +436,10 @@ The server rejects unknown `spec` keys per resource. The CLI prints those
 errors and exits nonzero; valid resources in the same manifest still apply.
 Correct a misspelled field before you retry.
 
-Against an older server with no `/api/apply`, the CLI falls back to one call
-for each resource. That older server has no `Teammate`, `Schedule` or
-`Webhook` document, so the CLI reports those and exits nonzero.
+`fountain apply` requires Fountain server v0.3.0 or later, which introduced
+`POST /api/apply`. Newer document kinds and fields can require a newer server.
+If the endpoint returns 404, the CLI exits nonzero without individual resource
+requests. Upgrade the server or check `FOUNTAIN_BASE_URL` before you retry.
 
 ### Secret references
 

@@ -21,7 +21,7 @@ defmodule Fountain.Conversations.LifecycleFenceTest do
     user = insert_verified_user()
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
-    handle = Managoat.Sandbox.build_handle(:sprites, sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(:sprites, sandbox.machine_name)
 
     state = %{
       conversation_id: conv.id,

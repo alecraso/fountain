@@ -362,6 +362,19 @@ defmodule FountainWeb.Router do
     post "/:id/claim", ClaimableUserController, :claim
     get "/:id", ClaimableUserController, :show
     delete "/:id", ClaimableUserController, :delete
+
+    # The one thing an application must do for a principal that the
+    # principal's own credential cannot do for itself (ADR 0053 decision 7):
+    # put the customer's inference key on it. Full scope, and authorised as
+    # the read above is — the application that opened it, or the account that
+    # claimed it.
+    put "/:id/inference-credentials/:provider",
+        ClaimableUserController,
+        :put_inference_credential
+
+    delete "/:id/inference-credentials/:provider",
+           ClaimableUserController,
+           :delete_inference_credential
   end
 
   # Self-hosted runners (ADR 0022). Full scope: a sandbox's per-conversation
@@ -488,6 +501,23 @@ defmodule FountainWeb.Router do
     get "/inference-credentials", InferenceCredentialController, :index
     put "/inference-credentials/:provider", InferenceCredentialController, :update
     delete "/inference-credentials/:provider", InferenceCredentialController, :delete
+
+    # The named sets behind those three, which write the default one
+    # (ADR 0053 decision 1).
+    get "/inference-credential-sets", InferenceCredentialSetController, :index
+    post "/inference-credential-sets", InferenceCredentialSetController, :create
+    patch "/inference-credential-sets/:id", InferenceCredentialSetController, :update
+    delete "/inference-credential-sets/:id", InferenceCredentialSetController, :delete
+
+    # The per-set write, on the controller that owns the provider ping and
+    # its three distinguishable outcomes rather than a second copy of them.
+    put "/inference-credential-sets/:id/credentials/:provider",
+        InferenceCredentialController,
+        :update_in_set
+
+    delete "/inference-credential-sets/:id/credentials/:provider",
+           InferenceCredentialController,
+           :delete_in_set
   end
 
   # The team's SSE stream (#810). Declared before the JSON team routes so
@@ -722,21 +752,6 @@ defmodule FountainWeb.Router do
     # they start from is ConnectionsLive below ───────────────────────────
     get "/connections/:provider/start", ConnectionsController, :start
     get "/connections/:provider/callback", ConnectionsController, :callback
-
-    # ── The pages that moved out (#867) ───────────────────────────────────────
-    # Conversations and the team roster are their own apps on the API now, and
-    # onboarding is the dashboard's own first-run guidance. These paths are in
-    # sent emails, filed issues, agents' skills and bookmarks, so they redirect
-    # rather than 404. `/conversations/new` is declared before `/:id` or "new"
-    # reads as a conversation id.
-    get "/conversations", MovedController, :conversations
-    get "/conversations/new", MovedController, :new_conversation
-    get "/conversations/:id", MovedController, :conversation
-    get "/conversations/:id/:logs", MovedController, :conversation
-    get "/team", MovedController, :team
-    get "/team/:agent_id", MovedController, :team
-    get "/onboarding", MovedController, :onboarding
-    get "/onboarding/:step", MovedController, :onboarding
 
     # ── The console ───────────────────────────────────────────────────────────
     # What Fountain's own UI is for: the account, its keys and credentials, and

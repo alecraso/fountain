@@ -111,7 +111,9 @@ defmodule Fountain.Conversations.SharedSandboxTest do
                Fountain.Conversations.Connection.open_autonomous_turn(
                  ctx.a.id,
                  ctx.user.id,
-                 ctx.sandbox.id
+                 ctx.sandbox.id,
+                 ctx.a.configuration_revision,
+                 ctx.a.inference_source
                )
 
       assert Conversations._unsafe_list_turns(ctx.a.id) == []

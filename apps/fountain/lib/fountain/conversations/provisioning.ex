@@ -52,15 +52,16 @@ defmodule Fountain.Conversations.Provisioning do
   the variables. Mirrors the legacy AoD's `env_file.py`.
 
   The per-conversation identity — `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID`,
-  `TRACEPARENT` — is not in this file: callers pass the env through
+  `TRACEPARENT`, the broker proxy address and the inference credential — is
+  not in this file: callers pass the env through
   `Fountain.Conversations.Identity.disk_env/1` first. The file is shared by
   every conversation on the machine; the identity reaches each process as
-  spawn env instead.
+  spawn env instead, `run_setup_script/4` included.
 
   Written with mode 600, and `chmod 600` again after the write as defense
   in depth — other sandbox users (if any) must not be able to read tokens.
   """
-  def write_env_file(_handle, sprite_env) when sprite_env in [nil, []], do: :ok
+  def write_env_file(handle, nil), do: write_env_file(handle, [])
 
   def write_env_file(handle, sprite_env) do
     body = render_env_file(sprite_env)
@@ -768,8 +769,8 @@ defmodule Fountain.Conversations.Provisioning do
 
   def create_sandbox_handle(provider, sandbox) do
     Managoat.Sandbox.Retry.with_backoff(
-      fn -> Managoat.Sandbox.create(provider, sandbox.sprite_name) end,
-      label: "sprite create #{sandbox.sprite_name}"
+      fn -> Managoat.Sandbox.create(provider, sandbox.machine_name) end,
+      label: "sprite create #{sandbox.machine_name}"
     )
   end
 
@@ -914,11 +915,11 @@ defmodule Fountain.Conversations.Provisioning do
 
   def discard_interrupted_attempt(provider, sandbox, true) do
     Logger.warning(
-      "sandbox #{sandbox.id}: sprite #{sandbox.sprite_name} was left mid-provision by an " <>
+      "sandbox #{sandbox.id}: sprite #{sandbox.machine_name} was left mid-provision by an " <>
         "interrupted attempt; destroying it before provisioning again"
     )
 
-    handle = Managoat.Sandbox.build_handle(provider, sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(provider, sandbox.machine_name)
 
     case Managoat.Sandbox.destroy(handle) do
       :ok ->
@@ -926,7 +927,7 @@ defmodule Fountain.Conversations.Provisioning do
 
       {:error, reason} ->
         Logger.info(
-          "sandbox #{sandbox.id}: discarding sprite #{sandbox.sprite_name} returned " <>
+          "sandbox #{sandbox.id}: discarding sprite #{sandbox.machine_name} returned " <>
             "#{inspect(reason)}; provisioning anyway"
         )
 

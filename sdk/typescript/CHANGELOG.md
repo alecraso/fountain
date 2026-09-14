@@ -11,6 +11,35 @@ server releases.
 
 ---
 
+## [2.1.0] — 2026-09-13
+
+### Added
+
+- Wire types for inference credential sets (ADR 0053): the four operations
+  under `/api/account/inference-credential-sets`, the per-set credential write
+  and clear, `inference_credential_id` on the conversation-create request,
+  `inference_credential_id` and `allowed_inference_credential_ids` on the
+  agent, and the owner-authenticated principal credential write under
+  `/api/claimable-users/:id/inference-credentials/:provider`.
+
+  Generated types only. No hand-written client method changes, so nothing an
+  existing caller uses moves.
+
+## [2.0.0] - 2026-09-13
+
+### Breaking changes
+
+Replace `SubscriptionRequiredError` imports and `instanceof` checks with
+`InsufficientCreditsError`. The old export is removed. Read `error.upgradeUrl`
+to offer the credit-purchase page; do not retry a 402 without adding credit.
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.
+
 ## [1.32.0] - 2026-09-13
 
 ### Removed

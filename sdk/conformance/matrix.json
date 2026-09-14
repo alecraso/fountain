@@ -43,6 +43,20 @@
       "swift-kit": "yes",
       "elixir": "yes"
     },
+    "error-402-with-retired-code-keeps-purchase-url": {
+      "typescript": "yes",
+      "python": "yes",
+      "swift": "yes",
+      "swift-kit": "yes",
+      "elixir": "yes"
+    },
+    "error-402-without-code-is-insufficient-credits": {
+      "typescript": "yes",
+      "python": "yes",
+      "swift": "yes",
+      "swift-kit": "yes",
+      "elixir": "yes"
+    },
     "error-404-maps-to-not-found": {
       "typescript": "yes",
       "python": "yes",
@@ -79,6 +93,13 @@
       "elixir": "yes"
     },
     "error-code-outranks-status-insufficient-credits": {
+      "typescript": "yes",
+      "python": "yes",
+      "swift": "yes",
+      "swift-kit": "yes",
+      "elixir": "yes"
+    },
+    "error-subscription-code-is-not-special": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",

@@ -272,9 +272,8 @@ defmodule Fountain.Team do
   The environments and vaults a teammate built on `agent` may be given at add
   time: `%{environments: [%Environment{}], vaults: [%Vault{}]}`.
 
-  Both lists are the user's own, narrowed by the agent's allowlists the way
-  `start_conversation/2` will enforce them (nil = all, `[]` = none, a list =
-  those). The agent's own environment is always offered — naming it is not an
+  Both lists are the user's own, narrowed by the agent's policies the way
+  `start_conversation/2` will enforce them. The agent's own environment is always offered — naming it is not an
   override — and is what a blank pick means.
   """
   def addable_options(user_id, %Agents.Agent{} = agent) when is_binary(user_id) do
@@ -282,17 +281,19 @@ defmodule Fountain.Team do
       environments:
         user_id
         |> Fountain.Environments.list_environments()
-        |> Enum.filter(&allowed?(&1.id, agent.allowed_environment_ids, agent.environment_id)),
+        |> Enum.filter(
+          &environment_allowed?(&1.id, agent.allowed_environment_ids, agent.environment_id)
+        ),
       vaults:
         user_id
         |> Fountain.Vaults.list_vaults()
-        |> Enum.filter(&allowed?(&1.id, agent.allowed_vault_ids, nil))
+        |> Enum.filter(&Agents.Agent.vault_allowed?(agent, &1.id))
     }
   end
 
-  defp allowed?(_id, nil, _own), do: true
-  defp allowed?(id, _allowed, id), do: true
-  defp allowed?(id, allowed, _own), do: id in allowed
+  defp environment_allowed?(_id, nil, _own), do: true
+  defp environment_allowed?(id, _allowed, id), do: true
+  defp environment_allowed?(id, allowed, _own), do: id in allowed
 
   @doc """
   Remove `agent_id` from the team.

@@ -82,6 +82,23 @@ turn once, so a window and a menu-bar item can watch the same run without
 opening a second stream. A failed *turn* is a `RunResult` with a non-`done`
 state; only client-side failures throw.
 
+Transcript links in `Run.url`, conversation events, and `RunResult.url` use
+`FountainConfig.appURL`. Without it, they open the deployment's `/dashboard`;
+the retired `/conversations/:id` browser route is no longer used. To configure
+run links from the server's catalog before starting a run:
+
+```swift
+let catalog = try await client.catalog()
+var config = client.config
+config.appURL = catalog.apps?.conversations.flatMap { $0.isEmpty ? nil : URL(string: $0) }
+let linkedClient = FountainClient(config: config)
+let linkedRun = try await linkedClient.run("Review this repository", agent: agent.id)
+```
+
+For an existing conversation, `client.conversationURL(id, apps: catalog.apps)`
+uses the catalog app first, then `config.appURL`, then `/dashboard`. The dashboard
+is a navigation fallback; it does not display the transcript.
+
 It wraps more of the API than `Fountain` does — admin, audit, runners, API
 keys, `apply`, agent avatars, turn images — and reaches anything unwrapped
 through `client.request(_:_:)`. See
@@ -153,3 +170,25 @@ Run from the repository root:
 swift test
 swift build -Xswiftc -warnings-as-errors
 ```
+
+## Credit error migration
+
+Replace `FountainError.Kind.subscriptionRequired` with
+`FountainError.Kind.insufficientCredits` in the `Fountain` product, including
+switches and stored raw kind strings. The raw value is now `insufficientCredits`.
+Read `error.upgradeURL` for the purchase page. `FountainKit` already uses
+`.insufficientCredits(body, upgradeURL:)`; its case and associated URL remain unchanged.
+Both products retire the special `subscription_required` wire mapping.
+
+This is the source API boundary introduced by #2104. The next Swift package
+tag containing this change must be a breaking minor release while the package
+is 0.x, not a patch to an existing tag. Until that tag exists, pin a reviewed
+commit containing this change to adopt these names. No tag is published by
+this cleanup, and the Fountain server version is unchanged.
+
+For billing error handling, use Fountain v0.13.0 or newer.
+[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
+release containing the credit-only server contract (`c3349343`).
+`insufficient_credits` and a generic HTTP 402 identify the credit gate.
+`subscription_required` has no special mapping; it follows the HTTP status.
+The response still exposes its original code and purchase URL.

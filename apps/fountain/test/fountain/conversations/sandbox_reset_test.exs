@@ -56,7 +56,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert {:ok, sandbox} = Conversations.reset_sandbox(ctx.home, actor: "api")
     assert sandbox.status == "terminated"
     assert_received {:destroyed, name}
-    assert name == ctx.home.sprite_name
+    assert name == ctx.home.machine_name
 
     for conv <- [ctx.a, ctx.b] do
       reloaded = Conversations._unsafe_get_conversation!(conv.id)
@@ -79,7 +79,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
 
     expect(Managoat.Sandbox.Sprites, :destroy, fn h ->
-      assert h.name == ctx.home.sprite_name
+      assert h.name == ctx.home.machine_name
       refute Repo.in_transaction?()
       :ok
     end)
@@ -389,7 +389,9 @@ defmodule Fountain.Conversations.SandboxResetTest do
              Fountain.Conversations.Connection.open_autonomous_turn(
                ctx.a.id,
                ctx.user.id,
-               ctx.home.id
+               ctx.home.id,
+               ctx.a.configuration_revision,
+               ctx.a.inference_source
              )
   end
 

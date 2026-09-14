@@ -18,6 +18,44 @@ upgrade, is in
 
 ### Upgrade notes
 
+- **A sandbox without a recorded build fingerprint now requires an explicit
+  rebuild before configuration reapply** (#2102). The API returns
+  `409 rebuild_required` with `field: "environment"` and a missing-build-evidence
+  message. It no longer guesses original inputs from the current Environment.
+  Repeated refusals preserve the selection and disk. Ordinary wake and the
+  legacy skill reconciliation path remain available. Operators can run
+  `Fountain.Release.inventory_sandbox_metadata()` for a read-only database
+  inventory; disk manifests remain unverified. See
+  [Inventory older sandbox metadata](https://managoat.com/docs/guides/operate/run-a-release-task#inventory-older-sandbox-metadata)
+  before choosing a new sandbox or a destructive rebuild.
+
+- **Retired browser URLs now return 404** (#2105). Starting with the release
+  containing this change, hosted and self-hosted servers no longer redirect
+  `/conversations*`, `/team*` or `/onboarding*`. Update bookmarks, saved skill
+  instructions and support links to the configured Conversations or Team app;
+  use `/dashboard` for the old onboarding pages. Links in historical emails
+  need the same migration. See [Retired browser URLs](https://managoat.com/docs/concepts/surfaces#retired-browser-urls)
+  for the destination map and deployments with no app. The separate
+  `/api/account/onboarding` API remains available. FountainKit transcript links
+  use `FountainConfig.appURL`, or `/dashboard` when unset. Set `appURL` from the
+  catalog's Conversations app for direct run links. The catalog-aware URL helper
+  uses that app first, then `appURL`, then `/dashboard`.
+
+- New principal-key writes must provide an expiry. The database now checks
+  that unrevoked principal keys have deadlines, preserving existing deadlines
+  and revoked history (#2103). The old-writer trigger remains during rollout;
+  its removal requires evidence that every writer supplies an expiry.
+
+- ChatGPT `auth.json` imports now require explicit `"auth_mode": "chatgpt"`
+  (#2106). Use Codex 0.93.0 or newer to sign in again with file storage,
+  then paste the fresh file. Files with missing or null mode are rejected.
+  Existing stored grants continue to refresh without another import.
+
+- `fountain apply` now requires Fountain server v0.3.0 or later (#2098).
+  The fallback for servers without `POST /api/apply` is removed. If the
+  endpoint returns 404, the CLI fails before individual resource requests
+  and asks you to upgrade the server or check `FOUNTAIN_BASE_URL`.
+
 - `POST /api/conversations` no longer reads the legacy
   `X-AoD-Parent-Conversation-Id` header. Use
   `X-Fountain-Parent-Conversation-Id` to record agent provenance and the parent
@@ -33,6 +71,19 @@ upgrade, is in
   enable credits. With only the old variable set, credits remain off by default.
   The hosted home-cloud deployment already uses `CREDITS_ENABLED`.
 
+- **The inference credential no longer reaches `/home/sprite/.env`** (ADR 0053
+  decision 4, #2018). A sandbox carries several conversations and each can run
+  on a different credential, so a value in that shared file would be whichever
+  conversation provisioned last. Every process still receives the credential
+  through its own environment, the `setup_script` included. What stops working
+  is `source .env` in a **later** shell as a way to recover a provider key: a
+  script that re-reads the file for `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`
+  finds nothing there now. This also applies when these names are supplied
+  as environment or vault secrets, not just through a credential set. Read
+  them from the script's own environment instead. The proxy variables have
+  worked this way since the broker landed.
+
 - **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
   PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
   took the feature away from every deployment that configures no flag service,
@@ -46,7 +97,38 @@ upgrade, is in
   Connections off is the broker: an account is offered the feature only while
   `BROKER_TENANTS` names it.
 
+- **Upgrade every serving node before enabling multiple inference sources**
+  (#2018). Credential, environment and vault writers must acquire source locks
+  before row locks. The migration's triggers do not make older serving nodes
+  safe to mix with the new admission path.
+
 ### Added
+
+- **An account can hold several named sets of inference credentials, and an
+  agent or a launch can name one** (ADR 0053, #2018). `inference_credentials`
+  becomes one row per set, each with a `name` and an `is_default` flag; every
+  existing row becomes that account's Default set, so an account that never
+  makes a second one behaves exactly as before. An agent runs on the set it
+  names (`agents.inference_credential_id`), a launch may override it
+  (`inference_credential_id` on `POST /api/conversations`), and
+  `allowed_inference_credential_ids` bounds which set a launch may name — the
+  same shape as `allowed_vault_ids`. Manage them at
+  `/account/inference-credentials` or under
+  `/api/account/inference-credential-sets`. A set is deliberately not part of
+  sandbox identity. Conversations and turns bind the resolved source and its
+  revision; changes to defaults do not reroute existing peers on wake or
+  resume. A replaced, deleted or unusable bound source requires a new
+  selection. Shared Codex admission binds the machine to one source before
+  auth preparation. That binding survives conversation termination and
+  deletion; a different Codex source requires a new sandbox. Separate
+  per-peer auth directories remain unbuilt.
+- **The current owner can write or clear a principal's inference credential**
+  (`PUT` and `DELETE /api/claimable-users/:id/inference-credentials/:provider`,
+  ADR 0053 decision 7). The application that opened it holds that authority
+  before claim. After claim, only the claiming account holds it; the original
+  application loses credential-write access. Both routes require a full-scope
+  key and store the value under the principal's own tenant key. A
+  `principal`-scoped key gains no account-write permission (#2018).
 
 - `POST /api/conversations/:id/reapply` re-selects a conversation's Agent,
   Environment and Vault on the machine it is already running, keeping the
@@ -56,7 +138,27 @@ upgrade, is in
   (`conversations.configuration_revision`, `sandboxes.build_fingerprint`,
   `sandboxes.applied_skills`) (#1565).
 
+### Fixed
+
+- **A tenant secret named after an inference credential is no longer billed as
+  platform inference** (ADR 0053 decision 5, #2018). An environment or vault
+  secret called `ANTHROPIC_API_KEY` wins over the account's credential in the
+  sandbox, which is documented behaviour, but selection could not see it: on a
+  deployment holding platform keys the turn was selected as platform-served,
+  stamped, priced against the tenant's credits and counted against
+  `PLATFORM_INFERENCE_DAILY_CENTS`, while the tenant's own secret served it.
+  The door gate refused such a launch once the deployment had spent its day,
+  for the same reason. Both now resolve the tenant's secret as their own
+  credential. The managed ChatGPT grant keeps ADR 0052's reservation and stays
+  protected, including static workspace tokens on the managed path. Ordinary
+  tenant overrides resolve their source; managed credentials keep their
+  custody protections.
+
 ### Changed
+
+- Sandbox application code now uses `machine_name` across providers (#2108).
+  Existing database columns, API fields, event metadata and provider names retain
+  their current values and names.
 
 - **Brokerage is a property of the deployment, and the per-tenant ratchet is
   gone** (ADR 0019 §9, amended 2026-09-12). `Fountain.Broker.enabled_for?/1`
