@@ -39,7 +39,7 @@ including when the service's automatic fixer is excluded from that path. Keep
 severity and required tests intact; a narrow bot policy does not require a human
 to write the code.
 
-`needs-human-review` means a decision or explicit approval requirement. Read the
+`needs:human-review` means a decision or explicit approval requirement. Read the
 question and alternatives, apply decisions the user has already authorized, and
 ask only for an unsettled choice. A PR can carry both signals: make independent
 permitted repairs while preserving the decision. Incomplete review or provider

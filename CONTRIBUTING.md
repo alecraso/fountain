@@ -104,12 +104,12 @@ commits, workflow conditions, runner environment and external dependencies.
 Record unexplained failures with what you know. File confirmed flakes:
 
 ```bash
-gh issue create --label flake --label area:testing --title "Flake: <what raced>"
+gh issue create --label type:flake --label area:testing --title "Flake: <what raced>"
 ```
 
 Or use the **Flaky test** issue template, which applies the same labels. Every
-flake carries the `flake` label, so
-[the open ones](https://github.com/managoat/fountain/issues?q=is%3Aopen+label%3Aflake)
+flake carries the `type:flake` label, so
+[the open ones](https://github.com/managoat/fountain/issues?q=is%3Aopen+label%3Atype%3Aflake)
 are one query. Search before filing — the same flake gets found repeatedly, and
 a second issue splits the evidence. What makes one actionable is in CLAUDE.md
 under *Flaky tests*: the failing assertion, a rate rather than an adjective,
@@ -481,7 +481,7 @@ reference for the scenario format and the shared vocabularies.
 
 Do not bump an SDK's version because the contract moved. Merging a version bump
 publishes that SDK, so a version moves when its own public surface changes.
-Label a PR `sdk-no-release` where the distinction needs saying out loud.
+Label a PR `release:skip-sdk` where the distinction needs saying out loud.
 
 ## Pull requests
 
@@ -505,7 +505,7 @@ and bullets, so `changelog.d/2105-retired-urls-404.md` might read:
 rolls every fragment, plus anything left under `[Unreleased]`, into the dated
 section for the new version and deletes the fragments, so `CHANGELOG.md`
 changes once per release. CI refuses a PR that edits `CHANGELOG.md` directly;
-to fix a typo in a shipped entry, put the `changelog:manual` label on the PR
+to fix a typo in a shipped entry, put the `release:manual-changelog` label on the PR
 and re-run the `CI policy and alert tests` job.
 
 This replaced the shared `[Unreleased]` section every PR used to insert a

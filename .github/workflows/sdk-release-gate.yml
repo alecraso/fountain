@@ -17,7 +17,7 @@ on:
   pull_request:
     # `labeled`/`unlabeled` because the escape hatch below reads the labels off
     # the event payload, which is frozen when the event fires. Without them,
-    # adding `sdk-no-release` does nothing to the run that asked for it and a
+    # adding `release:skip-sdk` does nothing to the run that asked for it and a
     # re-run replays the same stale payload, so the only way past a gate whose
     # own message tells you to add a label was to push another commit. The
     # Elixir gate has had these since it was written.
@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 5
     # The deliberate exception: changing the published surface without cutting
     # a release. Rare, and it should take a label and a sentence in the PR.
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'sdk-no-release') }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'release:skip-sdk') && !contains(github.event.pull_request.labels.*.name, 'sdk-no-release') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5

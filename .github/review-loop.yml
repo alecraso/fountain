@@ -165,7 +165,7 @@ approval:
     - scripts/test-partition.sh
     - scripts/test-libraries.sh
     - decisions/**
-  human_review_label: needs-human-review
+  human_review_label: needs:human-review
 limits:
   max_fix_rounds: 3
   max_elapsed_minutes: 120

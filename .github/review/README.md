@@ -29,7 +29,7 @@ the automatic fixer cannot complete them. A coding agent can make those repairs
 under its own repository authorization, including outside the bot's path or
 file allowance. Low/info defects remain nonblocking when policy permits.
 
-`needs-human-review` is reserved for an unsettled decision or explicit approval
+`needs:human-review` is reserved for an unsettled decision or explicit approval
 requirement. Reviewers use `kind: product_decision`, `needsHuman: true`, and a
 `humanDecision` containing the question, alternatives with consequences, and
 recommendation. Apply requirements already settled by the approved base: a

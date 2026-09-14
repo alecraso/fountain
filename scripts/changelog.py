@@ -305,15 +305,15 @@ def cmd_guard(root: Path, base: str, branch: str, labels: list[str]) -> int:
     if branch.startswith("release/v"):
         print(f"{branch}: the release branch rolls the changelog; skipping the guard")
         return 0
-    if "changelog:manual" in labels:
-        print("changelog:manual label present; skipping the guard")
+    if any(label in labels for label in ("release:manual-changelog", "changelog:manual")):
+        print("release:manual-changelog label present; skipping the guard")
         return 0
     if CHANGELOG in changed_files(root, base):
         print(
             f"{CHANGELOG} changed on this branch. Every PR writes a fragment under\n"
             f"{FRAGMENT_DIR}/ instead (see {FRAGMENT_DIR}/README.md); the release PR\n"
             f"rolls them into CHANGELOG.md. To edit the file itself, put the\n"
-            f"`changelog:manual` label on the PR.",
+            f"`release:manual-changelog` label on the PR.",
             file=sys.stderr,
         )
         return 1

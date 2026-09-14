@@ -64,7 +64,7 @@ defmodule ElixirSdkRelease do
             "but leaves @version at #{head_version}. Nothing publishes without a bump. " <>
             "Bump @version in #{@mix} and add a \"## [<version>]\" heading to " <>
             "#{@changelog}. To change the published surface without releasing, add the " <>
-            "\"sdk-no-release\" label."
+            "\"release:skip-sdk\" label."
         )
 
       not bumped ->

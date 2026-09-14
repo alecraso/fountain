@@ -1897,7 +1897,7 @@ jobs:
         # A PR does not edit CHANGELOG.md: that file changes once per
         # release, in the release PR, which is what ended the changelog
         # merge conflict every other PR used to hit. The release branch and
-        # the changelog:manual label (a typo in a shipped entry) are the two
+        # the release:manual-changelog label (a typo in a shipped entry) are the two
         # doors. pull_request only: the merge group re-tests the same tree,
         # and a push to main has no PR to judge.
         #

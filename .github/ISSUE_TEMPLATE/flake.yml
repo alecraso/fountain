@@ -1,7 +1,7 @@
 name: Flaky test
 description: A test that failed and then passed with nothing changed.
 title: "Flake: "
-labels: ["flake", "area:testing"]
+labels: ["type:flake", "area:testing"]
 body:
   - type: markdown
     attributes:
@@ -10,7 +10,7 @@ body:
         three fields below are what makes one actionable: what failed, how
         often, and — if you got that far — what it raced.
 
-        Search first: [existing flakes](https://github.com/managoat/fountain/issues?q=label%3Aflake).
+        Search first: [existing flakes](https://github.com/managoat/fountain/issues?q=label%3Atype%3Aflake).
         The same one gets found repeatedly, and a second issue splits the evidence.
   - type: input
     id: test

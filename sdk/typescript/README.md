@@ -435,7 +435,7 @@ does not have, publishes it, and tags the merge commit `sdk-v<version>`.
 A PR that touches only tests, examples or the changelog needs no bump; the
 gate stays quiet, and the publish workflow finds nothing to do. To change the
 published surface deliberately without releasing, label the PR
-`sdk-no-release`.
+`release:skip-sdk`.
 
 ## License
 
