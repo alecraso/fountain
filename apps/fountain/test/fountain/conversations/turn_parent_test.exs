@@ -70,6 +70,16 @@ defmodule Fountain.Conversations.TurnParentTest do
   end
 
   test "a superseded turn cannot idle the parent once its successor has ended too", c do
+    # This completion now consults the journal, so it must name a started command.
+    {:ok, _} = ExecutionGuard._unsafe_claim_spawn(c.execution.id)
+
+    {:ok, _} =
+      ExecutionGuard._unsafe_bind_identity(
+        c.execution.id,
+        c.execution.connection_id,
+        "running-command"
+      )
+
     insert_turn(c.conv,
       status: "completed",
       ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
@@ -92,6 +102,16 @@ defmodule Fountain.Conversations.TurnParentTest do
   end
 
   test "a completion cannot idle a parent that is not running", c do
+    # This completion now consults the journal, so it must name a started command.
+    {:ok, _} = ExecutionGuard._unsafe_claim_spawn(c.execution.id)
+
+    {:ok, _} =
+      ExecutionGuard._unsafe_bind_identity(
+        c.execution.id,
+        c.execution.connection_id,
+        "running-command"
+      )
+
     c.conv |> Ecto.Changeset.change(status: "pending") |> Repo.update!()
 
     TurnMachine.finish(machine(c), "completed", %{}, %{})

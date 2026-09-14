@@ -356,6 +356,74 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end
   end
 
+  @doc "End an actor-owned turn under parent, journal and turn locks; the callback only writes rows."
+  def _unsafe_end_actor_turn(%Turn{} = observed, sandbox_id, status, attrs, writer) do
+    transaction(fn ->
+      with %Conversation{} = conv <- lock_parent(observed.conversation_id),
+           true <- conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"],
+           execution = lock_execution_by_turn(observed.id),
+           %Turn{} = turn <- lock_turn(observed.id),
+           true <- turn.conversation_id == conv.id,
+           true <- is_nil(execution) or current_binding?(execution),
+           true <- turn.status == "running" or turn.status in @terminal_turns do
+        {ending, changed, event} = actor_ending(turn, execution, status, attrs)
+
+        {writer.(conv, ending), changed, event}
+      else
+        _ -> {:noop, nil, nil}
+      end
+    end)
+  end
+
+  defp actor_ending(turn, nil, status, attrs) do
+    running? = turn.status == "running"
+
+    allowed =
+      if running?,
+        do:
+          Map.merge(attrs, %{
+            status: status,
+            ended_at: DateTime.truncate(DateTime.utc_now(), :second)
+          }),
+        else: %{}
+
+    {%{
+       turn: turn,
+       attrs: allowed,
+       announce?: running?,
+       materialize?: running?,
+       idle_allowed?: true
+     }, nil, nil}
+  end
+
+  defp actor_ending(turn, execution, status, attrs) do
+    {decision, changed, event} = complete(execution, status, DateTime.utc_now())
+
+    allowed =
+      if Map.get(decision, :terminal_changed, false), do: Map.take(attrs, [:exit_code]), else: %{}
+
+    # A successful waiting turn detached its request before completion. The
+    # journal clears held permissions, but this metadata must survive so the
+    # terminal stage can name the request that now outlives the command.
+    allowed =
+      if Map.get(decision, :terminal_changed, false) and decision.turn.status == "completed" and
+           turn.waiting,
+         do: Map.put(allowed, :pending_permission, turn.pending_permission),
+         else: allowed
+
+    announce? =
+      turn.status == "running" and decision.turn.status in @terminal_turns and
+        is_nil(decision.execution.deadline_event_id)
+
+    {%{
+       turn: decision.turn,
+       attrs: allowed,
+       announce?: announce?,
+       materialize?: turn.status == "running",
+       idle_allowed?: decision.execution.state != "active"
+     }, changed, event}
+  end
+
   @doc "A completion after the absolute deadline becomes a failed, fenced turn."
   def _unsafe_complete(id, status, opts \\ []) when status in @terminal_turns do
     with_execution(id, fn execution ->
@@ -537,14 +605,14 @@ defmodule Fountain.Conversations.ExecutionGuard do
   @doc """
   Serialize the existing turn writer with deadline and termination state.
 
-  This runs on **every** turn write, bounded or not — `Pending` writes a
-  permission request through it on each ask, and `TurnMachine` writes a prompt
-  id, a model selection and the turn's end. The unbounded path therefore pays
+  Ordinary turn updates run here, bounded or not: permission requests, prompt
+  ids and model selections. Actor completion uses `_unsafe_end_actor_turn/5`
+  so its sandbox binding, reply and parent idle write share this journal's
+  arbitration and lock order. The unbounded path therefore pays
   one indexed lookup on `turn_executions.turn_id` (unique index) and nothing
   else: no row, no transaction, straight through to `writer`. That cost is
-  deliberate, and it is the price of the guarantee being structural — a caller
-  that forgets to consult the journal cannot exist, because there is only one
-  turn writer and it consults the journal itself.
+  deliberate: both ordinary updates and actor completion consult the journal
+  before writing a turn result.
   """
   def _unsafe_write_turn(%Turn{} = turn, attrs, writer) do
     case Repo.get_by(TurnExecution, turn_id: turn.id) do

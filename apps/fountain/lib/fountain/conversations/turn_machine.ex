@@ -651,15 +651,9 @@ defmodule Fountain.Conversations.TurnMachine do
   with its bookkeeping cleared. A stale completion clears local bookkeeping
   without overwriting the persisted result or emitting another completion.
 
-  Known gap: the write goes to `Conversations._unsafe_complete_turn/3`, which
-  takes the parent lock itself rather than going through
-  `ExecutionGuard._unsafe_write_turn/3`, so completion no longer consults the
-  execution journal (#1732). The journal's expiry, `uncertain_spawn` and
-  `:execution_not_started` conditions do not apply at this ending, and a
-  fenced turn does not idle its parent. This is inert while
-  `ExecutionLimits.enforced_controls/1` returns `[]`, because no
-  `turn_executions` row is written at all; re-plumbing completion through the
-  guard is tracked separately.
+  Completion arbitrates against the execution journal under its row locks.
+  The persisted outcome wins over the peer's requested status; deadline events
+  already recorded by the journal are not announced again during actor cleanup.
   """
   @spec finish(t(), String.t(), map(), map()) :: t()
   def finish(%__MODULE__{} = turn, status, span_attrs, stage_meta) do
@@ -687,13 +681,7 @@ defmodule Fountain.Conversations.TurnMachine do
         publish_stage(
           turn.conversation_id,
           "turn",
-          # `row` is what was persisted, and reading the stage off it rather
-          # than off `status` keeps the transcript honest about the write that
-          # actually landed. Nothing between the changeset and the update in
-          # `_unsafe_complete_turn/3` can make the two differ today — the
-          # journal fence that once could is no longer in this path (see the
-          # known gap above). `stage_meta` already carries
-          # turn_id/turn_number from the merge above.
+          # The journal can change a requested success to a failure.
           if(row.status == "completed", do: "done", else: "failed"),
           Map.merge(stage_meta, waiting_meta(row))
         )
@@ -703,6 +691,10 @@ defmodule Fountain.Conversations.TurnMachine do
 
       :noop ->
         end_span(turn.span, :error, %{"outcome" => "completion_ignored"})
+
+      {:error, reason} ->
+        Logger.warning("turn #{turn.row.id}: completion refused (#{inspect(reason)})")
+        end_span(turn.span, :error, %{"outcome" => "completion_refused"})
     end
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
