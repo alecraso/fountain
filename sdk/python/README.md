@@ -43,6 +43,10 @@ the work it creates as child conversations.
 
 ## Wait, stream, or fan out
 
+Pass `sandbox_api_access="none", sandbox_mode="ephemeral"` to `run()` to start
+without an owner callback credential in the sandbox. Omit `sandbox_api_access`
+to inherit a resumed channel's setting; new conversations default to `"owner"`.
+
 `run()` starts work immediately in a background thread. Calling `result()`
 waits for the finished turn. Iterating the same handle streams its events.
 

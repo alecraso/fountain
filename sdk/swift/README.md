@@ -27,6 +27,12 @@ print(result.text)
 print(result.url)
 ```
 
+Pass `sandboxMode: "ephemeral", sandboxAPIAccess: "none"` to `run` to start
+without an owner callback credential. FountainKit accepts
+`sandboxAPIAccess: SandboxAPIAccess.none` on `ConversationCreateRequest`.
+Omitting the option inherits a resumed channel's setting; new conversations
+default to `"owner"`.
+
 The sandbox remains after the turn, so a follow-up continues on the same
 computer and in the same agent session:
 

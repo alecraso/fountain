@@ -367,6 +367,22 @@ class TurnTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_run_sends_explicit_sandbox_api_access_and_omits_the_default(self):
+        for access in (None, "none", "owner"):
+            with self.subTest(access=access), FakeFountain() as fake:
+                client = Fountain(base_url=fake.base_url, api_key="fk_test")
+                client.run(
+                    "find it", agent="reposage", sandbox_api_access=access
+                ).result()
+                create = next(
+                    request for request in fake.state.requests
+                    if request[:2] == ("POST", "/api/conversations")
+                )
+                if access is None:
+                    self.assertNotIn("sandbox_api_access", create[3])
+                else:
+                    self.assertEqual(create[3]["sandbox_api_access"], access)
+
     def test_run_resolves_names_streams_and_returns_result(self):
         with FakeFountain() as fake:
             client = Fountain(

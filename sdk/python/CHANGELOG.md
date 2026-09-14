@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Forward `sandbox_api_access` from `Fountain.run()`. Explicit `"none"` keeps callback credentials out of a fresh ephemeral sandbox; omitting the option preserves a resumed channel's policy (#1711).
+
 ## 0.3.0
 
 ### Breaking changes

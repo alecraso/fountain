@@ -7,6 +7,7 @@ public struct Conversation: Sendable, Decodable, Identifiable, Hashable {
   public var title: String?
   public var sandboxID: String?
   public var sandbox: Sandbox?
+  public var sandboxAPIAccess: SandboxAPIAccess?
   public var agentID: String?
   public var agentVersionID: String?
   /// Resolved only on list/get; null where a conversation is embedded.
@@ -35,6 +36,7 @@ public struct Conversation: Sendable, Decodable, Identifiable, Hashable {
   enum CodingKeys: String, CodingKey {
     case id, title, sandbox, runtime, acp, status, source, unread, current
     case sandboxID = "sandbox_id"
+    case sandboxAPIAccess = "sandbox_api_access"
     case agentID = "agent_id"
     case agentVersionID = "agent_version_id"
     case agentVersion = "agent_version"
@@ -139,6 +141,8 @@ public struct ConversationCreateRequest: Sendable, Encodable {
   public var images: [ImageInput]?
   public var spriteName: String?
   public var sandboxMode: SandboxMode?
+  /// Omit to inherit a channel's policy; new conversations default to owner.
+  public var sandboxAPIAccess: SandboxAPIAccess?
   public var sandboxID: String?
   public var channelID: String?
   /// With `channelID`: never resume, always open a new conversation
@@ -155,6 +159,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
     images: [ImageInput]? = nil,
     spriteName: String? = nil,
     sandboxMode: SandboxMode? = nil,
+    sandboxAPIAccess: SandboxAPIAccess? = nil,
     sandboxID: String? = nil,
     channelID: String? = nil,
     fresh: Bool? = nil
@@ -168,6 +173,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
     self.images = images
     self.spriteName = spriteName
     self.sandboxMode = sandboxMode
+    self.sandboxAPIAccess = sandboxAPIAccess
     self.sandboxID = sandboxID
     self.channelID = channelID
     self.fresh = fresh
@@ -181,6 +187,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
     case permissionPolicy = "permission_policy"
     case spriteName = "sprite_name"
     case sandboxMode = "sandbox_mode"
+    case sandboxAPIAccess = "sandbox_api_access"
     case sandboxID = "sandbox_id"
     case channelID = "channel_id"
   }

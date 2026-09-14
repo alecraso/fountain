@@ -31,6 +31,11 @@ When code runs inside a Fountain sandbox, `FOUNTAIN_CONVERSATION_ID` is automati
 
 ## Run an agent
 
+Pass `sandbox_api_access: "none", sandbox_mode: "ephemeral"` to `Fountain.run/3`
+to start without an owner callback credential in the sandbox. Omitting
+`:sandbox_api_access` inherits a resumed channel's setting; new conversations
+default to `"owner"`.
+
 `Fountain.run/3` starts work immediately. The handle supports one completion wait and any number of event consumers without making a second API request.
 
 ```elixir
