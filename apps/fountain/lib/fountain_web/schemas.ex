@@ -435,7 +435,9 @@ defmodule FountainWeb.Schemas do
         title: %Schema{
           type: :string,
           nullable: true,
-          description: "Generated from the first turn; null until one exists."
+          description:
+            "Optional display title, set explicitly or supplied by the harness over ACP. " <>
+              "Harness titles may be revised or cleared; null when no title is set."
         },
         sandbox_id: %Schema{type: :string, format: :uuid, nullable: true},
         sandbox: %Schema{oneOf: [Sandbox], nullable: true},

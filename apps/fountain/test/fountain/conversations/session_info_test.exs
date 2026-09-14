@@ -124,6 +124,33 @@ defmodule Fountain.Conversations.SessionInfoTest do
     assert Conversations._unsafe_get_conversation!(conv.id).title == "Keep me"
   end
 
+  test "redacts decoded secrets before whitespace normalization or truncation", %{conv: conv} do
+    secret = "private\ncredential\twith whitespace"
+    long_secret = String.duplicate("sensitive-credential-", 10)
+    Fountain.Conversations.Redaction.put(conv.id, [secret, long_secret])
+    on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
+
+    assert %{title: "Investigate [REDACTED]"} =
+             apply_update(conv, %{"title" => "Investigate " <> secret})
+
+    prefix = String.duplicate("x", 110)
+
+    assert %{title: title} = apply_update(conv, %{"title" => prefix <> long_secret})
+    assert title == prefix <> "[REDACTED]"
+  end
+
+  test "preserves complete graphemes within the database character limit", %{conv: conv} do
+    for {grapheme, repeats} <- [{"👨‍👩‍👧‍👦", 36}, {"e\u0301\u0308", 85}] do
+      assert %{title: title} = apply_update(conv, %{"title" => String.duplicate(grapheme, 120)})
+      assert title == String.duplicate(grapheme, repeats)
+      assert String.length(title) <= 120
+      assert length(String.codepoints(title)) <= 255
+    end
+
+    oversized_grapheme = "e" <> String.duplicate("\u0301", 255)
+    assert %{title: nil} = apply_update(conv, %{"title" => oversized_grapheme})
+  end
+
   test "a deleted conversation is a no-op", %{conv: conv} do
     Repo.delete!(conv)
 

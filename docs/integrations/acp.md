@@ -130,8 +130,11 @@ response:
 
 The title is saved on the conversation and refreshes the sidebar. A later
 notification can revise a harness title; an omitted `title` leaves it alone,
-and `null` clears it. Fountain collapses whitespace, removes NUL characters,
-and limits titles to 120 characters. A blank title also clears it.
+and `null` clears it. Fountain redacts registered secrets before normalizing
+or shortening the title. It collapses whitespace, removes NUL characters,
+and limits titles to 120 characters. Complex emoji and combining characters
+may shorten this further to fit storage, without splitting a character.
+A blank title also clears it. A failed title update leaves the turn running.
 
 Explicit titles, including existing titles whose origin is unknown, stay
 unchanged. Renaming a conversation claims its title, even when the name is
