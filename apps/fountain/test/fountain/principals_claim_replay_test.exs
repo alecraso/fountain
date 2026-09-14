@@ -146,6 +146,79 @@ defmodule Fountain.PrincipalsClaimReplayTest do
     assert_one_credential_after_rotation(:renewal)
   end
 
+  test "renewal waits for a concurrent owner suspension and refuses the committed state" do
+    {application, owner, claimed} =
+      Sandbox.unboxed_run(Repo, fn ->
+        application = insert_verified_user()
+        owner = insert_verified_user()
+        {:ok, opened} = Principals.create_claimable(application, %{"application_id" => "suspend"})
+        {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, owner)
+        {application, owner, claimed}
+      end)
+
+    on_exit(fn ->
+      Sandbox.unboxed_run(Repo, fn ->
+        ids = [application.id, owner.id, claimed.claimable.user_id]
+        Repo.delete_all(from u in User, where: u.id in ^ids)
+      end)
+    end)
+
+    parent = self()
+
+    suspension =
+      Task.async(fn ->
+        Sandbox.unboxed_run(Repo, fn ->
+          Repo.transaction(fn ->
+            owner
+            |> Ecto.Changeset.change(
+              suspended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            )
+            |> Repo.update!()
+
+            send(parent, :suspension_pending)
+
+            receive do
+              :commit -> :ok
+            after
+              10_000 -> Repo.rollback(:test_commit_timeout)
+            end
+          end)
+        end)
+      end)
+
+    assert_receive :suspension_pending, 5_000
+
+    renewal =
+      Task.async(fn ->
+        Sandbox.unboxed_run(Repo, fn ->
+          %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
+          send(parent, {:renewal_backend, backend})
+          Principals.renew_owned_credential(owner.id, claimed.claimable.user_id)
+        end)
+      end)
+
+    try do
+      assert_receive {:renewal_backend, backend}, 5_000
+      assert waits_for_lock?(backend, System.monotonic_time(:millisecond) + 5_000)
+      send(suspension.pid, :commit)
+      assert {:ok, :ok} = Task.await(suspension, 5_000)
+      assert {:error, :ineligible} = Task.await(renewal, 5_000)
+
+      Sandbox.unboxed_run(Repo, fn ->
+        assert {:ok, _, _} = Accounts.authenticate_api_key(claimed.api_key)
+
+        refute Repo.exists?(
+                 from a in Fountain.Audit.Event,
+                   where: a.user_id == ^owner.id and a.action == "api_key.created"
+               )
+      end)
+    after
+      send(suspension.pid, :commit)
+      Task.shutdown(suspension, :brutal_kill)
+      Task.shutdown(renewal, :brutal_kill)
+    end
+  end
+
   defp assert_one_credential_after_rotation(second_operation) do
     {application, owner, opened, first} =
       Sandbox.unboxed_run(Repo, fn ->

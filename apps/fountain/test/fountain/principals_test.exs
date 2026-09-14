@@ -478,6 +478,28 @@ defmodule Fountain.PrincipalsTest do
       assert {:ok, _} = Principals.renew_owned_credential(owner.id, ctx.claimed.claimable.user_id)
     end
 
+    for restriction <- [:suspended, :unverified] do
+      test "a currently #{restriction} owner cannot renew or mutate credentials", ctx do
+        attrs =
+          case unquote(restriction) do
+            :suspended -> %{suspended_at: DateTime.utc_now() |> DateTime.truncate(:second)}
+            :unverified -> %{email_verified_at: nil}
+          end
+
+        ctx.owner |> Ecto.Changeset.change(attrs) |> Repo.update!()
+        principal_id = ctx.claimed.claimable.user_id
+        keys = Accounts.list_api_keys(principal_id)
+        reject(Fountain.Audit, :record, 1)
+
+        assert {:error, :ineligible} =
+                 Principals.renew_owned_credential(ctx.owner.id, principal_id)
+
+        assert Accounts.list_api_keys(principal_id) == keys
+        assert is_nil(Repo.reload!(ctx.key).revoked_at)
+        assert {:ok, _, _} = Accounts.authenticate_api_key(ctx.claimed.api_key)
+      end
+    end
+
     test "the application, another account and the principal cannot renew", ctx do
       principal_id = ctx.claimed.claimable.user_id
       other = insert_verified_user()
