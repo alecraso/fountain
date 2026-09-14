@@ -11,6 +11,15 @@ server releases.
 
 ---
 
+## [4.1.0] — 2026-09-14
+
+### Added
+
+- `plan` blocks with full checklist arrays in `body`. The generated `Block.body`
+  type now includes an array of plan entries; check the block kind or body type
+  before treating it as text. Streaming block events preserve the checklist,
+  and the turn follower keeps it out of the assistant's text.
+
 ## [4.0.0] — 2026-09-14
 
 ### Breaking changes

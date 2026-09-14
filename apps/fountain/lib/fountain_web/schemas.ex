@@ -1975,7 +1975,9 @@ defmodule FountainWeb.Schemas do
       description:
         "One structured piece of a log event's output — the same parse the web UI " <>
           "renders (`Fountain.Conversations.Blocks`). `kind` decides the other fields: " <>
-          "`text`/`thinking` carry `body`; `tool_use` carries `id`, `name`, `summary`, " <>
+          "`text`/`thinking` carry `body`; `plan` carries the full ordered checklist in `body` " <>
+          "(entries with `content`, `status`, and optional `priority`, `id`, `activeForm`); " <>
+          "`tool_use` carries `id`, `name`, `summary`, " <>
           "`body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs " <>
           "with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` " <>
           "carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`; " <>
@@ -1989,7 +1991,27 @@ defmodule FountainWeb.Schemas do
           type: :string,
           enum: Fountain.Conversations.Blocks.kinds()
         },
-        body: %Schema{type: :string, nullable: true},
+        body: %Schema{
+          nullable: true,
+          oneOf: [
+            %Schema{type: :string},
+            %Schema{
+              type: :array,
+              items: %Schema{
+                type: :object,
+                properties: %{
+                  content: %Schema{type: :string},
+                  status: %Schema{type: :string, enum: ~w(pending in_progress completed)},
+                  priority: %Schema{type: :string},
+                  id: %Schema{type: :string},
+                  activeForm: %Schema{type: :string}
+                },
+                required: [:content, :status],
+                additionalProperties: true
+              }
+            }
+          ]
+        },
         summary: %Schema{type: :string, nullable: true},
         id: %Schema{type: :string, nullable: true},
         name: %Schema{type: :string, nullable: true},

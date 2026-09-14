@@ -9487,8 +9487,46 @@
       "properties": {
         "body": {
           "nullable": true,
-          "required": false,
-          "type": "string"
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "additionalProperties": true,
+                "properties": {
+                  "activeForm": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "content": {
+                    "required": true,
+                    "type": "string"
+                  },
+                  "id": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "priority": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "completed",
+                      "in_progress",
+                      "pending"
+                    ],
+                    "required": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          ],
+          "required": false
         },
         "error": {
           "nullable": true,
@@ -9505,6 +9543,7 @@
             "error",
             "init",
             "permission_request",
+            "plan",
             "raw",
             "result",
             "text",

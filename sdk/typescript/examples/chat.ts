@@ -54,8 +54,9 @@ function fold(blocks: Block[]): Part[] {
   for (const block of blocks) {
     const last = out.at(-1);
     if (block.kind === "text" || block.kind === "thinking") {
-      if (last?.kind === block.kind) last.body += block.body ?? "";
-      else out.push({ kind: block.kind, body: block.body ?? "", tools: [] });
+      const body = typeof block.body === "string" ? block.body : "";
+      if (last?.kind === block.kind) last.body += body;
+      else out.push({ kind: block.kind, body, tools: [] });
     } else if (block.kind === "tool_use") {
       if (last?.kind === "tools") last.tools.push(block.name ?? "a tool");
       else out.push({ kind: "tools", body: "", tools: [block.name ?? "a tool"] });

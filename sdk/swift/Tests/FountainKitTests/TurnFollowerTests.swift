@@ -28,6 +28,15 @@ import Testing
         """.utf8))
   }
 
+  @Test func planChecklistSurvivesDecoding() {
+    let event = output(#"{"kind":"plan","body":[{"content":"Test","status":"pending"}]}"#)
+    let block = event.blocks!.first!
+    #expect(block.kind == .plan)
+    #expect(block.body == nil)
+    #expect(block.planEntries?.count == 1)
+    #expect(block.planEntries?.first == .object(["content": .string("Test"), "status": .string("pending")]))
+  }
+
   @Test func followsOneTurnStartToEnd() {
     var follower = TurnFollower(turnNumber: 1)
     let starts = follower.apply(stage("started"))

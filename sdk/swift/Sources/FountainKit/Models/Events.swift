@@ -42,6 +42,8 @@ public struct LogEvent: Sendable, Decodable, Identifiable, Hashable {
 public struct Block: Sendable, Decodable, Hashable {
   public var kind: BlockKind
   public var body: String?
+  /// plan only: the full ordered checklist from the wire `body` array.
+  public var planEntries: [JSONValue]?
   public var summary: String?
   /// tool_use / permission_request: the tool name.
   public var name: String?
@@ -67,6 +69,8 @@ public struct Block: Sendable, Decodable, Hashable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     kind = try container.decode(BlockKind.self, forKey: .kind)
     body = try? container.decodeIfPresent(String.self, forKey: .body)
+    planEntries = kind == .plan
+      ? try? container.decodeIfPresent([JSONValue].self, forKey: .body) : nil
     summary = try? container.decodeIfPresent(String.self, forKey: .summary)
     name = try? container.decodeIfPresent(String.self, forKey: .name)
     id = try? container.decodeIfPresent(String.self, forKey: .id)
