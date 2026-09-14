@@ -232,7 +232,11 @@ defmodule Fountain.Conversations.Reattachment do
               mark_orphan(state, running_turn, "no_active_session")
               state
 
-            {:ok, session, matched_by} ->
+            {:ok, session, matched_by, superseded} ->
+              # Older adapters can retain a runtime writer even while this
+              # conversation has a running turn. Preserve the selected adapter
+              # and reap only the other sessions whose ownership was verified.
+              Enum.each(superseded, &Connection.reap_session(state.handle, &1.id))
               attempt_session_attach(state, running_turn, session, matched_by)
           end
 

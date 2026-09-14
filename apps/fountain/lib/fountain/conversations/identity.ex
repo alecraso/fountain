@@ -131,14 +131,26 @@ defmodule Fountain.Conversations.Identity do
     Map.merge(tagged, process_identities(handle, tagged))
   end
 
-  @doc "Resolve a reattach candidate and the source of its identity."
+  @doc """
+  Resolve a reattach candidate, its identity source and the superseded sessions
+  owned by the same conversation. One identity snapshot decides both selection
+  and cleanup; unidentified sessions are never offered for either.
+  """
   @spec reattach_session(Handle.t(), [Session.t()], String.t()) ::
-          {:ok, Session.t(), String.t()} | :none
+          {:ok, Session.t(), String.t(), [Session.t()]} | :none
   def reattach_session(handle, sessions, conv_id) do
-    case pick_session(sessions, conv_id, session_owners(handle, sessions)) do
+    owners = session_owners(handle, sessions)
+
+    case pick_session(sessions, conv_id, owners) do
       {:tagged, session} ->
         source = if conversation_id(session), do: "tag", else: "process_env"
-        {:ok, session, source}
+
+        superseded =
+          Enum.filter(sessions, fn candidate ->
+            candidate.id != session.id and owners[candidate.id] == String.downcase(conv_id)
+          end)
+
+        {:ok, session, source, superseded}
 
       :none ->
         :none

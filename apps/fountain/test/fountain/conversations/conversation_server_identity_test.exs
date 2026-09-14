@@ -198,6 +198,87 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
              end)
     end
 
+    for identity <- [:tag, :process_env] do
+      test "reaps older #{identity} adapters while preserving the selected turn and other owners",
+           ctx do
+        {conv, turn} = reattach_fixture(ctx)
+        other = insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
+        test = self()
+        current_ref = make_ref()
+        old_ref = make_ref()
+        stub_happy_sprite()
+        stub_turn_boundary()
+
+        old = %{tagged("101", conv.id) | created_at: ~U[2026-09-01 10:00:00Z]}
+        current = %{tagged("102", conv.id) | created_at: ~U[2026-09-01 10:05:00Z]}
+
+        [old, current] =
+          if unquote(identity) == :process_env do
+            Enum.map([old, current], &%{&1 | command: "claude-agent-acp"})
+          else
+            [old, current]
+          end
+
+        sessions = [
+          tagged("theirs", other.id),
+          old,
+          current,
+          %Session{id: "103", command: "claude-agent-acp"}
+        ]
+
+        Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _ -> {:ok, sessions} end)
+
+        Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, args, _opts ->
+          if "fountain-session-identity" in args do
+            {:ok, "101 #{conv.id}\n102 #{conv.id}\n103 unknown\n", 0}
+          else
+            {:ok, "", 0}
+          end
+        end)
+
+        Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+          send(test, {:attached, id})
+          ref = if id == "101", do: old_ref, else: current_ref
+          {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
+        end)
+
+        Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn command ->
+          send(test, {:closed_stdin, command.ref})
+          :ok
+        end)
+
+        Mimic.stub(Managoat.Sandbox.Sprites, :stop_command, fn command ->
+          send(test, {:stopped_command, command.ref})
+          :ok
+        end)
+
+        {pid, _mon, :alive} = start_server(conv)
+        on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+        state = :sys.get_state(pid)
+
+        assert_received {:attached, "101"}
+        assert_received {:closed_stdin, ^old_ref}
+        assert_received {:stopped_command, ^old_ref}
+        assert_received {:attached, "102"}
+        refute_received {:attached, "theirs"}
+        refute_received {:attached, "103"}
+        refute_received {:closed_stdin, ^current_ref}
+        refute_received {:stopped_command, ^current_ref}
+        assert state.current_command_ref == current_ref
+        assert state.current_turn.id == turn.id
+        assert is_pid(state.acp_peer)
+        assert Repo.reload!(turn).status == "running"
+        assert Repo.reload!(conv).runtime_session_id == "sess_live"
+        assert [persisted] = Conversations._unsafe_list_turns(conv.id)
+        assert persisted.id == turn.id
+
+        assert Enum.any?(reattach_outcomes(conv.id), fn event ->
+                 event["session_id"] == "102" and
+                   event["matched_by"] == Atom.to_string(unquote(identity))
+               end)
+      end
+    end
+
     test "never takes a session tagged for another conversation", ctx do
       {conv, turn} = reattach_fixture(ctx)
 
