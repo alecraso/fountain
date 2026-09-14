@@ -1,13 +1,13 @@
 ---
 type: ADR
 title: "Postgres from day one (drop the SQLite path)"
-description: "Managed Postgres is the only relational store from launch; the SQLite/Litestream path is dropped. UUID v7 primary keys were never built (2026-08-02 addendum)."
+description: "Postgres remains the only relational store, including for demos (reaffirmed 2026-09-14, #1579). No ephemeral storage path or anonymous hosted try-it. UUID v7 primary keys were never built (2026-08-02 addendum)."
 tags: [data, infra]
 status: stable
 adr: "0004"
 adr_status: "Accepted"
 date: 2026-05-09
-generated: { by: human:jhgaylor, at: 2026-08-02T23:13:41-04:00 }
+generated: { by: openai/gpt-6, at: 2026-09-14T09:12:00Z }
 verified: { by: human:jhgaylor, at: 2026-08-02T23:13:41-04:00 }
 ---
 
@@ -57,3 +57,42 @@ Two claims above no longer match (or never matched) the code:
 
 - **UUID v7 was never built.** Every schema uses `@primary_key {:id, :binary_id, autogenerate: true}` (e.g. `apps/fountain/lib/fountain/accounts/user.ex`), which generates `Ecto.UUID` values — **UUIDv4**. No v7 library is in the dependency tree. The B-tree time-ordering benefit claimed above therefore does not exist. If time-ordered ids become necessary, that is a new decision (and a migration), not something this ADR delivered.
 - **Backups are no longer Render's.** Production Postgres is CloudNativePG on the home-cloud Kubernetes cluster; backups are handled by `k8s/backup-cronjob.yaml`, `k8s/objectstore.yaml`, and `k8s/scheduledbackup.yaml`. The "Render managed backups + PITR" line is superseded. The core decision (Postgres from day one, no SQLite path) stands and is unaffected.
+
+## Amendment — 2026-09-14: the Postgres on-ramp includes demos
+
+**Re-examined and reaffirmed** in
+[#1579](https://github.com/managoat/fountain/issues/1579#issuecomment-5660991693),
+following the initial acceptance on 2026-09-11. The demo is the product:
+ADR 0004 applies to it too. Fountain accepts that value arrives after
+commitment and competes on something other than time to first look. For a
+self-hosted first run, generating keys, starting Compose and Postgres,
+learning Agent, Environment, Vault and Conversation, and supplying inference
+credentials precede the first reply. Using the hosted service moves database
+operation to its operator; it does not remove the account requirement.
+
+The three paths considered in #1579 are disposed of explicitly:
+
+- **Ephemeral single-tenant mode:** rejected. In-memory or SQLite state would
+  add a second storage path and an ongoing maintenance and CI obligation for
+  the sake of a first impression. No database-free demo mode is commissioned.
+- **Hosted try-it without signup:** rejected. Throwaway identities and a
+  pre-funded public instance create an abuse surface, real spend on strangers
+  and an operating burden. A fleet ceiling bounds those costs without
+  eliminating them. No anonymous hosted demo is commissioned.
+- **One command against the real service:** remains worthwhile on its own
+  merits. `fountain quickstart` (#1391) already exists; collapsing registration
+  through verification through the first reply is not delivered by this
+  decision. It still needs an account and the service's Postgres database,
+  so it is not a zero-account, zero-database path. Revisit this option first
+  if evidence warrants improving the on-ramp.
+
+goatherd is a signup-free way to run the component libraries, not Fountain's
+adoption on-ramp or an exception to this decision. Its boundary is recorded
+in [ADR 0055](0055-hosted-fountain-and-local-control-planes.md).
+
+**Revisit with evidence:** if adoption stalls because of the on-ramp
+specifically, rather than findability, reconsider against the standing goal
+of 100 weekly active users by November 2026. A comparison with another
+product's `npx` experience alone does not reopen the decision. The adoption
+tracker is [#1585](https://github.com/managoat/fountain/issues/1585); this
+decision creates no demo implementation follow-up.
