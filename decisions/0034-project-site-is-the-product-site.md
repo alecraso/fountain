@@ -1,13 +1,13 @@
 ---
 type: ADR
 title: "The open-source project has no site of its own; managoat.com and /docs carry it"
-description: "With the hosted instance branded Managoat, Fountain the AGPL project keeps its name but gets no separate domain or GitHub Pages site. The product site is the project site: one 'Open source' page under /docs states the licence split and links the repo, and the README points back. Amended 2026-09-14: the marketing pages are a static site of their own (managoat/site) on the same host, in front of the app at the ingress; the app serves the front door, the legal pages and /docs."
+description: "With the hosted instance branded Managoat, Fountain the AGPL project keeps its name but gets no separate domain or GitHub Pages site. The product site is the project site: one 'Open source' page under /docs states the licence split and links the repo, and the README points back. Amended 2026-09-14: the marketing pages are a static site of their own (managoat/site) on the same host, in front of the app at the ingress; the app serves the front door, the legal pages and /docs. Confirmed 2026-09-14: goatherd's repository and README are not a second Fountain project site."
 tags: [open-source, docs, brand, product]
 status: stable
 adr: "0034"
 adr_status: "Accepted"
 date: 2026-08-25
-generated: { by: human:jhgaylor, at: 2026-08-25T22:00:00-04:00 }
+generated: { by: openai/gpt-6, at: 2026-09-14T09:12:00Z }
 verified: { by: human:jhgaylor, at: 2026-08-25T22:00:00-04:00 }
 ---
 
@@ -142,3 +142,18 @@ rather than "Go to app" (the login route forwards them); the pricing copy is
 a constant that must be changed with the deployment's `CREDIT_*` variables;
 the `/self-hosted` env-var table lost its in-repo guard, which now reads
 `docs/reference/feature-status.md` instead.
+
+## Confirmation, 2026-09-14: a repository is not a project site
+
+[`managoat/goatherd`](https://github.com/managoat/goatherd) is another public
+artifact under the organization, with its own README. That is consistent
+with this ADR: a repository and its usage instructions do not create a
+second Fountain project site. Fountain's project home remains
+`managoat/fountain`, its manual remains `/docs`, and `managoat.com` remains
+the shared product/project domain. The marketing repository `managoat/site`
+and the app's manual retain the boundary in the amendment above.
+
+[ADR 0055](0055-hosted-fountain-and-local-control-planes.md) records the
+hosted/local boundary from [#1516](https://github.com/managoat/fountain/issues/1516).
+goatherd's README documents its own application; it does not become
+Fountain's onboarding page or a second publisher for Fountain's manual.

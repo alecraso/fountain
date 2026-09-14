@@ -1,13 +1,13 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner, managoat_runtimes. All nine."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner, managoat_runtimes. All nine. goatherd is an external application consumer; ADR 0055 records its boundary with Fountain."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: claude-fable/5.1, at: 2026-09-02T04:00:00-04:00 }
+generated: { by: openai/gpt-6, at: 2026-09-14T09:12:00Z }
 verified: { by: claude-fable/5.1, at: 2026-09-02T04:00:00-04:00 }
 stale_after: 2026-12-01
 ---
@@ -98,6 +98,23 @@ dynamic client registration. CI compiles every example from exact Hex pins
 and runs the Fake turn. The consumer needed no new library surface: the
 writer callback, the Fake command vocabulary and `${VAR}` substitution were
 enough outside Fountain.
+
+**External application consumer, recorded 2026-09-14:**
+[`managoat/goatherd`](https://github.com/managoat/goatherd) assembles
+`managoat_sandbox`, `managoat_runtimes` and `managoat_acp` into a terminal
+control plane for remote Sprites sandboxes. It has no dependency on Fountain,
+no Fountain account, and no database of its own. It provisions an adapter,
+drives ACP turns and reconnects to sandbox sessions without porting
+`Fountain.Conversations`. This exercises the reuse boundary in a standalone
+application as well as in the examples already recorded above; the examples
+remain the earlier external consumer, so goatherd is not labelled the first
+consumer of any kind. Verified against goatherd
+[`20d0e5c`](https://github.com/managoat/goatherd/tree/20d0e5cf15f4d51a964c8dd2118df569870a9a37).
+[ADR 0055](0055-hosted-fountain-and-local-control-planes.md) records the
+hosted/local boundary and corrects #1516's four-field-state shorthand against
+the source. goatherd is not positioned as Fountain's adoption on-ramp; the
+Postgres decision, including demos, remains
+[ADR 0004](0004-postgres-day-one.md#amendment--2026-09-14-the-postgres-on-ramp-includes-demos).
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
