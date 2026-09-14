@@ -60,6 +60,20 @@ upgrade, is in
   the one the guides use. The boot guards for `BROKER_URL` and `BROKER_TOKEN`,
   the Agent Vault backend removed in #1487, are gone too: a leftover value is
   now ignored like any other unknown variable.
+
+- **Skill manifests now take precedence over historical skill names** (#2102).
+  An absent manifest is upgraded before skill changes; retries cannot reclaim
+  a name that Fountain has removed and the user has reused. Invalid manifests
+  and missing source-lock evidence for unnamed legacy GitHub skills stop
+  reconciliation without deleting skills. Restore trustworthy metadata or
+  rebuild; see the release-task guide for disk inspection and migration.
+  Installs now record their intent before execution and commit ownership per
+  skill, so an interrupted manifest write cannot orphan a newly installed
+  skill. Pending installs stop automatic reconciliation. Operator recovery
+  requires a quiesced sandbox and new source-lock evidence for unnamed
+  directories. Shared-sandbox reconcilers serialize across connected nodes.
+  Stop older reconcilers before resuming changes on that disk.
+
 - **A sandbox without a recorded build fingerprint now requires an explicit
   rebuild before configuration reapply** (#2102). The API returns
   `409 rebuild_required` with `field: "environment"` and a missing-build-evidence
