@@ -115,6 +115,40 @@ a second issue splits the evidence. What makes one actionable is in CLAUDE.md
 under *Flaky tests*: the failing assertion, a rate rather than an adjective,
 and the run URLs.
 
+## Finding dead code
+
+```bash
+scripts/dead-code.sh            # both reports
+scripts/dead-code.sh elixir     # public functions no compiled module calls
+scripts/dead-code.sh go         # unreachable functions in the two Go modules
+```
+
+The Elixir half is `mix_unused`, a compiler tracer `apps/fountain/mix.exs`
+turns on only under `MIX_UNUSED=1`; the Go half is `golang.org/x/tools`'s
+`deadcode`. `.github/workflows/dead-code.yml` runs both on the first of the
+month and keeps the reports as artifacts. Findings do not block a merge.
+An analyzer execution failure fails the report job and marks its summary
+incomplete; it is not a clean scan. Compiler and tool diagnostics stay in
+the job log. Elixir advice to make a live function private is excluded from
+the report and its counts.
+
+Read the Elixir report as a list of candidates, not verdicts. The tracer sees
+only static calls inside `apps/fountain`, so five shapes read as unused when
+they are not: anything reached through `apply/3` or an MFA tuple (Oban
+workers, the runtime table), anything an extension app calls (`fountain_buzz`
+and `fountain_support` depend on core and call it freely), anything only a
+test calls, protocol and callback implementations the ignore list in
+`mix.exs` missed, and a `use` macro's generated functions. Before deleting a
+line's function, grep its bare name across `apps/`, `ee/` and every `test/`
+tree. A function only a test calls is the interesting case: either the test
+observes internal state through it (keep it, it is a seam) or a squash merge
+removed the call site and the test kept the feature green (#869 left several
+of these behind). Decide which, then delete the function with its test or
+restore the caller.
+
+The September 2026 sweep that introduced this (#2162) started from 1,680
+lines and ended with fourteen deletions; expect that ratio.
+
 ## Go dependency updates span two modules
 
 Buzz's Go module replaces `github.com/managoat/fountain/cli` with the local
