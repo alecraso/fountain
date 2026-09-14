@@ -8,7 +8,7 @@
 # construction; the move was pure renames) — and point sobelow at that. This
 # reproduces the exact pre-#472 scan, when the ee files still lived in core.
 #
-# Callers: `mix precommit` (root mix.exs) and .github/workflows/ci.yml.
+# Callers: `mix precommit` (scripts/precommit.sh) and .github/workflows/ci.yml.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

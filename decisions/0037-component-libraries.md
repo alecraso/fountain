@@ -1,13 +1,13 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner, managoat_runtimes. All nine. goatherd is an external application consumer; ADR 0055 records its boundary with Fountain."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner, managoat_runtimes. All nine. goatherd is an external application consumer; ADR 0055 records its boundary with Fountain. Further extraction is paused (2026-09-14) unless an independent consumer or a release schedule of its own justifies the two-PR coordination cost."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: openai/gpt-6, at: 2026-09-14T09:12:00Z }
+generated: { by: claude-fable/5.1, at: 2026-09-14T14:00:00-04:00 }
 verified: { by: claude-fable/5.1, at: 2026-09-02T04:00:00-04:00 }
 stale_after: 2026-12-01
 ---
@@ -115,6 +115,22 @@ hosted/local boundary and corrects #1516's four-field-state shorthand against
 the source. goatherd is not positioned as Fountain's adoption on-ramp; the
 Postgres decision, including demos, remains
 [ADR 0004](0004-postgres-day-one.md#amendment--2026-09-14-the-postgres-on-ramp-includes-demos).
+
+**Addendum, 2026-09-14: further extraction is paused.** The nine libraries
+are built and on hex, the second consumer and goatherd exist, and the cost
+this ADR accepted in its consequences has arrived: every change across a
+seam is two PRs, a bump in the library and a pin here, and the pin PR is the
+only place the new version meets Fountain. Nothing on the remaining list
+(the optional credits extraction, #1344, or any subsystem not yet named) has
+a consumer outside Fountain or a release cadence of its own, so extracting
+it would buy that coordination cost and nothing else. A tenth library is
+extracted when one of those two conditions holds: an independent consumer
+that needs the package, or a release schedule the umbrella cannot serve.
+Until then a subsystem stays in `apps/fountain` behind the module boundary
+the compiler already enforces, and the recipes move from `CONTRIBUTING.md` to
+`contributing/component-libraries.md`, kept for that day and for fixes to
+the libraries that exist. This pauses the "one at a time" cadence in the
+Decision; it supersedes nothing else here.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
