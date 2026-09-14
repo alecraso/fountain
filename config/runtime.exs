@@ -282,21 +282,8 @@ case (System.get_env("BROKER_TENANTS") || "")
             "that the tenants it excluded will be brokered too."
 end
 
-broker_session_ttl =
-  case System.get_env("BROKER_SESSION_TTL_SECONDS") do
-    blank when blank in [nil, ""] ->
-      21_600
-
-    raw ->
-      case Integer.parse(raw) do
-        {n, ""} when n >= 300 and n <= 604_800 -> n
-        _ -> raise "BROKER_SESSION_TTL_SECONDS must be an integer between 300 and 604800"
-      end
-  end
-
 config :fountain, :broker_listen_port, broker_listen_port
 config :fountain, :broker_proxy_url, broker_proxy_url
-config :fountain, :broker_session_ttl_seconds, broker_session_ttl
 config :fountain, :broker_allow_unenforced, System.get_env("BROKER_ALLOW_UNENFORCED") == "true"
 
 broker_log_retention =
@@ -709,32 +696,18 @@ if config_env() != :test do
     webhook_allow_http: System.get_env("WEBHOOK_ALLOW_HTTP", "false") == "true"
 end
 
-# Durable log volume per conversation (#331). Retention bounds the age of
-# log_events rows; this bounds the rate — without it a sandbox printing
-# garbage could write tens of GB into the same Postgres volume the app
-# depends on. 0 disables the cap.
-config :fountain,
-  log_output_byte_budget: parse_bound.("LOG_OUTPUT_BUDGET_MB", "50") * 1_000_000
-
-# Accounts that registered and never verified are deleted after this many
-# days (#258) — they cannot log in, so they are rows, not users. 0 disables
-# the sweep. UNVERIFIED_PRUNE_EXEMPT is a comma-separated list of email
-# substrings that are never pruned (operator/test accounts that deliberately
-# stay unverified).
+# Accounts that registered and never verified are deleted after thirty days
+# (#258; the number lives in Fountain.Workers.UnverifiedAccountPruner) — they
+# cannot log in, so they are rows, not users. UNVERIFIED_PRUNE_EXEMPT is a
+# comma-separated list of email substrings that are never pruned
+# (operator/test accounts that deliberately stay unverified).
 unverified_prune_exempt =
   case System.get_env("UNVERIFIED_PRUNE_EXEMPT") do
     blank when blank in [nil, ""] -> []
     list -> list |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
   end
 
-config :fountain,
-  unverified_prune_after_days: parse_bound.("UNVERIFIED_PRUNE_AFTER_DAYS", "30"),
-  unverified_prune_exempt: unverified_prune_exempt
-
-# How many days before a vault secret's recorded expiry the owner is emailed
-# (`Fountain.Workers.SecretExpirySweeper`). 0 disables the notice and the
-# matching amber badge on the vault page.
-config :fountain, secret_expiry_notice_days: parse_bound.("SECRET_EXPIRY_NOTICE_DAYS", "7")
+config :fountain, unverified_prune_exempt: unverified_prune_exempt
 
 # CIDRs treated as proxies when resolving the client IP from X-Forwarded-For.
 # Only widen this to cover addresses that are genuinely proxies — anything
@@ -1679,10 +1652,6 @@ case System.get_env("AGENTPHONE_API_KEY") do
   blank when blank in [nil, ""] -> :ok
   key -> config :fountain, :agentphone_api_key, key
 end
-
-config :fountain,
-       :agentphone_base_url,
-       System.get_env("AGENTPHONE_BASE_URL", "https://api.agentphone.ai")
 
 # The signing secret AgentPhone issued for this instance's master webhook
 # (POST /v1/webhooks → `secret`), which verifies POST /api/webhooks/agentphone.

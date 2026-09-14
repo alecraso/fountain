@@ -16,10 +16,10 @@ defmodule Fountain.Workers.SecretExpirySweeper do
 
   Config:
 
-    * `:secret_expiry_notice_days` — how far ahead to warn, default 7.
-      `0` disables the sweep. Set from `SECRET_EXPIRY_NOTICE_DAYS` in
-      `config/runtime.exs`; `notice_days/0` is the one reader, so the vault
-      page's amber badge and this sweep describe the same window.
+    * `:secret_expiry_notice_days` — how far ahead to warn, 7 unless a test
+      overrides it. `0` disables the sweep. `notice_days/0` is the one
+      reader, so the vault page's amber badge and this sweep describe the
+      same window.
   """
 
   use Oban.Worker, queue: :maintenance, max_attempts: 1

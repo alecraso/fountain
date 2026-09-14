@@ -126,9 +126,8 @@ A secret can carry an expiry date. The date is optional metadata. Fountain
 does not block an expired secret, because an absent variable fails worse than
 a stale one.
 
-Fountain sends one email before the date arrives. The default notice window
-is seven days. Set `SECRET_EXPIRY_NOTICE_DAYS` to change the window. Set it
-to `0` to turn the notice off.
+Fountain sends one email before the date arrives. The notice window is
+seven days.
 
 Set the date when you write the secret, in the console or over the API.
 When you replace a value, a blank date in the add-secret form keeps the
