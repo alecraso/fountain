@@ -796,15 +796,6 @@ defmodule Fountain.Team do
     end
   end
 
-  @doc "Agents of `user_id` that are not on the team yet — the add picker."
-  def list_addable_agents(user_id) when is_binary(user_id) do
-    on_team = user_id |> list_teammates() |> MapSet.new(& &1.agent.id)
-
-    user_id
-    |> Agents.list_agents([])
-    |> Enum.reject(&MapSet.member?(on_team, &1.id))
-  end
-
   # Membership events. Named after the team, not the conversation: the
   # conversation events (`conversation.created`, `.terminated`) still fire
   # underneath where they apply, and describe the sandbox side of the same

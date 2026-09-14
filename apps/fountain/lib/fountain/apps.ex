@@ -50,28 +50,6 @@ defmodule Fountain.Apps do
     end
   end
 
-  @doc "The conversations app's new-conversation screen, or nil."
-  @spec new_conversation_url() :: String.t() | nil
-  def new_conversation_url do
-    case conversations() do
-      nil -> nil
-      base -> base <> "#/new"
-    end
-  end
-
-  @doc """
-  A deep link to one teammate in the team app, or the roster when no id is
-  given. nil where the deployment has no team app.
-  """
-  @spec team_url(String.t() | nil) :: String.t() | nil
-  def team_url(agent_id \\ nil) do
-    case {team(), agent_id} do
-      {nil, _} -> nil
-      {base, nil} -> base
-      {base, id} -> base <> "#/team/" <> id
-    end
-  end
-
   # An unset key takes the default; an explicitly empty one means "none", which
   # is how a deployment turns a link off rather than pointing it somewhere wrong.
   defp get(key, default) do

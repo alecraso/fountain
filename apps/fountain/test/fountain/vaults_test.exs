@@ -309,47 +309,6 @@ defmodule Fountain.VaultsTest do
     end
   end
 
-  describe "_unsafe_get_vault!/1" do
-    test "returns the vault when it exists" do
-      user = insert_verified_user()
-      vault = insert_vault(user_id: user.id)
-
-      result = Vaults._unsafe_get_vault!(vault.id)
-      assert result.id == vault.id
-    end
-
-    test "raises Ecto.NoResultsError for non-existent id" do
-      assert_raise Ecto.NoResultsError, fn ->
-        Vaults._unsafe_get_vault!(Ecto.UUID.generate())
-      end
-    end
-  end
-
-  describe "_unsafe_get_vault_by_name/1" do
-    test "returns the vault matching the given name" do
-      user = insert_verified_user()
-      attrs = vault_attrs(user_id: user.id, name: "my-special-vault")
-      {:ok, vault} = Vaults.create_vault(attrs)
-
-      result = Vaults._unsafe_get_vault_by_name("my-special-vault")
-      assert result.id == vault.id
-      assert result.name == "my-special-vault"
-    end
-
-    test "returns nil when no vault has the given name" do
-      assert Vaults._unsafe_get_vault_by_name("does-not-exist") == nil
-    end
-
-    test "returns vault regardless of owner" do
-      user_a = insert_verified_user()
-      attrs = vault_attrs(user_id: user_a.id, name: "cross-tenant-vault")
-      {:ok, vault} = Vaults.create_vault(attrs)
-
-      result = Vaults._unsafe_get_vault_by_name("cross-tenant-vault")
-      assert result.id == vault.id
-    end
-  end
-
   describe "VaultSecret.changeset/3 — put_ciphertext nil branch" do
     test "does not update value_ciphertext when value is not in attrs" do
       existing_ciphertext = <<1, 2, 3>>

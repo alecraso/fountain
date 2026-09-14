@@ -224,26 +224,6 @@ defmodule Fountain.Credits do
     end
   end
 
-  @doc """
-  What the lot posted under `idempotency_key` still holds for `user_id`, in
-  cents, or zero when there is no such lot.
-
-  For a refund that must hand back only the unspent part of a specific grant
-  (ADR 0044): the balance is the wrong number there, because it also carries
-  money from somewhere else.
-  """
-  @spec lot_remaining_for(binary(), String.t()) :: non_neg_integer()
-  def lot_remaining_for(user_id, idempotency_key)
-      when is_binary(user_id) and is_binary(idempotency_key) do
-    from(e in LedgerEntry,
-      where: e.user_id == ^user_id and e.idempotency_key == ^idempotency_key,
-      select: e.remaining_cents
-    )
-    |> Repo.one()
-    |> Kernel.||(0)
-    |> max(0)
-  end
-
   @doc "One entry by idempotency key, or nil."
   @spec get_by_key(String.t()) :: LedgerEntry.t() | nil
   def get_by_key(key) when is_binary(key), do: Repo.get_by(LedgerEntry, idempotency_key: key)

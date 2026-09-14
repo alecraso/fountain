@@ -211,36 +211,6 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
-  describe "_unsafe_get_environment/1" do
-    test "returns the environment by id" do
-      user = insert_verified_user()
-      env = insert_env(user_id: user.id)
-
-      result = Environments._unsafe_get_environment(env.id)
-      assert result.id == env.id
-    end
-
-    test "returns nil for nonexistent id" do
-      assert Environments._unsafe_get_environment(Ecto.UUID.generate()) == nil
-    end
-  end
-
-  describe "_unsafe_get_environment!/1" do
-    test "returns the environment by id" do
-      user = insert_verified_user()
-      env = insert_env(user_id: user.id)
-
-      result = Environments._unsafe_get_environment!(env.id)
-      assert result.id == env.id
-    end
-
-    test "raises for nonexistent id" do
-      assert_raise Ecto.NoResultsError, fn ->
-        Environments._unsafe_get_environment!(Ecto.UUID.generate())
-      end
-    end
-  end
-
   describe "Secret.changeset/3 — put_ciphertext nil branch" do
     test "does not update value_ciphertext when value is not in attrs" do
       existing_ciphertext = <<1, 2, 3>>

@@ -82,17 +82,13 @@ defmodule Fountain.Accounts.ExecutionLimitsTest do
     for limits <- [nil, %{}, %{"max_model_turns" => 999}] do
       attrs = %{
         "execution_limits" => limits,
-        "theme_preference" => "dark",
-        "conversation_view_mode" => "raw"
+        "theme_preference" => "dark"
       }
 
-      for changeset <- [
-            User.theme_changeset(user, attrs),
-            User.preferences_changeset(user, attrs)
-          ] do
-        assert Repo.update!(changeset).execution_limits == user.execution_limits
-        assert Repo.reload!(user).execution_limits == user.execution_limits
-      end
+      changeset = User.theme_changeset(user, attrs)
+
+      assert Repo.update!(changeset).execution_limits == user.execution_limits
+      assert Repo.reload!(user).execution_limits == user.execution_limits
     end
   end
 
