@@ -83,7 +83,7 @@ defmodule Fountain.Broker do
   ends (ADR 0019 §11 as amended). The binding is on the token: a token
   resolves to its own conversation's credentials and to nothing else.
 
-  The session token lives `BROKER_SESSION_TTL_SECONDS` and travels to the
+  The session token lives six hours (`:broker_session_ttl_seconds`) and travels to the
   sandbox inside `HTTPS_PROXY`, which is why that variable is process-only
   in `Fountain.Conversations.Identity` and never reaches the shared `.env`.
 

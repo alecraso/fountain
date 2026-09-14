@@ -172,6 +172,12 @@ upgrade, is in
   `MarketingController` is now `FrontDoorController` (`/`, `/terms`,
   `/privacy`) and the `marketing` layout is `public`, which `/docs` wears.
 
+- Five housekeeping tunables are fixed at their defaults and no longer read
+  from the environment: `BROKER_SESSION_TTL_SECONDS` (six hours),
+  `LOG_OUTPUT_BUDGET_MB` (50), `UNVERIFIED_PRUNE_AFTER_DAYS` (30),
+  `SECRET_EXPIRY_NOTICE_DAYS` (7) and `AGENTPHONE_BASE_URL`. A value set for
+  one is ignored.
+
 - Sandbox application code now uses `machine_name` across providers (#2108).
   Existing database columns, API fields, event metadata and provider names retain
   their current values and names.
