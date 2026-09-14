@@ -109,7 +109,6 @@ public struct Catalog: Sendable, Decodable {
   public var modelProviders: [String]?
   public var sandboxProviders: SandboxProviders?
   public var packageManagers: [String]?
-  public var avatar: AvatarOptions?
   /// Where the conversation and team apps live; either may be null.
   public var apps: Apps?
 
@@ -118,18 +117,13 @@ public struct Catalog: Sendable, Decodable {
     public var `default`: String?
   }
 
-  public struct AvatarOptions: Sendable, Decodable {
-    public var bases: [String]?
-    public var moods: [String]?
-  }
-
   public struct Apps: Sendable, Decodable {
     public var conversations: String?
     public var team: String?
   }
 
   enum CodingKeys: String, CodingKey {
-    case runtimes, models, avatar, apps
+    case runtimes, models, apps
     case modelProviders = "model_providers"
     case sandboxProviders = "sandbox_providers"
     case packageManagers = "package_managers"

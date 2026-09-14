@@ -179,7 +179,7 @@ test('missing broker feature fails setup before receiver access or resource muta
     requests.push([req.method, req.url]);
     res.writeHead(req.url === '/api/secret-bindings' ? 404 : 200, { 'content-type': 'application/json' });
     if (req.url === '/api/auth/me') res.end(JSON.stringify({ id: ids[req.headers.authorization === `Bearer ${keys[0]}` ? 0 : 1], email: 'suite@example.test', role: 'user', email_verified: true }));
-    else if (req.url === '/api/catalog') res.end(JSON.stringify({ data: { runtimes: ['claude'], models: {}, sandbox_providers: { enabled: ['e2b'], default: 'e2b' }, package_managers: [], avatar: { bases: [], moods: [] }, apps: { conversations: null, team: null }, first_request: { curl: '', typescript: '', prompt: '', placeholders: [] } } }));
+    else if (req.url === '/api/catalog') res.end(JSON.stringify({ data: { runtimes: ['claude'], models: {}, sandbox_providers: { enabled: ['e2b'], default: 'e2b' }, package_managers: [], apps: { conversations: null, team: null }, first_request: { curl: '', typescript: '', prompt: '', placeholders: [] } } }));
     else res.end(JSON.stringify({ error: 'brokerage_not_enabled' }));
   }));
   writeFileSync(path, JSON.stringify(c));

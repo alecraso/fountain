@@ -14,7 +14,7 @@ const ownerId = 'aaaaaaaa-1111-4111-8111-111111111111';
 const catalog = { data: {
   runtimes: ['claude'], models: { claude: ['anthropic/claude-sonnet-4-6'] },
   sandbox_providers: { enabled: [], default: 'sprites' }, package_managers: [],
-  avatar: { bases: [], moods: [] }, apps: { conversations: null, team: null },
+  apps: { conversations: null, team: null },
   first_request: { curl: '', typescript: '', prompt: '', placeholders: [] },
 } };
 function send(res, status, body) {

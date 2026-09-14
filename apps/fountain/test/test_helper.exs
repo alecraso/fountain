@@ -35,7 +35,6 @@ end
 # live in the library and copy what they stub in its test_helper.
 Mimic.copy(Managoat.Sandbox)
 Mimic.copy(Managoat.Sandbox.Sprites)
-Mimic.copy(Fountain.AvatarGenerator)
 Mimic.copy(Managoat.Sandbox.Sprites.Client)
 Mimic.copy(Sprites)
 Mimic.copy(Sprites.Filesystem)
