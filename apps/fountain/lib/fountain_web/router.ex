@@ -152,24 +152,14 @@ defmodule FountainWeb.Router do
 
   ## ─── Public browser routes ────────────────────────────────────────────────────────────────────────
 
-  # Marketing landing page + legal pages — public, auth-aware nav for logged-in users
+  # The front door and the legal pages. On the hosted deployment the marketing
+  # pages (managoat/site) sit in front of these paths at the ingress; the app
+  # itself serves a plain front door at `/` everywhere.
   scope "/", FountainWeb do
     pipe_through [:browser, :browser_optional_auth, :public_analytics]
-    get "/", MarketingController, :home
-    get "/launch", MarketingController, :launch
-    get "/oss-launch", MarketingController, :oss_launch
-    get "/buzz-launch", MarketingController, :buzz_launch
-    get "/integrations", MarketingController, :integrations
-    get "/built-with", MarketingController, :built_with
-    get "/self-hosted", MarketingController, :self_hosted
-    get "/faq", MarketingController, :faq
-    get "/code-review-bot", MarketingController, :code_review_bot
-    # One study today, so the bare path redirects to it rather than 404ing on
-    # the segment a reader will inevitably chop off the URL.
-    get "/case-studies", MarketingController, :case_studies
-    get "/case-studies/self-healing-infrastructure", MarketingController, :case_study
-    get "/terms", MarketingController, :terms
-    get "/privacy", MarketingController, :privacy
+    get "/", FrontDoorController, :home
+    get "/terms", FrontDoorController, :terms
+    get "/privacy", FrontDoorController, :privacy
     # The public manual, and since #1008 the only place it is published —
     # content embedded at compile time by Fountain.Docs. Distinct from /help
     # (curated in-app topics) and /api/docs (Swagger).

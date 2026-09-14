@@ -111,9 +111,10 @@ config :fountain,
   credits_enabled: true,
   registration_enabled: true,
   registration_allowed_email_domains: [],
-  # Which page `/` serves. False everywhere but the hosted deployment, which
-  # opts in with MARKETING_SITE (runtime.exs); config/test.exs pins it true so
-  # the suite covers the pitch and flips it off per-test. See Fountain.Marketing.
+  # Whether the marketing site (managoat/site) fronts this deployment, so the
+  # public chrome links its pages. False everywhere but the hosted deployment,
+  # which opts in with MARKETING_SITE (runtime.exs); config/test.exs pins it
+  # true and tests flip it off per-test. See Fountain.Marketing.
   marketing_site: false
 
 # Concurrency (ADR 0031). A tenant may run as many sandboxes at once as

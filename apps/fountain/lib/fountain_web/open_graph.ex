@@ -25,10 +25,10 @@ defmodule FountainWeb.OpenGraph do
   def description(assigns), do: assigns[:meta_description] || default_description()
 
   @doc """
-  The description used when a page sets none of its own. The pitch on the
-  marketing site; a plain statement of what the instance is everywhere else,
-  for the same reason `/` is (`Fountain.Marketing`): a deployment is not the
-  project, and its cards should not sell it.
+  The description used when a page sets none of its own. The pitch where the
+  marketing site fronts the deployment; a plain statement of what the instance
+  is everywhere else (`Fountain.Marketing`): a deployment is not the project,
+  and its cards should not sell it.
   """
   @spec default_description() :: String.t()
   def default_description do

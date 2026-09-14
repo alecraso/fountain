@@ -231,10 +231,8 @@ apps/fountain/test/fountain_web/controllers/health_controller_test.exs	15
 apps/fountain/test/fountain_web/controllers/inference_credential_controller_test.exs	5676
 apps/fountain/test/fountain_web/controllers/list_counts_test.exs	2807
 apps/fountain/test/fountain_web/controllers/llms_controller_test.exs	7
-apps/fountain/test/fountain_web/controllers/marketing_controller_test.exs	107
-apps/fountain/test/fountain_web/controllers/marketing_instance_test.exs	259
-apps/fountain/test/fountain_web/controllers/marketing_legal_unpublished_test.exs	7
-apps/fountain/test/fountain_web/controllers/marketing_pricing_test.exs	8
+apps/fountain/test/fountain_web/controllers/front_door_test.exs	259
+apps/fountain/test/fountain_web/controllers/legal_unpublished_test.exs	7
 apps/fountain/test/fountain_web/controllers/moved_controller_test.exs	1719
 apps/fountain/test/fountain_web/controllers/oauth_controller_test.exs	1266
 apps/fountain/test/fountain_web/controllers/oauth_test.exs	2454
@@ -294,7 +292,6 @@ apps/fountain/test/fountain_web/live/verify_pending_live_test.exs	2683
 apps/fountain/test/fountain_web/live/webhooks_live_test.exs	3159
 apps/fountain/test/fountain_web/metrics_test.exs	1343
 apps/fountain/test/fountain_web/oauth_test.exs	0
-apps/fountain/test/fountain_web/paper_skin_test.exs	85
 apps/fountain/test/fountain_web/plugs/analytics_identity_test.exs	4152
 apps/fountain/test/fountain_web/plugs/audit_plug_test.exs	4441
 apps/fountain/test/fountain_web/plugs/cast_render_error_test.exs	253

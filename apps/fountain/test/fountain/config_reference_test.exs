@@ -215,42 +215,39 @@ defmodule Fountain.ConfigReferenceTest do
            """
   end
 
-  test "every variable /self-hosted tells a reader to set is passed to the app" do
-    # The sibling above starts from the docs. This one starts from a marketing
-    # page, which no linter here reads: /self-hosted sells the inversion that
-    # what the hosted platform rations is a line of config on your own
-    # instance, and `rationed_features/0` spells out which line, per feature,
-    # in its `yours` column.
+  test "every variable the feature-status page tells a reader to set is passed to the app" do
+    # The sibling above starts from the guides' `>> .env` lines. This one
+    # starts from docs/reference/feature-status.md, whose "on your own
+    # instance" column is the promise that what the hosted platform rations is
+    # a line of config on your own deployment, and names which line.
     #
-    # That promise lives in Elixir data rather than in a file compose or the
-    # docs own, and the page sits outside docs/, so neither docs-style.py nor
-    # vale reaches it. FEATURE_FLAGS_ON, the AgentMail and AgentPhone keys and
-    # every BROKER_* variable were named on the page and forwarded by nothing:
-    # an operator set them, restarted, and got no feature and no error.
+    # Until 2026-09 the same promise was also made by the marketing page
+    # /self-hosted, from Elixir data no linter here read, and FEATURE_FLAGS_ON,
+    # the AgentMail and AgentPhone keys and every BROKER_* variable were named
+    # there and forwarded by nothing: an operator set them, restarted, and got
+    # no feature and no error. That page lives in managoat/site now and copies
+    # this table; the docs page is the version this repo can guard.
     compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+    page = File.read!(Path.join(@repo_root, "docs/reference/feature-status.md"))
 
     promised =
-      FountainWeb.MarketingHTML.rationed_features()
-      |> Enum.flat_map(fn feature ->
-        ~r/\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b/
-        |> Regex.scan(feature.yours, capture: :all_but_first)
-        |> List.flatten()
-        |> Enum.map(&{&1, feature.name})
-      end)
+      ~r/`([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)`/
+      |> Regex.scan(page, capture: :all_but_first)
+      |> List.flatten()
       |> Enum.uniq()
 
     assert promised != [],
-           "no environment variables found in rationed_features/0 — the `yours` column " <>
-             "no longer names them, so this guard is blind"
+           "no environment variables found in docs/reference/feature-status.md — the page " <>
+             "no longer names them in code spans, so this guard is blind"
 
-    unpassed = Enum.reject(promised, fn {var, _} -> passed_through?(compose, var) end)
+    unpassed = Enum.reject(promised, &passed_through?(compose, &1))
 
     assert unpassed == [],
            """
-           /self-hosted tells a reader to set variables that compose never passes to the app,
+           feature-status.md tells a reader to set variables that compose never passes to the app,
            so the feature never turns on and nothing says why:
 
-             #{Enum.map_join(unpassed, "\n  ", fn {var, feature} -> "#{var} (#{feature})" end)}
+             #{Enum.join(unpassed, ", ")}
 
            Add the key to the app service's environment block in docker-compose.yml.
            """

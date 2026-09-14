@@ -321,6 +321,14 @@ API remains available. The retirement boundary and bookmark migration are in
 server's job is to serve it: `?blocks=true` on `/events` and the streams means
 no client re-parses a runtime dialect.
 
+The marketing pages are not here either. `managoat.com/`, `/launch`,
+`/integrations`, `/built-with`, `/self-hosted`, `/faq` and the case study are
+[managoat/site](https://github.com/managoat/site), a static site the ingress
+puts in front of the app on the hosted host (ADR 0034, amended 2026-09-14).
+The app serves a plain front door at `/`, the operator's legal pages and
+`/docs`; `MARKETING_SITE=true` only makes the manual's chrome link the site's
+pages. **Marketing copy goes in that repo, not in a template here.**
+
 ## LiveView auth hooks
 
 `FountainWeb.Live.Hooks` provides these `on_mount` guards:
@@ -431,7 +439,7 @@ build tells you which toolchain to go and look at:
 | **typescript-sdk** (×2) | The TypeScript SDK on the minimum Node in `engines.node` (20.19.0) and on 24, conformance fixtures, and the packed tarball installed into a throwaway consumer project |
 | **swift-sdk** (×2) | The Swift SDK on ubuntu-24.04 and macos-15, with its own conformance step. It runs no `sdk/conformance/lint.py` |
 | **cli-plugins** | Both Go modules (`cli/` and `apps/fountain_buzz/cli`) with vet and gofmt, the Hermes plugin, and the deployed-instance runner tests under `deployed/test/` |
-| **core-distribution** | `Core distribution boots without the extensions`: builds with `BUNDLE_EXTENSIONS=false`, boots and migrates a fresh database, probes health, and checks that extension applications, API paths and marketing are absent. Rebuilds with extensions enabled to check their inclusion too. Skips docs-only changes and reused trees |
+| **core-distribution** | `Core distribution boots without the extensions`: builds with `BUNDLE_EXTENSIONS=false`, boots and migrates a fresh database, probes health, and checks that extension applications and API paths are absent. Rebuilds with extensions enabled to check their inclusion too. Skips docs-only changes and reused trees |
 | **compose-fresh-clone** | `Compose fresh-clone check`: runs `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file. Skips docs-only changes and reused trees |
 | **compose-pinned-image-boot** | `Compose boots the pinned image`: `scripts/compose-boot-check.sh` exercises the current Compose quick start against its pinned release image. Skips docs-only changes and reused trees. An unpublished image pin that matches the version in `mix.exs` defers the boot check to `release.yml`; any other missing pin fails |
 | **sdk-checks** | A stable aggregate over the four SDK jobs. A selected SDK is expected to *succeed* even when the server plan is docs-only, because an SDK's own docs page selects it (`gate.py`'s `_expected_plan`). Legs skip only for a reused tree or a language the classifier did not select, and green then means *correctly skipped*, not *SDKs tested* |

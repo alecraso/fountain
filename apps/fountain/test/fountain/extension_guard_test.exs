@@ -18,9 +18,7 @@ defmodule Fountain.ExtensionGuardTest do
   Prose. `apps/fountain/lib` may say the words "Buzz" or "support" in a comment,
   a docstring or a schema description, and does — the ADR calls that
   human-facing discovery metadata, and #1528 keeps the support-report
-  documentation in core deliberately. `/buzz-launch` is a marketing page about
-  the integration and is core's, like every other marketing page.
-  `SUPPORT_EMAIL` is core's too: the account emails and the team-comms replies
+  documentation in core deliberately. `SUPPORT_EMAIL` is core's too: the account emails and the team-comms replies
   name it, so the key stays `config :fountain, :support_email` and only the
   GitHub forwarding keys moved. What is refused is *code* that names an
   extension.
@@ -53,8 +51,7 @@ defmodule Fountain.ExtensionGuardTest do
       module:
         ~r/\b(FountainBuzz\.|Fountain\.Buzz\b|Fountain\.BuzzRegistry\b|Fountain\.BuzzSupervisor\b|Fountain\.Workers\.BuzzHarnessSweep\b|FountainWeb\.Buzz[A-Z])/,
       route: ~r|"/(api/)?(mcp/)?buzz|,
-      # The marketing page is core's, like every other marketing page.
-      route_except: ["buzz-launch"],
+      route_except: [],
       priv: "**/*buzz*"
     },
     %{

@@ -70,7 +70,7 @@ defmodule FountainWeb.Plugs.WebAnalyticsTest do
       assert conn |> get(~p"/terms") |> html_response(200) |> snippet?()
     end
 
-    test "a signed-in visitor reading the marketing page is still counted", %{conn: conn} do
+    test "a signed-in visitor reading the front door is still counted", %{conn: conn} do
       # Being logged in does not make someone stop being a visitor to these
       # pages, and gating on the session would put a hole in the funnel
       # exactly where returning users are.

@@ -5,11 +5,6 @@
   data-theme={
     if Map.get(assigns[:current_user] || %{}, :theme_preference) == "dark", do: "dark", else: ""
   }
-  data-skin={assigns[:skin]}
-  style={
-    assigns[:skin] == "paper" &&
-      "--paper-mark: url(#{Fountain.Brand.asset("mark-mono.png")})"
-  }
 >
   <head>
     <meta charset="utf-8" />
@@ -55,8 +50,8 @@
       href={Fountain.Brand.asset("apple-touch-icon.png")}
     />
     <%!--
-      PostHog, on the public surface only — the landing and legal pages, the
-      manual and the auth flow. `FountainWeb.Plugs.WebAnalytics` sets this
+      PostHog, on the public surface only — the front door and legal pages,
+      the manual and the auth flow. `FountainWeb.Plugs.WebAnalytics` sets this
       assign and holds the reasoning; the console has no snippet and captures
       its pageviews server-side from `FountainWeb.Live.Hooks`, so rendering
       this there would double every one of them.
@@ -117,14 +112,6 @@
     </script>
     <%!-- Design tokens — must load before Tailwind CDN so CSS vars are defined --%>
     <link rel="stylesheet" href={FountainWeb.StaticVersion.tokens_css()} />
-    <%!-- A skin is a second set of values for those same tokens, so it loads
-          after them and only where a controller asked for it (`:skin`). Today
-          that is the marketing homepage and the paper skin. --%>
-    <link
-      :if={assigns[:skin] == "paper"}
-      rel="stylesheet"
-      href={FountainWeb.StaticVersion.paper_css()}
-    />
     <%!-- Tailwind CDN config: register token-backed colour utilities --%>
     <script>
       window.tailwind = window.tailwind || {};

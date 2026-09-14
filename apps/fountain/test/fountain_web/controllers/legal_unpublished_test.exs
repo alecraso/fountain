@@ -1,6 +1,6 @@
 # async: false — these tests mutate the global :legal / :credits_enabled app
-# env, which concurrent tests (marketing pages, billing gate) also read.
-defmodule FountainWeb.MarketingLegalUnpublishedTest do
+# env, which concurrent tests (the front door, billing gate) also read.
+defmodule FountainWeb.LegalUnpublishedTest do
   use FountainWeb.ConnCase, async: false
 
   setup do
