@@ -446,7 +446,7 @@ build tells you which toolchain to go and look at:
 
 | Job | What it runs |
 |---|---|
-| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Required even for docs-only changes and reused trees |
+| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, the changelog guard, the issue-citation report (`scripts/ci/check_issue_refs.py`: every `#N` a PR adds, resolved to its state and title in one PR comment, advisory) and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Required even for docs-only changes and reused trees |
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
@@ -870,6 +870,24 @@ The old process, every PR inserting at the top of the same subsection, was
 the most common merge conflict on main once the merge queue stopped rebasing.
 Links in a fragment are absolute URLs: the rolled changelog is also the
 `/docs/changelog` page, where a relative link resolves under `/docs`.
+
+## Citing issues and PRs
+
+Prefer generated references over authored ones. The `(#N)` GitHub appends
+to a squash-merge subject is right by construction; a number a human types
+is a guess, and #1006 was guessed wrong in 20 places and copied outward
+before anyone resolved it (#1014). So:
+
+- **Do not cite the current change's own number inside the current
+  change.** You cannot know it. Let the merge subject carry it, and cite it
+  from follow-up work.
+- A citation in code names history: cite the issue or PR that already
+  explains why the line looks the way it does, and check that its title
+  matches the sentence around it.
+
+CI resolves every citation a PR adds and leaves the states and titles in a
+comment on the PR (`scripts/ci/check_issue_refs.py`). Read it: a title that
+does not match its sentence is a made-up number.
 
 ## Decisions
 

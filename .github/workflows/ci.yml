@@ -1876,14 +1876,17 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # The changelog guard reads the PR's labels.
-      pull-requests: read
+      # The changelog guard reads the PR's labels; the citation check
+      # leaves one comment per PR (#1014). A fork's token stays read-only
+      # whatever this says, and the check tolerates that.
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           persist-credentials: false
-          # The changelog guard diffs the PR's merge commit against its base,
-          # which is that commit's first parent: one level of history.
+          # The changelog guard and the citation check diff the PR's merge
+          # commit against its base, which is that commit's first parent:
+          # one level of history.
           fetch-depth: 2
       - name: Reject conflict markers
         run: python3 scripts/conflict-markers.py
@@ -1893,6 +1896,29 @@ jobs:
         # Every fragment under changelog.d/ parses, and [Unreleased] still
         # has the shape the release roll reads (changelog.d/README.md).
         run: python3 scripts/changelog.py check
+      - name: Resolve the PR's base
+        # HEAD is the merge commit GitHub built against the base branch's
+        # tip *at checkout time*. When main moved between the event that
+        # started this run and the checkout, that tip is newer than the
+        # event's base.sha, and fetching base.sha on its own at depth 1
+        # yields a commit that shares no history with HEAD: `base...HEAD`
+        # has no merge base and git exits 128. #2163 and #2166 both went
+        # red this way within ten minutes of #2164 landing, and a re-run
+        # cannot recover because the merge ref moves again. The first
+        # parent is the base the merge was actually built against and is
+        # always present in a depth-2 checkout. Both diff-scoped steps
+        # below read PR_BASE_SHA.
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -gt 2 ]; then
+            BASE_SHA=$(git rev-parse HEAD^1)
+          elif ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --quiet --depth=1 origin "${BASE_SHA}"
+          fi
+          echo "PR_BASE_SHA=${BASE_SHA}" >> "$GITHUB_ENV"
       - name: Changelog entries go through changelog.d/
         # A PR does not edit CHANGELOG.md: that file changes once per
         # release, in the release PR, which is what ended the changelog
@@ -1910,30 +1936,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          # HEAD is the merge commit GitHub built against the base branch's
-          # tip *at checkout time*. When main moved between the event that
-          # started this run and the checkout, that tip is newer than the
-          # event's base.sha, and fetching base.sha on its own at depth 1
-          # yields a commit that shares no history with HEAD: `base...HEAD`
-          # has no merge base and git exits 128. #2163 and #2166 both went
-          # red this way within ten minutes of #2164 landing, and a re-run
-          # cannot recover because the merge ref moves again. The first
-          # parent is the base the merge was actually built against and is
-          # always present in a depth-2 checkout.
-          if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -gt 2 ]; then
-            BASE_SHA=$(git rev-parse HEAD^1)
-          elif ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            git fetch --quiet --depth=1 origin "${BASE_SHA}"
-          fi
           args=()
           while IFS= read -r label; do
             if [ -n "${label}" ]; then args+=(--label "${label}"); fi
           done < <(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name')
-          python3 scripts/changelog.py guard --base "${BASE_SHA}" --branch "${HEAD_REF}" "${args[@]}"
+          python3 scripts/changelog.py guard --base "${PR_BASE_SHA}" --branch "${HEAD_REF}" "${args[@]}"
+      - name: Resolve the issue and PR numbers this PR cites
+        # A citation in code names history, so a newly added `#N` should
+        # resolve and already be closed or merged. #1006 was cited in 20
+        # places as the MkDocs-retirement tracker and was an unrelated open
+        # PR; nothing resolved it (#1014). Stage 1: the script lists every
+        # new citation with its state and title in one PR comment and in
+        # the step summary, and gates nothing. Promote it by adding
+        # --strict and dropping continue-on-error once the regex has held
+        # up. pull_request only: it needs the diff, a PR to comment on and
+        # the API.
+        if: ${{ github.event_name == 'pull_request' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/ci/check_issue_refs.py --base "${PR_BASE_SHA}" --pr "${PR_NUMBER}" --comment
       # This job is required even for docs-only changes and reused trees.
       # The path-filtered Alert rules workflow alone cannot gate a merge.
       - name: Install the alert rule evaluator
