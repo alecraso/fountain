@@ -85,8 +85,10 @@ upgrade, is in
 
 - New principal-key writes must provide an expiry. The database now checks
   that unrevoked principal keys have deadlines, preserving existing deadlines
-  and revoked history (#2103). The old-writer trigger remains during rollout;
-  its removal requires evidence that every writer supplies an expiry.
+  and revoked history (#2103). A follow-up migration retires the implicit
+  30-day default only after the permanent CHECK is validated. Deploy and drain
+  all older writers before applying it; see the principal expiry upgrade
+  sequence. Rolling back restores the default without changing deadlines.
 
 - ChatGPT `auth.json` imports now require explicit `"auth_mode": "chatgpt"`
   (#2106). Use Codex 0.93.0 or newer to sign in again with file storage,
