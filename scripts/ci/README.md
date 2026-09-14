@@ -223,8 +223,10 @@ tree holds 2,000-odd citations, and diff scope makes it a ratchet without
 an allowlist.
 
 It runs in `workflow-checks` on `pull_request` only, as stage 1: one
-comment per PR (updated on every run, found by its `<!-- check-issue-refs -->`
-marker) and a step summary, gating nothing. A PR that adds no citation gets
+comment per PR (updated on every run: the `<!-- check-issue-refs -->` marked
+comment left by `github-actions[bot]`, or by the token's user locally, on
+whichever page of the thread it sits) and a step summary, gating nothing.
+The marker alone is public, so a pasted copy by anyone else is never edited. A PR that adds no citation gets
 no comment. Stage 2 is `--strict`, which exits 1 on an open or missing
 citation: add it and remove `continue-on-error` from the step once the
 regex has held up over a few weeks. Under `--strict`, a PR that cites the

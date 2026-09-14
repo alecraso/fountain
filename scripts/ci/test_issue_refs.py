@@ -151,19 +151,65 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(refs.render({}, {}).startswith(refs.MARKER))
 
 
+def comment(id, body, login):
+    return {"id": id, "body": body, "user": {"login": login}}
+
+
+BOT = refs.ACTIONS_BOT
+
+
 class CommentTest(unittest.TestCase):
     @patch("check_issue_refs.api")
     def test_a_second_run_updates_the_marked_comment_instead_of_adding_one(self, api):
-        api.side_effect = [[{"id": 7, "body": "unrelated"}, {"id": 9, "body": refs.MARKER + "\nold"}], {}]
-        self.assertEqual(refs.upsert_comment("o/r", 3, "new"), "updated")
+        api.side_effect = [[comment(7, "unrelated", "someone"), comment(9, refs.MARKER + "\nold", BOT)], {}]
+        self.assertEqual(refs.upsert_comment("o/r", 3, "new", BOT), "updated")
         method, path, body = api.call_args.args
         self.assertEqual((method, path, body), ("PATCH", "/repos/o/r/issues/comments/9", {"body": "new"}))
 
     @patch("check_issue_refs.api")
     def test_the_first_run_creates_the_comment(self, api):
-        api.side_effect = [[{"id": 7, "body": "unrelated"}], {}]
-        self.assertEqual(refs.upsert_comment("o/r", 3, "new"), "created")
+        api.side_effect = [[comment(7, "unrelated", "someone")], {}]
+        self.assertEqual(refs.upsert_comment("o/r", 3, "new", BOT), "created")
         self.assertEqual(api.call_args.args[:2], ("POST", "/repos/o/r/issues/3/comments"))
+
+    @patch("check_issue_refs.api")
+    def test_someone_elses_copy_of_the_marker_is_never_edited(self, api):
+        # The marker is public; a pasted copy must not become the report.
+        api.side_effect = [[comment(5, refs.MARKER + "\npasted", "outsider"),
+                            comment(9, refs.MARKER + "\nold", BOT)], {}]
+        self.assertEqual(refs.upsert_comment("o/r", 3, "new", BOT), "updated")
+        self.assertEqual(api.call_args.args[1], "/repos/o/r/issues/comments/9")
+        api.side_effect = [[comment(5, refs.MARKER + "\npasted", "outsider")], {}]
+        self.assertEqual(refs.upsert_comment("o/r", 3, "new", BOT), "created")
+
+    @patch("check_issue_refs.api")
+    def test_the_report_is_found_on_page_two(self, api):
+        page_one = [comment(i, f"discussion {i}", "someone") for i in range(100)]
+        api.side_effect = [page_one, [comment(200, refs.MARKER + "\nold", BOT)], {}]
+        self.assertEqual(refs.upsert_comment("o/r", 3, "new", BOT), "updated")
+        pages = [call.args[1] for call in api.call_args_list[:2]]
+        self.assertEqual(pages, ["/repos/o/r/issues/3/comments?per_page=100&page=1",
+                                 "/repos/o/r/issues/3/comments?per_page=100&page=2"])
+        self.assertEqual(api.call_args.args[1], "/repos/o/r/issues/comments/200")
+
+    @patch("check_issue_refs.api")
+    def test_a_full_last_page_is_followed_by_an_empty_one(self, api):
+        api.side_effect = [[comment(i, "x", "someone") for i in range(100)], []]
+        self.assertIsNone(refs.find_report("o/r", 3, BOT))
+        self.assertEqual(api.call_count, 2)
+
+    @patch.dict(os.environ, {"GITHUB_ACTIONS": "true"})
+    @patch("check_issue_refs.api")
+    def test_in_actions_the_author_is_the_bot_without_an_api_call(self, api):
+        self.assertEqual(refs.report_author(), BOT)
+        api.assert_not_called()
+
+    @patch.dict(os.environ, {"GITHUB_ACTIONS": ""})
+    @patch("check_issue_refs.api")
+    def test_locally_the_author_is_the_tokens_user(self, api):
+        api.return_value = {"login": "jake"}
+        self.assertEqual(refs.report_author(), "jake")
+        self.assertEqual(api.call_args.args, ("GET", "/user"))
 
 
 class MainTest(unittest.TestCase):
@@ -175,6 +221,7 @@ class MainTest(unittest.TestCase):
         self.diff = Path(self.temp.name) / "pr.diff"
         self.diff.write_text(PR_1008)
         self.calls = []
+        self.comments = []
 
     def fake_api(self, method, path, body=None):
         self.calls.append((method, path, body))
@@ -185,9 +232,12 @@ class MainTest(unittest.TestCase):
                     "pull_request": {"merged_at": None}}
         if path.endswith("/issues/765"):
             return {"state": "closed", "title": "Docs: heading ids"}
-        if path.endswith("/comments?per_page=100"):
-            return []
-        if method == "POST":
+        if path == "/user":
+            return {"login": BOT}
+        if "/comments?per_page=100&page=" in path:
+            page = int(path.rsplit("=", 1)[1])
+            return self.comments[(page - 1) * 100:page * 100]
+        if method in ("POST", "PATCH"):
             return {}
         raise AssertionError(f"unexpected call {method} {path}")
 
@@ -235,6 +285,18 @@ class MainTest(unittest.TestCase):
         code, out, _ = self.run_main("--comment", "--pr", "1008")
         self.assertEqual(code, 0)
         self.assertNotIn("Comment", out)
+        self.assertEqual([c for c in self.calls if c[0] == "POST"], [])
+
+    def test_removing_every_citation_corrects_the_report_even_on_page_two(self):
+        self.comments = [comment(i, f"discussion {i}", "someone") for i in range(100)]
+        self.comments.append(comment(500, refs.MARKER + "\nstale", BOT))
+        self.diff.write_text("--- a/x.md\n+++ b/x.md\n@@ -1 +1 @@\n+no citations here\n")
+        code, out, _ = self.run_main("--comment", "--pr", "1008")
+        self.assertEqual(code, 0)
+        self.assertIn("Comment updated on #1008", out)
+        patches = [c for c in self.calls if c[0] == "PATCH"]
+        self.assertEqual([c[1] for c in patches], ["/repos/managoat/fountain/issues/comments/500"])
+        self.assertIn("no new issue or PR citations", patches[0][2]["body"])
         self.assertEqual([c for c in self.calls if c[0] == "POST"], [])
 
     def test_a_read_only_token_cannot_block_the_step(self):

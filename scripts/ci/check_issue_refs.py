@@ -18,7 +18,8 @@ API and prints one line per citation with its state and title:
 Next to a docs comment about MkDocs, that title is wrong at a glance.
 
 Stage 1 (now) comments and does not gate: `--comment` upserts one PR comment
-and the exit code is 0 whatever it found. Stage 2 promotes the rule with
+(the marked comment this author already left, on whichever page it sits) and
+the exit code is 0 whatever it found. Stage 2 promotes the rule with
 `--strict`, which exits 1 on a citation that is open or does not exist. Usage
 and API failures exit 2 in either mode.
 
@@ -182,12 +183,37 @@ def render(found, resolved):
     return "\n".join(lines) + "\n"
 
 
-def upsert_comment(repo, pr, body):
-    """One comment per PR, found by its marker, updated on every run."""
-    for comment in api("GET", f"/repos/{repo}/issues/{pr}/comments?per_page=100"):
-        if comment["body"].startswith(MARKER):
-            api("PATCH", f"/repos/{repo}/issues/comments/{comment['id']}", {"body": body})
-            return "updated"
+ACTIONS_BOT = "github-actions[bot]"
+
+
+def report_author():
+    """Who this script's comments appear as: the Actions bot in CI, else the
+    token's user. The marker alone does not identify the report, since anyone
+    can paste it; the author check keeps a PATCH off someone else's comment."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return ACTIONS_BOT
+    return api("GET", "/user")["login"]
+
+
+def find_report(repo, pr, author):
+    """The existing report on a PR: this author's marked comment, on any page."""
+    page = 1
+    while True:
+        comments = api("GET", f"/repos/{repo}/issues/{pr}/comments?per_page=100&page={page}")
+        for comment in comments:
+            if comment["body"].startswith(MARKER) and comment["user"]["login"] == author:
+                return comment
+        if len(comments) < 100:
+            return None
+        page += 1
+
+
+def upsert_comment(repo, pr, body, author):
+    """One comment per PR, updated on every run."""
+    existing = find_report(repo, pr, author)
+    if existing:
+        api("PATCH", f"/repos/{repo}/issues/comments/{existing['id']}", {"body": body})
+        return "updated"
     api("POST", f"/repos/{repo}/issues/{pr}/comments", {"body": body})
     return "created"
 
@@ -248,9 +274,9 @@ def main(argv=None):
         try:
             # A PR with nothing to report gets no comment unless one is
             # already there to correct.
-            if found or any(c["body"].startswith(MARKER)
-                            for c in api("GET", f"/repos/{args.repo}/issues/{args.pr}/comments?per_page=100")):
-                print(f"Comment {upsert_comment(args.repo, args.pr, body)} on #{args.pr}")
+            author = report_author()
+            if found or find_report(args.repo, args.pr, author):
+                print(f"Comment {upsert_comment(args.repo, args.pr, body, author)} on #{args.pr}")
         except (HTTPError, URLError) as error:
             # A fork's token is read-only; the step summary still carries it.
             print(f"::warning::could not comment on #{args.pr}: {error}", file=sys.stderr)
