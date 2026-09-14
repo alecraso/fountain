@@ -215,18 +215,20 @@ class GuardTest(Fixture):
         result = self.run_script("guard", "--base", self.base, "--branch", "feature")
         self.assertEqual(result.returncode, 1)
         self.assertIn("changelog.d/", result.stderr)
-        self.assertIn("changelog:manual", result.stderr)
+        self.assertIn("release:manual-changelog", result.stderr)
 
     def test_the_release_branch_and_the_label_are_the_two_doors(self):
         self.commit("CHANGELOG.md", PREAMBLE + "\n### Fixed\n\n- x\n\n" + RELEASED)
         self.assertEqual(
             self.run_script("guard", "--base", self.base, "--branch", "release/v0.17.0").returncode, 0)
+        for label in ("release:manual-changelog", "changelog:manual"):
+            with self.subTest(label=label):
+                self.assertEqual(
+                    self.run_script("guard", "--base", self.base, "--branch", "feature",
+                                    "--label", "type:bug", "--label", label).returncode, 0)
         self.assertEqual(
             self.run_script("guard", "--base", self.base, "--branch", "feature",
-                            "--label", "bug", "--label", "changelog:manual").returncode, 0)
-        self.assertEqual(
-            self.run_script("guard", "--base", self.base, "--branch", "feature",
-                            "--label", "bug").returncode, 1)
+                            "--label", "type:bug").returncode, 1)
 
     def test_a_changelog_edit_on_main_since_branching_is_not_the_prs(self):
         # The three-dot diff: main moving on (a release roll) must not fail

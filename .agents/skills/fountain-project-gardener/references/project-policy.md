@@ -57,14 +57,14 @@ Retain these label families unless the caller deliberately changes the taxonomy:
 
 - priorities: `P0`, `P1`, `P2`, `P3`;
 - durable ownership: `area:*`;
-- issue nature: `bug`, `enhancement`, `question`, `dependencies`, language/ecosystem labels;
+- issue nature: `type:*`; language/ecosystem: `lang:*`;
 - contribution: `good first issue`, `help wanted`;
-- coordination: `tracker`, `needs:decision`, `needs:external`;
-- terminal GitHub semantics: `duplicate`, `invalid`, `wontfix`.
+- coordination: `type:tracker`, `needs:*`, `stack:*`; scope: `scope:*`;
+- disposition: `status:deferred`, `resolution:duplicate`; preserve any other terminal semantics.
 
-Campaign labels such as `*-2026-09` may be useful while a bounded program is active. Retire them only after the campaign is complete, all open uses have a durable replacement, and no automation depends on them.
+Campaign labels such as `campaign:render-2026-09` may be useful while a bounded program is active. Retire them only after the campaign is complete, all open uses have a durable replacement, and no automation depends on them.
 
-Avoid labels duplicating Status, Horizon, Size, or Iteration.
+Project fields remain authoritative for Status, Horizon, Size and Iteration. `status:deferred` is an explicitly requested repository-search label; keep it consistent with recorded deferral decisions. See `standards/github-labels.md` and `.github/labels.json` for the current label families, colors and definitions.
 
 ## Expected views and automation
 

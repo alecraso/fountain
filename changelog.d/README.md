@@ -63,6 +63,6 @@ python3 scripts/changelog.py preview --version X.Y.Z
 ```
 
 To fix a typo in a shipped entry, edit `CHANGELOG.md` directly and put the
-`changelog:manual` label on the PR; that is the one door past the guard.
+`release:manual-changelog` label on the PR; that is the one door past the guard.
 The guard reads the labels live, so re-running the `CI policy and alert
 tests` job after labelling is enough; no new push is needed.

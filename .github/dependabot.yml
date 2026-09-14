@@ -4,6 +4,7 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
+    labels: ["type:dependency"]
     directory: /
     schedule:
       interval: weekly
@@ -30,6 +31,7 @@ updates:
         versions: ["~> 3.0"]
 
   - package-ecosystem: mix
+    labels: ["type:dependency", "lang:elixir"]
     directory: /
     schedule:
       interval: weekly
@@ -39,6 +41,7 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: gomod
+    labels: ["type:dependency", "lang:go"]
     # One update job spans both sides of Buzz's local replace (#1769).
     directories:
       - /cli
@@ -51,6 +54,7 @@ updates:
         group-by: dependency-name
 
   - package-ecosystem: docker
+    labels: ["type:dependency"]
     directory: /
     schedule:
       interval: weekly
@@ -61,6 +65,7 @@ updates:
   # runner. Removing it left these packages watched by nothing at all, so the
   # signal moves here, where it arrives as a PR someone can merge.
   - package-ecosystem: npm
+    labels: ["type:dependency", "lang:javascript"]
     directory: /sdk/typescript
     schedule:
       interval: weekly
@@ -99,6 +104,7 @@ updates:
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
+    labels: ["type:dependency", "lang:javascript"]
     directory: /scripts/destink
     schedule:
       interval: weekly

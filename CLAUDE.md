@@ -632,12 +632,12 @@ runner environment and external dependencies before calling it a flake.
 rather than dismissing it because a rerun passed.
 
 ```bash
-gh issue create --label flake --label area:testing --title "Flake: <what raced>"
+gh issue create --label type:flake --label area:testing --title "Flake: <what raced>"
 ```
 
-`flake` is the label every one of them carries; `area:testing` and the area
+`type:flake` is the label every one of them carries; `area:testing` and the area
 the test covers go alongside it. Search before filing —
-`gh issue list --label flake --state all` — because the same flake gets found
+`gh issue list --label type:flake --state all` — because the same flake gets found
 repeatedly and a second issue splits the evidence.
 
 File rather than fix in place when you are mid-task on something else, so a
@@ -697,7 +697,7 @@ way on 2026-09-04, two had already been fixed after the failed run.
   back to it, or watch `gh pr checks <N>`.
 - **Don't re-run a red test until it goes green and move on.** Keep the failed
   run's evidence and investigate what changed between attempts. File confirmed
-  flakes with the `flake` label, and record unexplained failures with what you
+  flakes with the `type:flake` label, and record unexplained failures with what you
   know — see *Flaky tests* above.
 - **Don't add `async: false` to tests unless the test genuinely requires it** (e.g. global ETS state). The SQL Sandbox handles DB isolation.
 
@@ -859,7 +859,7 @@ something a user or operator can observe adds a fragment under
 `### Section` headings and bullets, one file per PR, any `.md` name but
 `README.md`). `python3 scripts/changelog.py check` validates it, and the
 `workflow-checks` job refuses a PR that edits `CHANGELOG.md` itself; the
-`changelog:manual` label is the door for a typo fix in a shipped entry. The
+`release:manual-changelog` label is the door for a typo fix in a shipped entry. The
 release-bump workflow runs `scripts/changelog.py release`, which rolls
 `[Unreleased]` and every fragment into the dated section and deletes them.
 Before that roll, `git log <lastTag>..main` against the fragments still finds

@@ -122,7 +122,7 @@ async function guard(baseRef) {
         `version at ${head.version}. Nothing publishes without a bump, so the change would ` +
         `sit on main unreleased. Run \`cd ${PKG_DIR} && npm version patch\` (or minor/major), ` +
         `update USER_AGENT and CHANGELOG.md, and commit. To change the published surface ` +
-        `without releasing, add the "sdk-no-release" label.`,
+        `without releasing, add the "release:skip-sdk" label.`,
     );
     return;
   }
