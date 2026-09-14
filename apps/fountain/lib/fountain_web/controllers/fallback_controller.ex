@@ -481,7 +481,9 @@ defmodule FountainWeb.FallbackController do
     |> put_status(:conflict)
     |> json(%{
       error: "sandbox_reset_pending",
-      message: "reset is pending confirmation; contact the operator before retrying"
+      message:
+        "reset is pending provider confirmation; Fountain retries automatically, or an " <>
+          "administrator can retry from the admin sandbox list"
     })
   end
 

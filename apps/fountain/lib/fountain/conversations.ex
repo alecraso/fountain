@@ -4426,7 +4426,9 @@ defmodule Fountain.Conversations do
   transcript notifications and audit event. Concurrent finalizers return
   `{:ok, :skipped}` after another caller retires the row; only the winner
   publishes completion. Repeating a completed retry does not delete again.
-  The caller supplies audit attribution through `opts`.
+  The caller supplies audit attribution through `opts`. With `:reprobe`, ask
+  the provider whether the machine exists first: only a definitive not-found
+  or a successful delete confirms retirement; an uncertain probe keeps the fence.
   """
   def retry_pending_sandbox_reset(%Sandbox{} = sandbox, opts \\ []) do
     if Repo.in_transaction?() do
@@ -4438,7 +4440,7 @@ defmodule Fountain.Conversations do
 
         %Sandbox{mode: "persistent", status: status, reset_requested_at: at} = current
         when status in ["ready", "suspended"] and not is_nil(at) ->
-          with {:ok, %Sandbox{} = completed} <- finish_sandbox_reset(current) do
+          with {:ok, %Sandbox{} = completed} <- finish_sandbox_reset(current, opts) do
             opts =
               opts
               |> Keyword.put_new(:reason, "reset_reconciled")
@@ -4525,10 +4527,10 @@ defmodule Fountain.Conversations do
 
   # Only a confirmed destroy releases capacity. Errors or caller loss leave
   # the committed fence intact for a later explicit reconciliation retry.
-  defp finish_sandbox_reset(sandbox) do
+  defp finish_sandbox_reset(sandbox, opts \\ []) do
     handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.machine_name)
 
-    case Managoat.Sandbox.destroy(handle) do
+    case confirm_reset_deletion(handle, Keyword.get(opts, :reprobe, false)) do
       :ok ->
         # The pre-provider read cannot elect the finalizer: another request
         # may finish while this one waits for the provider. Re-check under
@@ -4544,6 +4546,20 @@ defmodule Fountain.Conversations do
 
       {:error, _} ->
         {:error, :sandbox_reset_pending}
+    end
+  end
+
+  defp confirm_reset_deletion(handle, false), do: Managoat.Sandbox.destroy(handle)
+
+  defp confirm_reset_deletion(handle, true) do
+    if Fountain.SandboxProviders.enabled?(handle.provider) do
+      case Managoat.Sandbox.get(handle) do
+        {:error, :not_found} -> :ok
+        {:ok, _} -> Managoat.Sandbox.destroy(handle)
+        error -> error
+      end
+    else
+      {:error, :provider_disabled}
     end
   end
 

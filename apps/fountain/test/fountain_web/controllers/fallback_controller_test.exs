@@ -7,7 +7,9 @@ defmodule FountainWeb.FallbackControllerTest do
 
   test "an uncertain reset reports an explicit conflict", %{conn: conn} do
     conn = FountainWeb.FallbackController.call(conn, {:error, :sandbox_reset_pending})
-    assert %{"error" => "sandbox_reset_pending"} = json_response(conn, 409)
+    assert %{"error" => "sandbox_reset_pending", "message" => message} = json_response(conn, 409)
+    assert message =~ "Fountain retries automatically"
+    assert message =~ "administrator can retry from the admin sandbox list"
   end
 
   # Driven directly rather than through the route: reaching this refusal needs

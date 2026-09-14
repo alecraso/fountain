@@ -44,6 +44,7 @@ defmodule Fountain.Audit.AdminEvent do
     admin.comp.granted
     admin.comp.revoked
     admin.sandbox.reaped
+    admin.sandbox.reset_retried
     admin.account.suspended
     admin.account.unsuspended
     admin.user.viewed
