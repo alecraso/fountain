@@ -44,17 +44,17 @@ print(try await next.value().text)
 ## Install
 
 The remotely consumable `Package.swift` is at the repository root. Depend on
-Fountain 0.16.0 or newer:
+Fountain 0.17.0 or newer:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/managoat/fountain.git", from: "0.16.0")
+    .package(url: "https://github.com/managoat/fountain.git", from: "0.17.0")
 ]
 ```
 
 Then add `.product(name: "Fountain", package: "fountain")` to your target —
 or `.product(name: "FountainKit", package: "fountain")` for the typed client,
-which needs a release later than 0.16.0.
+which is available starting with 0.17.0.
 
 Swift 6.1 or newer is required. The SDK supports macOS 12, iOS/tvOS 15,
 watchOS 8, and Linux FoundationNetworking, with no third-party dependencies.
@@ -186,11 +186,8 @@ Read `error.upgradeURL` for the purchase page. `FountainKit` already uses
 `.insufficientCredits(body, upgradeURL:)`; its case and associated URL remain unchanged.
 Both products retire the special `subscription_required` wire mapping.
 
-This is the source API boundary introduced by #2104. The next Swift package
-tag containing this change must be a breaking minor release while the package
-is 0.x, not a patch to an existing tag. Until that tag exists, pin a reviewed
-commit containing this change to adopt these names. No tag is published by
-this cleanup, and the Fountain server version is unchanged.
+This source API boundary (#2104) ships in Swift v0.17.0. Use that tag or
+newer to adopt the credit error names; earlier tags keep their original names.
 
 For billing error handling, use Fountain v0.13.0 or newer.
 [v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first

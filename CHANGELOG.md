@@ -7,14 +7,20 @@ All notable changes to Fountain are documented here. Format:
 Pre-1.0, a minor bump (`0.x` → `0.y`) may include breaking changes; when one
 does, the release carries an **Upgrade notes** section. Patch releases are
 always safe to take. Every release publishes the server image to
-`ghcr.io/binarybourbon/fountain` as `vX.Y.Z` (immutable) and `vX.Y` (moving,
+`ghcr.io/managoat/fountain` as `vX.Y.Z` (immutable) and `vX.Y` (moving,
 newest patch in the line). The full policy, including how migrations run on
 upgrade, is in
-[Versioning and upgrades](https://fountain.inevitable.fyi/docs/guides/operate/upgrade#how-versions-work).
+[Versioning and upgrades](https://managoat.com/docs/guides/operate/upgrade#how-versions-work).
 
 ---
 
 ## [Unreleased]
+
+Changes that have merged but not yet shipped are the files under
+[`changelog.d/`](https://github.com/managoat/fountain/tree/main/changelog.d);
+the release PR rolls them into a dated section here.
+
+## [0.17.0] - 2026-09-14
 
 ### Upgrade notes
 
@@ -48,9 +54,8 @@ upgrade, is in
   `AGENTMAIL_MESSAGE_CENTS` and `AGENTPHONE_MESSAGE_CENTS` are no longer
   read. The daily rent collector, the rent-due email and the finance panel's
   contact and message lines are gone, and the ledger writes no `burn_rent` or
-  `burn_message` rows. Rows already written keep their reason. Team comms
-  itself (numbers, inboxes and the teammate tools) is removed in a following
-  change.
+  `burn_message` rows. Rows already written keep their reason.
+  Team comms itself is also removed in this release (#2144, #2146).
 
 - Three retired switches are gone. `HONEYCOMB_ENDPOINT` and
   `HONEYCOMB_API_KEY` were shortcuts for the two standard variables: set
@@ -108,10 +113,11 @@ upgrade, is in
 
 - New principal-key writes must provide an expiry. The database now checks
   that unrevoked principal keys have deadlines, preserving existing deadlines
-  and revoked history (#2103). A follow-up migration retires the implicit
-  30-day default only after the permanent CHECK is validated. Deploy and drain
-  all older writers before applying it; see the principal expiry upgrade
-  sequence. Rolling back restores the default without changing deadlines.
+  and revoked history (#2103). This release also includes the migration that
+  retires the implicit 30-day default after the permanent CHECK is validated.
+  Deploy the bridge revision and drain all older writers before applying it;
+  see [Principal credential expiry](https://managoat.com/docs/guides/operate/upgrade#principal-credential-expiry).
+  Rolling back that migration restores the default without changing deadlines.
 
 - ChatGPT `auth.json` imports now require explicit `"auth_mode": "chatgpt"`
   (#2106). Use Codex 0.93.0 or newer to sign in again with file storage,
@@ -160,9 +166,10 @@ upgrade, is in
   `/api/secret-bindings` routes. An operator who set
   `FEATURE_FLAGS_ON=connections` to get the feature back can drop it, and
   nothing changes where PostHog is configured: it answers the flag as before,
-  and `FEATURE_FLAGS_ON` still wins over both. The switch that turns
-  Connections off is the broker: an account is offered the feature only while
-  `BROKER_TENANTS` names it.
+  and `FEATURE_FLAGS_ON` still wins over both. Creating connections also requires the deployment-wide broker, selected
+  by `BROKER_LISTEN_PORT`; tenant lists are no longer supported (#2058).
+  Existing connections remain manageable when creation is unavailable, and
+  the catalog advertises that management capability (#2134).
 
 - **Upgrade every serving node before enabling multiple inference sources**
   (#2018). Credential, environment and vault writers must acquire source locks
@@ -172,6 +179,73 @@ upgrade, is in
 - Eight tunables are fixed at their defaults and no longer read from the
   environment: the six `PRINCIPAL_*` bounds (ADR 0044) and the two
   `PLATFORM_CHATGPT_*` timings (ADR 0047). A value set for one is ignored.
+
+- **The native broker is the only credential-broker backend** (#1494,
+  ADR 0019 accepted). The Agent Vault client and its vendor service are no
+  longer supported. Configure `BROKER_LISTEN_PORT` and `BROKER_PROXY_URL` for
+  the in-process broker. `BROKER_URL` and `BROKER_TOKEN` are ignored. A
+  non-empty tenant list in `BROKER_TENANTS` now refuses boot: brokerage applies
+  to every tenant when the listener is configured (#2058). Remove the list
+  after accepting that wider scope, or replace it with `*`. Keeping `*` also
+  makes a missing listener a boot error. See
+  [Broker configuration](https://managoat.com/docs/configuration).
+
+- **Manifest specs now reject unknown keys before writing that resource**
+  (#1605). Remove `secrets` from Agent specs; put secrets in an Environment or
+  Vault instead. Remove read-only `avatar_media_type`, timestamps such as
+  `inserted_at` and `updated_at`, and unsupported `network_policy` keys; use
+  Environment `networking_type` and `networking_config` instead. Misspelled keys that
+  Ecto previously discarded now fail. Bulk apply still returns HTTP 200 with
+  per-resource errors and applies other valid resources. Ownership keys
+  (`id`, `user_id`, `created_by`) remain ignored.
+
+- **A command stream that closes before its exit frame is an error** (#1470).
+  The `managoat_sandbox` 0.2.0 contract, retained in the bundled 0.3.0 library,
+  reports `:closed_before_exit` instead of inventing exit code 0. An unfinished
+  turn fails and an unobserved exit code stays null. Consumers must handle a
+  transport failure separately from successful completion.
+
+- **Switching to a core image removes every first-party extension** (#1545,
+  #2152). Keep the bundled tag to retain Buzz, Support, Google/Gmail,
+  Microsoft and Slack. Core omits their routes, tools, migrations and
+  configured connection providers. Existing extension tables are retained;
+  existing provider connections stay locally revocable and deletable but
+  contribute no token while their extension is absent. `BUNDLE_EXTENSIONS`
+  selects the distribution at build time, not container startup.
+
+- **Agent vault policy gains generated database columns** (#2119). Run
+  migration `20260913180000` before the new application serves requests.
+  It rewrites agents and their saved versions under bounded exclusive locks;
+  plan a maintenance window for busy tables. The `allowed_vault_ids` wire
+  format is unchanged. See
+  [Vault policy migration](https://managoat.com/docs/guides/operate/upgrade#vault-policy-migration).
+
+- **Caller-selected sandbox names are now account-scoped suffixes** (#1920).
+  An arbitrary legacy `sprite_name` will create a different machine. Use the
+  existing row's `sandbox_id` to reattach, subject to its normal eligibility
+  checks. Names already carrying the caller's account prefix still round-trip.
+  Self-hosted runners and launches with `sandbox_api_access: "none"` reject
+  `sprite_name`.
+
+- **Swift v0.17.0 includes source-breaking SDK changes** (#2117, #2145).
+  Replace `FountainError.Kind.subscriptionRequired` with `.insufficientCredits`
+  and use `upgradeURL` for the purchase page. Remove calls to `Team.commsStatus()`
+  and references to `TeamCommsStatus`, `TeammateContact` and `Teammate.contact`.
+  Both products drop the special `subscription_required` wire mapping.
+  `Agent.model` is nullable for the credential-free `acp` runtime (#1634).
+  See the [Swift changelog](https://github.com/managoat/fountain/blob/v0.17.0/sdk/swift/CHANGELOG.md).
+
+- Historical stdout/vendor transcript parsing is removed from the server,
+  CLI and SDK readers (#2082, #2090, #2110). Render the server's structured
+  blocks (`blocks=true` on event reads and streams); do not rely on old vendor
+  rows being reconstructed into assistant paragraphs.
+
+- **Execution limits are not yet available to callers** (ADR 0046, #1744, #1752).
+  This release contains the deadline journal, guarded transport, stop recovery
+  and notification machinery, but no runtime advertises an enforced control.
+  Setting `FOUNTAIN_EXECUTION_LIMITS` or requesting a non-empty limit produces
+  `422 execution_limits_unsupported`. Leave host ceilings unset until public
+  enforcement is enabled in a later release.
 
 ### Added
 
@@ -246,28 +320,6 @@ upgrade, is in
   immediate error. Starts carrying images or naming a `sandbox_id` never
   queue.
 
-- Wire the prepared bounded execution journal into atomic turn admission,
-  tracked adapter setup, guarded ACP callbacks, durable cancellation, recovery
-  retirement and parent deletion. Bounded turns skip separate title inference,
-  cannot reuse a warm process, and require an ACP reply for success. Public
-  enforcement remains disabled pending provider release and complete acceptance.
-
-- Prepare a supervised bounded-command transport that binds provider identity
-  before stdin, rechecks journal authority for each write, and retains uncertain
-  operations. Successful bounded replies now require connection retirement before
-  a fresh successor. Public activation remains gated.
-
-- Commit deadline failure events and delivery jobs with the failed turn. Late
-  completion and interruption reuse the original event, and notification retries
-  retain its id. Public bounded execution remains disabled.
-
-- Add a supervised execution-deadline coordinator with separate expiration and
-  termination task pools. Local task timeouts and restarts retain uncertain
-  remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
-  a host ceiling, and `FOUNTAIN_EXECUTION_DEADLINE_WORKER=false` turns it off
-  anywhere. Public bounded execution remains disabled until session identity,
-  event delivery, and lifecycle integration are complete.
-
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
   `runtime_command` field carries the command it runs. The field is required
@@ -297,11 +349,6 @@ upgrade, is in
   `AgentUpdate["model"]` are `string | null` and optional. A client that
   assumed a string needs a null check. Nothing else on the wire changed
   shape.
-
-- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
-  dependency set for typed execution limits and confirmed session termination.
-  Fountain deadline enforcement remains disabled pending transport and lifecycle
-  integration.
 
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
@@ -391,30 +438,9 @@ upgrade, is in
   refunds what it still holds, and an unclaimed grant expires on its own with
   the same teardown. Guide: **Start before sign-in**.
 
-- **`BROKER_TENANTS` takes `*`, so the ratchet has an end state** (ADR 0019
-  §9). The variable was a comma separated list of user ids and nothing else,
-  which is what made widening deliberate: an operator adds one id, proves it,
-  and adds the next. That is the right shape for a rollout and the wrong
-  shape for its conclusion, since the only way to say *everyone* was to
-  enumerate every account and to keep enumerating each new one. `*` on its
-  own now means every tenant. Blank still means nobody, and still is what
-  keeps the listener inert on a deployment that turns it on without naming
-  anyone. The wildcard is parsed to the atom `:all` rather than kept as a
-  member of the list, and a `*` mixed into a list is a boot error: as a list
-  member it would broker exactly one tenant whose id was the string `"*"`,
-  while reading at a glance like it brokered all of them.
-
-  One thing does not change, and it is the reason to read this before setting
-  it. A provider with no `:network_policy` capability still cannot host a
-  brokered conversation, because the `allow: [broker]` floor is what makes a
-  placeholder worthless off the box. Self-hosted runners advertise
-  `[:suspend, :attach]`, so `*` refuses every conversation placed on one with
-  `{:broker, :backend_lacks_network_policy}`. `BROKER_ALLOW_UNENFORCED` is
-  the development escape hatch and remains the wrong answer in production.
-
 - **The credit workers report on themselves, and money movement is measured
   at the ledger** (#1169). Under ADR 0031 the balance is the gate, so
-  `CreditPricer`, `CreditExpirer` and `Credits.Rent` are load-bearing, and the
+  `CreditPricer` and `CreditExpirer` are load-bearing, and the
   only thing watching them was `FountainObanJobsRaising` — which needs a job
   to *raise*. A pricer that ran happily and priced nothing (a bad rate config,
   an empty `SandboxUsage`, a query matching zero rows) tripped nothing, and
@@ -424,7 +450,8 @@ upgrade, is in
   on a worker that never fires at all. `[:fountain, :credits, :posted]` is
   emitted by `Credits.post/4` at the ledger write, tagged by reason, so cents
   burned cannot drift from the ledger and one event covers turns, inference,
-  messages, rent, expiry, grants and purchases. Stripe webhook rejections and
+  expiry, grants and purchases. Contact rent and message pricing were removed
+  before this release. Stripe webhook rejections and
   failures are counted by coarse kind, and email delivery by outcome — the
   latter needs no call-site change, because Swoosh already spans every
   delivery. The per-replica gauge trap applies to `last_run_unix`: it exists
@@ -443,8 +470,7 @@ upgrade, is in
   keeping the identity row so a top-up restores the agent intact rather than
   needing a fresh deploy; the boot sweep asks the same question, so a deploy
   no longer undoes it. The admin users table grows a **Slots** column showing
-  teammate contacts and hosted agents per tenant, which also renders the
-  contact count that had been assigned and never displayed. Pricing the slot
+  hosted agents per tenant; teammate contacts were removed before this release. Pricing the slot
   is still open, deliberately: the ceiling should run for a cycle before
   anyone picks a number.
 
@@ -469,6 +495,66 @@ upgrade, is in
   registration. Its CI compiles all three with warnings as errors and runs
   the Fake sandbox turn.
 
+- **First-party extensions own their HTTP APIs, conversation MCP tools,
+  migrations, OpenAPI paths and manual pages** (ADR 0043; #1515, #1517,
+  #1523, #1535, #1548). `apps/fountain_buzz` owns hosted Buzz agents and their
+  native executables; `apps/fountain_support` owns problem reports. The
+  standard release bundles all five extensions, including the later Google,
+  Microsoft and Slack providers. Releases publish both `vX.Y.Z`/`vX.Y` and
+  `vX.Y.Z-core`/`vX.Y-core` at `ghcr.io/managoat/fountain`. Build from source
+  with `BUNDLE_EXTENSIONS=false MIX_ENV=prod mix release fountain_server` for
+  core (#1541, #1545).
+
+- Release downloads include `buzz-backend-fountain` for macOS and Linux on
+  amd64 and arm64, beside the Fountain CLI. Buzz Desktop discovers this
+  remote-agents provider on `PATH` (#1546).
+
+- `GET /api/sandboxes/:id/git-status` reports repository status, including
+  staged, unstaged and untracked paths, without reading diff contents. It is
+  scoped, confined and redacted like other sandbox file reads (#1596).
+
+- Owners can inspect, renew and recover claimed principals' API credentials
+  through the console; `/api/claimable-users` also supports owner inspection
+  and claim replay (#1949, #1950, #1951, #1952, #1953, #2068).
+  Claimed keys expire after 30 days; anonymous keys retain their grant deadline.
+  Renewal and claim replay replace credentials atomically and recheck the
+  current owner's eligibility (#1930, #2126).
+
+- The admin console exposes native broker sessions, retained egress requests
+  and connection outcomes at `/admin/broker`, platform inference credentials
+  at `/admin/inference`, and running Buzz harnesses on the user detail page
+  (#1490, #1497, #1519, #1728, #1730). The finance dashboard includes ledger
+  and worker health metrics (#1521).
+
+- Codex can use the platform's ChatGPT account or a user-owned ChatGPT grant
+  (#1755, #2010). Grant refresh is coordinated across nodes and fenced against
+  replacement or disconnect. Bounded workers renew active grants and keep
+  eligible idle user grants alive (#2011, #2012, #2013, #2014, #2015). Managed Codex launches compile
+  protected broker rules and reserve credential destinations against tenant
+  overrides (#2017).
+
+- Turn usage preserves the adapter's accounting source, version, scope and
+  completeness through the API (#1735). Metadata-only reports do not invent
+  token counts; missing counts are not zero.
+
+- Swift's `FountainKit` adds a typed client beside `Fountain`, with Codable
+  resources, typed SSE, turn following and shared conformance coverage (#1457).
+
+- `Fountain.Extension.connection_providers/0` (ADR 0054, #2152): an extension
+  contributes config-backed connection providers, listed after the host's own
+  platform providers, with their slugs reserved and the one OAuth client driving
+  them. Boot validation refuses a malformed or colliding provider.
+
+- A dead-code report (#2163). `scripts/dead-code.sh` runs `mix_unused` over the
+  server (a compiler tracer `apps/fountain/mix.exs` enables only under
+  `MIX_UNUSED=1`) and `deadcode` over the two Go modules, and
+  `.github/workflows/dead-code.yml` publishes both on the first of the month.
+  Advisory only; CONTRIBUTING.md says how to read the Elixir half, which
+  cannot see dynamic dispatch, extension callers or tests.
+  Each Elixir report clears the server's dev build artifacts so cached calls
+  from deleted modules cannot hide newly unused functions; dependency builds
+  and other environments stay cached.
+
 ### Changed
 
 - The marketing templates, their data module, the paper skin and the app
@@ -480,8 +566,9 @@ upgrade, is in
 - Five housekeeping tunables are fixed at their defaults and no longer read
   from the environment: `BROKER_SESSION_TTL_SECONDS` (six hours),
   `LOG_OUTPUT_BUDGET_MB` (50), `UNVERIFIED_PRUNE_AFTER_DAYS` (30),
-  `SECRET_EXPIRY_NOTICE_DAYS` (7) and `AGENTPHONE_BASE_URL`. A value set for
-  one is ignored.
+  `SECRET_EXPIRY_NOTICE_DAYS` (7) and `AGENTPHONE_BASE_URL` (retired with Team
+  comms). A value set for one is ignored. `PHOENIX_REQUEST_LOG` is also removed; Phoenix already
+  stopped producing those request lines (#2142).
 
 - Sandbox application code now uses `machine_name` across providers (#2108).
   Existing database columns, API fields, event metadata and provider names retain
@@ -577,9 +664,11 @@ upgrade, is in
   and `starting` answer `409 sandbox_not_resettable`, because a machine still
   under construction has no disk to replace. A reset that the provider does
   not confirm records `sandbox.reset_requested`; `sandbox.reset` now means the
-  delete succeeded. To clear an unconfirmed reset, reap the sandbox from the
-  admin sandbox list. That retires the row and releases the slot; the machine
-  at the provider is then the operator's to check.
+  delete succeeded. A worker retries pending deletion. An administrator can
+  confirm a retry in the admin recovery flow, which re-probes the provider and repeats deletion. Capacity
+  remains reserved until the provider confirms the machine is gone. An ordinary
+  reap cannot clear a pending reset
+  (#1947, #1948, #2136).
 
 - `POST /api/conversations` refuses an opening prompt it cannot use, before it
   reserves a sandbox or creates the conversation. Whitespace-only text and a
@@ -608,22 +697,6 @@ upgrade, is in
 - The API manual is a workflow guide linking to the generated reference at `/api/docs`; existing section anchors remain available.
 - Portable Prometheus rules cover stage and reattach failures, per-provider turn failure rates, and slow first output. Thresholds have executable alert fixtures.
 
-- Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
-
-- **Credential brokerage is on for every account on the hosted platform**
-  (ADR 0019 §9, home-cloud#163). It was limited access, enrolled by hand, and
-  named one tenant from 2026-08-25. The docs said so on six pages; they now
-  say what is true. `BROKER_TENANTS` is `*` there, the wildcard #1553 added.
-  Nothing changes for a self-hosted instance, where the broker stays off
-  until an operator sets `BROKER_LISTEN_PORT` and names tenants.
-
-  The reason to widen was the inference credential rather than tenant
-  secrets. Gate 3 covers every conversation, so the platform's own keys stop
-  entering a sandbox in the clear for everyone at once; at the time of the
-  flip every brokerable tenant secret in the deployment belonged to one
-  account and `secret_bindings` was empty. `Feature status` now lists two
-  features rather than three.
-
 - **`mix precommit` now assembles the production release** (#1477). It was the
   documented pre-push gate and it could not see a whole class of breakage:
   anything that exists only in `MIX_ENV=prod`. `apps/fountain` scopes the
@@ -651,6 +724,87 @@ upgrade, is in
   the reattach orchestration, the callbacks, and the terminal paths that end a
   turn. No stage, log line, telemetry event, timer or audit event changed. The
   pin drops from 3,048 to 2,835, and the tracker closes.
+
+- **The Gmail MCP server is the `fountain_google` extension** (ADR 0043,
+  #2152, #1529). `POST /api/mcp/gmail/:conversation_id/:connection_id`, its
+  seven tools and the `fountain-gmail` manual page are unchanged on the
+  standard distribution, served by `apps/fountain_google` through the
+  extension seam rather than by core. A core distribution
+  (`BUNDLE_EXTENSIONS=false`) serves none of them. Core no longer rewrites a
+  connection-only `mcp_servers` entry (`{"gmail": {"connection": "<id>"}}`)
+  into that server: the entry is now an extension's to serve at each turn, so
+  it reaches every runtime through `session/new` and is never written to a
+  sandbox's `.mcp.json`. An entry with a URL beside the connection is still
+  core's remote-server shape. The test-only `:gmail_req_options` key moved to
+  `config :fountain_google, :req_options`. The published OpenAPI document is
+  byte-identical: the route was never an operation.
+
+- **The Google connection provider ships in the `fountain_google` extension**,
+  beside the Gmail MCP server (ADR 0054, #2152). The bundled image carries it
+  exactly as before: the `google` slug, endpoints, scopes, offline-consent
+  parameters, env key and the `google (connection)` manual page are unchanged,
+  and `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` / `_SCOPES` still configure it, read
+  by the extension now under `config :fountain_google`. Core builds no platform
+  provider of its own any more: a core distribution (`BUNDLE_EXTENSIONS=false`)
+  lists none, those variables are inert on it, and an existing Google
+  connection there stays revocable and deletable while contributing no token.
+
+- **The Slack connection provider ships as the `fountain_slack` extension**
+  (ADR 0054, #2152). The bundled image carries it exactly as before: the
+  `slack` slug, endpoints, user scopes, `user_scope` request, `authed_user`
+  token shape, env key and the `slack (connection)` manual page are unchanged,
+  and `SLACK_OAUTH_CLIENT_ID` / `_SECRET` / `SLACK_OAUTH_USER_SCOPES` still
+  configure it, read by the extension now under `config :fountain_slack`. A
+  core distribution (`BUNDLE_EXTENSIONS=false`) no longer lists a Slack row,
+  those variables are inert on it, and an existing Slack connection there
+  stays revocable and deletable while contributing no token.
+
+- The two service-specific quirks the OAuth client used to ask
+  `Fountain.Connections.Platform` about (Google's offline authorize
+  parameters, Slack's `user_scope` and `authed_user`-nested token body) are
+  fields on `Fountain.Connections.Provider` now (`authorize_params`,
+  `token_body_nest`), so the client names no service (#2152).
+
+- The OAuth 2.0 authorization-code client behind Connections lives in the
+  `managoat_mcp_auth` library as `Managoat.McpAuth.Client` (0.2.0), so the
+  library is the whole client side of MCP authorization.
+  `Fountain.Connections.OAuth` is the adapter that maps a
+  `Fountain.Connections.Provider` onto the library's config; no wire or
+  behaviour change (#2152).
+
+- **The Microsoft connection provider ships as the `fountain_microsoft`
+  extension** (ADR 0054, #2152). The bundled image carries it exactly as
+  before: the `microsoft` slug, endpoints, scopes, env key and the
+  `microsoft (connection)` manual page are unchanged, and `MICROSOFT_OAUTH_CLIENT_ID`
+  / `_SECRET` / `_SCOPES` still configure it — read by the extension now, under
+  `config :fountain_microsoft`. A core distribution (`BUNDLE_EXTENSIONS=false`)
+  no longer lists a Microsoft row, and those variables are inert on it.
+
+- Fourteen public functions with no caller left the server (#2162), found by a
+  `mix_unused` sweep cross-checked against every test tree: the console
+  queries the retired browser pages used (`list_conversations_by_activity/1`,
+  `_unsafe_list_active_conversations/0`, `Team.list_addable_agents/1`,
+  `Accounts.update_preferences/2`), four `_unsafe_` accessors nothing
+  outside their own tests read, `Apps.new_conversation_url/0` and
+  `Apps.team_url/1`, and the inference helpers `InferenceCredentials.has_own?/3`
+  and `PlatformInference.serves?/3` that `resolve/4` superseded. The three
+  conversation preference columns on `users` stay for now; nothing writes them.
+
+- Conversation titles now come from the harness's ACP session metadata. Fountain no longer makes a separate inference request to generate titles. Explicit conversation names and teammate names stay unchanged (#2166).
+
+- **Changelog entries are now fragment files under `changelog.d/`**, one per
+  pull request, and `CHANGELOG.md` is written once per release by the
+  release-bump workflow (#2158). A PR that edits `CHANGELOG.md` directly fails
+  CI. Every PR used to insert a line at the top of the same `[Unreleased]`
+  subsection, which was the most common merge conflict on `main`.
+
+- Standardize repository label families and colors, update contributor and automation references, and synchronize the approved definitions from main. Existing label assignments are preserved.
+
+### Removed
+
+- Removed AI avatar generation from the agent form and `POST /api/avatars/generate`,
+  along with the catalog's avatar bases and moods. Avatar uploads and existing
+  avatars remain available.
 
 ### Fixed
 
@@ -828,13 +982,6 @@ upgrade, is in
   now held to catalog membership, which also catches a *retired* id — the way
   `gpt-5-codex` went stale on 2026-08-22 — and not only a refused one.
 
-- `claude-fable-5-1` is no longer suggested for anthropic, so `GET
-  /api/catalog` no longer lists it. It was added on 2026-09-06 from Anthropic's
-  published model id, and the pinned `claude-agent-acp` refuses it at
-  `session/set_model`. No saved agent used it. `claude-fable-5` is refused the
-  same way and was never suggested; both are recorded so neither can be
-  relisted from a provider check alone.
-
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
 - A scoped fetch reads a malformed id as nil rather than raising out of the query, so a path segment or header that is not an id answers 404 where it used to answer 500 with a dropped connection. An id field that a caller fills with something other than a uuid is refused by the changeset, naming the field and the value. A vault name in an agent's `allowed_vault_ids` through `POST /api/apply`, where the document spec is free-form, reached the database layer and answered with a 500 and a dropped connection. A parent conversation header that is not an id is now the same 404 an unknown parent already gets.
@@ -883,26 +1030,6 @@ upgrade, is in
   The wake-on-miss decision moved to `Conversations.wake_for_interrupt/1`,
   taking the server's pin from 2,835 down to 2,815.
 
-- **A dropped metering event was a free message** (#1143). Comms messages were
-  priced from `usage_events`, whose writer `Billing.record_usage/5` rescues and
-  logs rather than failing the action that produced it — the right contract for
-  a count on a dashboard, and the wrong one for a row the ledger keys on. A
-  `comms_*` event that failed to write was a message the customer was never
-  charged for, and nothing reconciled it afterwards, because the pricer's
-  seven-day look-back only re-reads rows that exist. Messages now have a
-  durable row of their own, `comms_messages`, written on the send and receive
-  paths through `Team.Comms.record_message/1`, which does **not** rescue: a
-  failure is logged as an unbilled message rather than silently discarded. The
-  row is keyed on the provider's own message id, so a send retried after a
-  timeout that in fact reached the provider bills once, and so a reconciliation
-  against a provider invoice has something to join on. `CreditPricer` and the
-  `/admin/finance` cost side both read it — leaving one of them on
-  `usage_events` would have put a discrepancy inside the view built to find
-  discrepancies. `usage_events` keeps the `comms_*` types for the PostHog
-  product mirror and no longer prices anything; its docs say so. **Messages
-  whose event was dropped before this are not charged retroactively**: there is
-  no record of them to price.
-
 - **Platform inference on the gemini runtime was unbilled** (#1459). gemini
   leaves ACP's `PromptResponse.usage` empty and reports the turn's tokens
   under a vendor extension at `_meta.quota.token_count`, so
@@ -929,6 +1056,58 @@ upgrade, is in
   since the runtime was written; the platform keys (#1388) only made it easy to
   hit. Fixed in managoat_runtimes 0.1.1, taken here as a lockfile bump. Nothing
   to change on an agent: the same model and the same credential now work.
+
+- Accepted ACP turns survive server and self-hosted runner reconnects without
+  resending the prompt (#1650). Recovery identifies the owning session on a
+  shared sandbox, discards foreign updates and cancels foreign permission
+  requests (#1662). A genuinely missing session retries the current prompt
+  once on a fresh session (#1913), superseding #1657's fail-and-wait behavior.
+
+- Sandbox reset and teardown commit admission fences before deleting a
+  machine. Stale provisioning, wake, reattach, completion and interruption
+  callbacks cannot revive retired machines or overwrite newer turns
+  (#1761, #1768, #1943, #1948, #1969, #1983, #1996, #2007, #2125, #2129, #2133,
+  #2137). Background recovery retries unconfirmed resets; an administrator
+  can confirm a retry that re-probes the provider and repeats deletion (#2136).
+
+- Broker setup fails if its CA cannot be installed; readiness fails while
+  the configured listener is down. Provider-labelled CA installation metrics
+  and alerts expose failures (#1918, #1956, #1957, #1958). Brokered Git clones also
+  work without waiting for a proxy authentication challenge (#1492).
+
+- The sandbox reaper treats turn progress and wake activity as use, preventing
+  suspension during active work (#1762). Failed channel rotation keeps the
+  existing binding, and tenant foreign-key waits no longer hold the fleet's
+  reservation lock (#1791, #1793).
+
+- Account event IDs are serialized through commit so reconnect cursors cannot
+  skip an event that commits late (#1963). Conversation lists avoid scanning
+  the entire event table, and API-key quotas are separate from shared-ingress
+  abuse limits (#1722, #1942).
+
+- A sandbox lifecycle race returns retryable `503 sandbox_unavailable`
+  with `Retry-After: 30`; SDKs classify it as sandbox-not-ready (#2074). Git
+  roots are returned in the sandbox namespace (#1967).
+
+- Agent snapshots use persisted fields after stale edits and preserve removed
+  source references. Disabled fixture agents remain editable, and deletion
+  tolerates a home removed concurrently (#1959, #2121, #2128, #2140).
+
+- `fountain apply` preserves literal variable values (#1926). Hermes displays
+  field validation errors (#2070), and Python, Swift and Elixir forward
+  `sandbox_api_access` when creating a conversation (#2131). Swift cancels or
+  times out a run before its final status fetch (#2093).
+
+- Connections remain locally revocable and removable when their extension is
+  unavailable; its tokens are omitted from new sandbox credentials. Config-backed
+  MCP providers reject tenant-only rediscovery requests (#2155).
+
+- Gmail tools reject tenant-defined providers named `google` after the Google
+  extension is installed, keeping their credentials out of Gmail requests (#2170).
+- Tenant-defined Google providers keep remote-server setup instructions after
+  extension installation, and their accounts can coexist with platform Google
+  accounts using the same label. Reconnecting updates only that provider's grant
+  (#2170).
 
 ### Security
 
@@ -1001,11 +1180,40 @@ upgrade, is in
   what `truncated` reports is under **Changed** above. Present since `/file`
   and `max_bytes` shipped with ADR 0039, and published in SDK 1.15.0.
 
+- Sandbox file endpoints resolve symlink targets against physical allowed
+  roots, preventing traversal through a symlink inside an otherwise permitted
+  directory (#2139). Directory names and paths are secret-redacted (#2086).
+
+- Native broker egress records omit URL query strings and redact paths before
+  logging or storage (#1527, #2132).
+
+- Live sandbox rows cannot share a provider machine name (#2141). The
+  migration refuses existing collisions so an operator can resolve them
+  without silently attaching two accounts to one machine.
+
+- Mint 1.10.0 closes two denial-of-service advisories in the server and
+  Elixir SDK dependency trees (#1588, #1589).
+
+- Device login (`fountain auth login --device`) is harder to guess at
+  (#1713). The eight-letter user code now comes from a cryptographically
+  strong random source, without modulo bias (managoat_oauth 0.1.2), and
+  the `/device` page limits code lookups to 20 a minute per client
+  address, across accounts, sessions and LiveView reconnects (#2138).
+
 ## [0.16.0] - 2026-09-03
 
 ### Upgrade notes
 
-- None.
+- **Log events without a state or stage return null rather than an empty
+  string** (#1445). Update readers that call string methods on either field.
+  This affects event history and SSE; TypeScript SDK 1.19.0 makes `stage`
+  nullable. This entry was backfilled during the v0.17.0 audit (#1695).
+
+- **Schema-validation failures use the same field-error object as changeset
+  failures** (#1448): `{"error":"validation_failed","errors":{"field":["message"]}}`.
+  Clients that parsed an array of JSON-pointer errors must read the field map.
+  Other coded 422 refusals retain their own error bodies. This entry was
+  backfilled during the v0.17.0 audit (#1695).
 
 ### Removed
 
