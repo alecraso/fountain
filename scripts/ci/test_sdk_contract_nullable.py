@@ -71,6 +71,20 @@ SHAPES = [
      {"nullable": True, "oneOf": [{"allOf": [REF]}, NULL_BRANCH]}, True),
     ("anyOf with an explicit null branch", PLAIN_THING,
      {"nullable": True, "anyOf": [{"allOf": [REF]}, NULL_BRANCH]}, True),
+    # `oneOf` wants exactly one match. Two branches that both take null make
+    # null match twice, and the schema rejects it although each branch says it
+    # does not; `anyOf` is satisfied by the same pair.
+    ("oneOf, two branches both nullable", PLAIN_THING,
+     {"nullable": True, "oneOf": [{"type": "object", "nullable": True},
+                                  {"type": "string", "nullable": True}]}, False),
+    ("anyOf, two branches both nullable", PLAIN_THING,
+     {"nullable": True, "anyOf": [{"type": "object", "nullable": True},
+                                  {"type": "string", "nullable": True}]}, True),
+    ("oneOf, one of two branches nullable", PLAIN_THING,
+     {"nullable": True, "oneOf": [{"type": "object", "nullable": True},
+                                  {"type": "string"}]}, True),
+    ("oneOf over a nullable $ref and a null branch", NULLABLE_THING,
+     {"nullable": True, "oneOf": [REF, NULL_BRANCH]}, False),
     ("plain nullable object", PLAIN_THING, {"type": "object", "nullable": True}, True),
     ("nullable string", PLAIN_THING, {"type": "string", "nullable": True}, True),
 ]

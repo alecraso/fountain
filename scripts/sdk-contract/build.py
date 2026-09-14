@@ -397,8 +397,13 @@ def accepts_null(spec: Dict[str, Any], node: Any, depth: int = 0) -> bool:
 
       * `allOf` — every branch must accept null, because the instance has to
         satisfy all of them.
-      * `anyOf`/`oneOf` — at least one branch must, because the instance has to
+      * `anyOf` — at least one branch must, because the instance has to
         satisfy one.
+      * `oneOf` — exactly one branch must. Two branches that both take null
+        (`[{type: object, nullable}, {type: string, nullable}]`) make null
+        match twice, and `oneOf` refuses an instance that matches more than
+        one branch, so a schema like that rejects null even though every
+        branch says it does not.
 
     The trap this exists for (#1899): a wrapper written as
     `{"nullable": true, "allOf": [{"$ref": ...}]}` reads as nullable and is not.
@@ -415,11 +420,15 @@ def accepts_null(spec: Dict[str, Any], node: Any, depth: int = 0) -> bool:
     if not isinstance(node, dict) or depth > 20:
         return False
 
-    for keyword, needs_all in (("allOf", True), ("anyOf", False), ("oneOf", False)):
+    for keyword, admits in (
+        ("allOf", lambda results: all(results)),
+        ("anyOf", lambda results: any(results)),
+        ("oneOf", lambda results: sum(results) == 1),
+    ):
         branches = node.get(keyword)
         if isinstance(branches, list) and branches:
             results = [accepts_null(spec, branch, depth + 1) for branch in branches]
-            if (all(results) if needs_all else any(results)) is False:
+            if not admits(results):
                 return False
             # A composition that admits null still has to get past this node's
             # own constraints, which is the `type`/`enum` pair below.
