@@ -4105,6 +4105,9 @@ defmodule Fountain.Conversations do
       |> Enum.reduce_while(0, fn home, count ->
         case _unsafe_destroy_home(home, Keyword.put_new(opts, :reason, "agent_deleted")) do
           :ok -> {:cont, count + 1}
+          # A home deleted since the query above is already gone. Keep this
+          # idempotence specific to agent deletion; other fence errors still stop it.
+          {:error, :not_found} -> {:cont, count}
           {:error, _} = error -> {:halt, error}
         end
       end)
