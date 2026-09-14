@@ -8,23 +8,28 @@ defmodule Fountain.ConfigReferenceTest do
 
   @repo_root Path.expand("../../../..", __DIR__)
 
-  test "every env var read in config/runtime.exs is documented in docs/configuration.md" do
-    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+  test "every env var the app reads is documented in docs/configuration.md" do
+    runtime = File.read!(Path.join(@repo_root, "config/runtime.exs"))
     doc = File.read!(Path.join(@repo_root, "docs/configuration.md"))
 
-    # Two extraction passes: direct System.get_env/fetch_env calls, plus any
-    # quoted UNDERSCORED_ALL_CAPS literal — the latter catches vars passed
-    # through helpers like parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", ...),
-    # which the direct pattern misses.
+    # Two extraction passes. Direct System.get_env/fetch_env calls are scanned
+    # across every config file and the lib tree, because a read outside
+    # runtime.exs is still a switch an operator can set: PHOENIX_REQUEST_LOG
+    # sat in config/prod.exs for six weeks, undocumented and — since prod.exs
+    # is evaluated at build time — wired to nothing (deleted). The second pass, any
+    # quoted UNDERSCORED_ALL_CAPS literal, catches vars passed through helpers
+    # like parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", ...), which the direct
+    # pattern misses; it runs over runtime.exs only, where every such literal
+    # is an env var name, which is not true of the lib tree.
     direct =
       Regex.scan(
         ~r/System\.(?:get_env|fetch_env!?)\(\s*"([A-Z][A-Z0-9_]*)"/,
-        source,
+        env_source(),
         capture: :all_but_first
       )
 
     underscored_literals =
-      Regex.scan(~r/"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)"/, source, capture: :all_but_first)
+      Regex.scan(~r/"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)"/, runtime, capture: :all_but_first)
 
     vars =
       (direct ++ underscored_literals)
@@ -36,7 +41,7 @@ defmodule Fountain.ConfigReferenceTest do
     # rot), this guard fails loudly instead of the main assertion passing
     # vacuously over an empty list.
     assert length(vars) > 30,
-           "extracted only #{length(vars)} env vars from config/runtime.exs — " <>
+           "extracted only #{length(vars)} env vars from the config files — " <>
              "the extraction patterns no longer match how the file reads env vars"
 
     undocumented =
@@ -46,7 +51,7 @@ defmodule Fountain.ConfigReferenceTest do
 
     assert undocumented == [],
            """
-           config/runtime.exs reads env vars that docs/configuration.md does not document:
+           The app reads env vars that docs/configuration.md does not document:
 
              #{Enum.join(undocumented, ", ")}
 
@@ -65,18 +70,16 @@ defmodule Fountain.ConfigReferenceTest do
   # the app never reads — an operator following either would set a knob wired
   # to nothing.
 
-  # Documented variables legitimately read outside config/runtime.exs.
-  # Each entry needs a reason; an entry without a real reader is exactly the
-  # rot this test exists to catch.
+  # Documented variables legitimately read by something other than this
+  # code base. Each entry needs a reason; an entry without a real reader is
+  # exactly the rot this test exists to catch.
   @read_elsewhere %{
     # The OTel SDK reads its own standard variables directly.
-    "OTEL_TRACES_EXPORTER" => "read by the OTel Erlang SDK",
-    # Set by release tooling; read in Fountain.Application.skip_migrations?/0.
-    "RELEASE_NAME" => "release tooling + Fountain.Application"
+    "OTEL_TRACES_EXPORTER" => "read by the OTel Erlang SDK"
   }
 
   test "every variable documented in configuration.md is actually read by code" do
-    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    source = env_source()
     doc = File.read!(Path.join(@repo_root, "docs/configuration.md"))
 
     documented =
@@ -95,12 +98,13 @@ defmodule Fountain.ConfigReferenceTest do
 
     assert dead == [],
            """
-           docs/configuration.md documents variables that config/runtime.exs never reads:
+           docs/configuration.md documents variables that the app never reads:
 
              #{Enum.join(dead, ", ")}
 
-           Delete the row, or — only when a real reader exists outside
-           runtime.exs — add the var to @read_elsewhere with the reader.
+           Delete the row, or — only when a real reader exists outside the
+           config files and the lib tree — add the var to @read_elsewhere
+           with the reader.
            """
   end
 
@@ -109,7 +113,7 @@ defmodule Fountain.ConfigReferenceTest do
   @compose_only ~w()
 
   test "every env var the compose app service sets is one the app reads" do
-    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    source = env_source()
     compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
 
     # The environment mapping of the `app:` service: keys at 6-space indent
@@ -262,7 +266,7 @@ defmodule Fountain.ConfigReferenceTest do
     # render.yaml is the second self-host deploy surface, and it drifts the
     # same way compose did: a key set here that the app never reads is a knob
     # wired to nothing, and an operator has no way to tell from the outside.
-    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    source = env_source()
     blueprint = File.read!(Path.join(@repo_root, "render.yaml"))
 
     keys =
@@ -337,7 +341,7 @@ defmodule Fountain.ConfigReferenceTest do
     # Third self-host deploy surface, same rot as the first two: a key set
     # here that the app never reads is a knob wired to nothing, and an
     # operator has no way to tell from the outside.
-    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    source = env_source()
     fly = File.read!(Path.join(@repo_root, "fly.toml"))
 
     keys =
@@ -428,6 +432,19 @@ defmodule Fountain.ConfigReferenceTest do
            config/runtime.exs out of reach. Leave it to the fallback, and set
            it with `fly secrets set` when you add a custom domain.
            """
+  end
+
+  # Everything that can read an environment variable at boot: the four config
+  # files and the lib tree of every app, ee/ included. Test support and the
+  # suites are left out; a read there is a fixture, not a switch.
+  defp env_source do
+    config = Path.wildcard(Path.join(@repo_root, "config/*.exs"))
+    apps = Path.wildcard(Path.join(@repo_root, "apps/*/lib/**/*.ex"))
+    ee = Path.wildcard(Path.join(@repo_root, "ee/lib/**/*.ex"))
+
+    (config ++ apps ++ ee)
+    |> Enum.sort()
+    |> Enum.map_join("\n", &File.read!/1)
   end
 
   # The [env] table of fly.toml: everything between the `[env]` header and the
