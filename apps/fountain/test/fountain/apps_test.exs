@@ -56,9 +56,6 @@ defmodule Fountain.AppsTest do
     assert Apps.conversations() == nil
     assert Apps.team() == nil
     assert Apps.conversation_url("c1") == nil
-    assert Apps.new_conversation_url() == nil
-    assert Apps.team_url() == nil
-    assert Apps.team_url("a1") == nil
   end
 
   test "deep links follow the apps' own hash routes" do
@@ -67,8 +64,5 @@ defmodule Fountain.AppsTest do
 
     assert Apps.conversation_url("abc") == "https://x.test/c/#/c/abc"
     assert Apps.conversation_url("abc", logs: true) == "https://x.test/c/#/c/abc/logs"
-    assert Apps.new_conversation_url() == "https://x.test/c/#/new"
-    assert Apps.team_url() == "https://x.test/t/"
-    assert Apps.team_url("agent-1") == "https://x.test/t/#/team/agent-1"
   end
 end

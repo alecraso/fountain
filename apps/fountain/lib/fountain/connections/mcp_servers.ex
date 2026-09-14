@@ -32,10 +32,6 @@ defmodule Fountain.Connections.McpServers do
 
   alias Fountain.Broker
 
-  @doc "True for an `mcp_servers` entry that names a connection, of either shape."
-  def connection_entry?(%{"connection" => id}) when is_binary(id), do: true
-  def connection_entry?(_), do: false
-
   @doc "True for the remote-server shape: a URL of the tenant's plus a connection."
   def remote_entry?(%{"connection" => id, "url" => url}) when is_binary(id) and is_binary(url),
     do: true

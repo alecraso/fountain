@@ -812,22 +812,6 @@ defmodule Fountain.ConversationsStartTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # _unsafe_list_active_conversations/0 — ordering
-  # ────────────────────────────────────────────────────────────────────────────
-
-  describe "_unsafe_list_active_conversations/0 ordering" do
-    test "running conversations appear before idle conversations" do
-      user = insert_active_user()
-      idle = insert_conversation(user_id: user.id, status: "idle")
-      running = insert_conversation(user_id: user.id, status: "running")
-
-      results = Conversations._unsafe_list_active_conversations()
-      active_ids = results |> Enum.map(& &1.id) |> Enum.filter(&(&1 in [idle.id, running.id]))
-      assert hd(active_ids) == running.id
-    end
-  end
-
-  # ────────────────────────────────────────────────────────────────────────────
   # _unsafe_list_turns/1 — image preloads
   # ────────────────────────────────────────────────────────────────────────────
 

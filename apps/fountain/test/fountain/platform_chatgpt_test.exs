@@ -478,18 +478,10 @@ defmodule Fountain.PlatformChatGPTTest do
 
     test "the ceiling gate counts the grant as platform-served" do
       user = insert_verified_user()
-      refute PlatformInference.serves?("openai", "codex", true)
       assert :ok = PlatformInference.gate(user.id, "openai/gpt-5.5-codex", "codex")
 
       connect!()
-      assert PlatformInference.serves?("openai", "codex", true)
-      # The same question select/4 asks: unbrokered, the grant is never
-      # handed out, so the gate must not refuse for it either.
-      refute PlatformInference.serves?("openai", "codex", false)
-      refute PlatformInference.serves?("openai", "opencode", true)
-      refute PlatformInference.serves?("anthropic", "codex", true)
-      # With credits off the ceiling never trips, so the gate is :ok — the
-      # point is that the branch runs, which `serves?/2` pins.
+      # With credits off the ceiling never trips, so the gate is :ok.
       assert :ok = PlatformInference.gate(user.id, "openai/gpt-5.5-codex", "codex")
     end
   end

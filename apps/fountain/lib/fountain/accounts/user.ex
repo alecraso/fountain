@@ -7,8 +7,6 @@ defmodule Fountain.Accounts.User do
 
   @roles ~w(user admin)
   @theme_values ~w(light dark system)
-  @visible_stream_values ~w(stdout stderr stage)
-  @view_mode_values ~w(chat pretty raw)
 
   @type t :: %__MODULE__{}
   schema "users" do
@@ -147,18 +145,6 @@ defmodule Fountain.Accounts.User do
     user
     |> cast(attrs, [:theme_preference])
     |> validate_inclusion(:theme_preference, @theme_values)
-  end
-
-  @doc "Changeset for updating conversation filter preferences."
-  def preferences_changeset(user, attrs) do
-    user
-    |> cast(attrs, [
-      :conversations_roots_only,
-      :conversation_visible_streams,
-      :conversation_view_mode
-    ])
-    |> validate_subset(:conversation_visible_streams, @visible_stream_values)
-    |> validate_inclusion(:conversation_view_mode, @view_mode_values)
   end
 
   @doc "Changeset for resetting a password (validates + hashes new password)."

@@ -485,82 +485,6 @@ defmodule Fountain.Conversations do
   # ── conversations ─────────────────────────────────────────────────────────────────────
 
   @doc """
-  Conversations the operator might still want to interact with: anything
-  not in a terminal state. Ordered with active sessions on top
-  (`running` > `idle`) and most-recent first within a status bucket.
-  Used for the left-nav "active conversations" list.
-  """
-  def _unsafe_list_active_conversations do
-    Repo.all(
-      from c in Conversation,
-        where: c.status not in ["terminated", "failed"],
-        order_by: [
-          asc:
-            fragment(
-              "CASE ? WHEN 'running' THEN 0 WHEN 'idle' THEN 1 ELSE 2 END",
-              c.status
-            ),
-          desc: c.inserted_at,
-          desc: c.id
-        ],
-        preload: [:agent, turns: ^first_turn_query()]
-    )
-  end
-
-  @doc """
-  List conversations for `user_id`, ordered by most recently active.
-
-  Populates the `turn_count` virtual field on each conversation by LEFT
-  JOINing a subquery that counts turns per conversation. This avoids an
-  N+1 and keeps the result a plain list of `%Conversation{}` structs.
-
-  Only `kind: "output"` log events count toward `last_active_at` —
-  `kind: "stage"` events (reattach, sandbox lifecycle) are excluded so
-  that reconnects don't artificially bump a conversation to the top.
-  """
-  def list_conversations_by_activity(user_id) when is_binary(user_id) do
-    # Lateral per conversation for the same reason as `annotated_query/1`:
-    # the grouped shape read every turn and every output log event in the
-    # deployment to rank one tenant's list.
-    Repo.all(
-      from c in Conversation,
-        as: :conv,
-        where: c.user_id == ^user_id and c.status != "terminated",
-        left_lateral_join: tc in subquery(turn_count_of_conv()),
-        on: true,
-        left_lateral_join: lt in subquery(last_turn_at_of_conv()),
-        on: true,
-        left_lateral_join: ll in subquery(last_output_at_of_conv()),
-        on: true,
-        order_by: [
-          desc:
-            fragment(
-              "GREATEST(COALESCE(? AT TIME ZONE 'UTC', ? AT TIME ZONE 'UTC'), COALESCE(? AT TIME ZONE 'UTC', ? AT TIME ZONE 'UTC'), ? AT TIME ZONE 'UTC')",
-              ll.last_at,
-              c.inserted_at,
-              lt.last_at,
-              c.inserted_at,
-              c.inserted_at
-            )
-        ],
-        select: %{
-          c
-          | turn_count: fragment("COALESCE(?, 0)", tc.count),
-            last_active_at:
-              fragment(
-                "GREATEST(COALESCE(? AT TIME ZONE 'UTC', ? AT TIME ZONE 'UTC'), COALESCE(? AT TIME ZONE 'UTC', ? AT TIME ZONE 'UTC'), ? AT TIME ZONE 'UTC')",
-                ll.last_at,
-                c.inserted_at,
-                lt.last_at,
-                c.inserted_at,
-                c.inserted_at
-              )
-        }
-    )
-    |> Repo.preload([:agent, :agent_version, turns: first_turn_query()])
-  end
-
-  @doc """
   Returns all conversations in the same spawn tree as `conversation_id`,
   scoped to `user_id`.
 
@@ -981,12 +905,6 @@ defmodule Fountain.Conversations do
     from t in Turn,
       where: t.conversation_id == parent_as(:conv).id,
       select: %{count: count(t.id)}
-  end
-
-  defp last_turn_at_of_conv do
-    from t in Turn,
-      where: t.conversation_id == parent_as(:conv).id,
-      select: %{last_at: max(t.inserted_at)}
   end
 
   defp last_output_at_of_conv do
@@ -5447,33 +5365,6 @@ defmodule Fountain.Conversations do
         })
 
         :ok
-    end
-  end
-
-  @doc """
-  Dispatch an already-authorized prompt, checking current execution policy first.
-
-  The authoritative check is inside `_unsafe_create_turn_on_sandbox/3`, under
-  its row locks. This is a preflight, and it exists so the API door renders a
-  refusal rather than accepting a prompt that then fails as a stage event —
-  a live server would otherwise bypass the check entirely on its way to
-  `handle_call(:send_prompt, ...)`.
-  """
-  def _unsafe_dispatch_prompt(conversation_id, prompt, send_to_server) do
-    with %Conversation{} = conv <-
-           _unsafe_get_conversation(conversation_id) || {:error, :not_running},
-         :ok <- _unsafe_execution_limits_gate(conv) do
-      case ConversationServer.whereis(conversation_id) do
-        nil ->
-          case wake_conversation(conversation_id, prompt) do
-            {:ok, _conv} -> :ok
-            {:error, :not_found} -> {:error, :not_running}
-            {:error, _} = error -> error
-          end
-
-        pid ->
-          send_to_server.(pid)
-      end
     end
   end
 

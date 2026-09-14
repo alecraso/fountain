@@ -946,20 +946,6 @@ defmodule Fountain.TeamTest do
     end
   end
 
-  describe "list_addable_agents/1" do
-    test "the user's agents not yet on the team" do
-      # No starter agent (ADR 0038): the subject is which of the two agents
-      # below is addable, not how many agents the account happens to own.
-      user = insert_user_without_agents()
-      ada = insert_agent(user_id: user.id, name: "Ada")
-      linus = insert_agent(user_id: user.id, name: "Linus")
-      insert_teammate_conv(user, ada)
-
-      assert [%{id: id}] = Team.list_addable_agents(user.id)
-      assert id == linus.id
-    end
-  end
-
   test "channel-bound conversations still list in the ordinary history" do
     user = insert_verified_user()
     ada = insert_agent(user_id: user.id, name: "Ada")

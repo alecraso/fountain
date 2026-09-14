@@ -66,7 +66,7 @@ defmodule Fountain.Conversations.CheckpointTest do
       ])
 
       assert {:ok, "v1"} = Provisioning.create_checkpoint(handle(), env)
-      assert Fountain.Environments._unsafe_get_environment!(env.id).checkpoint_id == "v1"
+      assert Fountain.Environments.get_environment!(env.id, env.user_id).checkpoint_id == "v1"
     end
 
     test "never picks the synthetic Current entry" do
@@ -112,7 +112,7 @@ defmodule Fountain.Conversations.CheckpointTest do
       assert {:error, {:provider, :sprites, :no_checkpoint_id}} =
                Provisioning.create_checkpoint(handle(), env)
 
-      assert is_nil(Fountain.Environments._unsafe_get_environment!(env.id).checkpoint_id)
+      assert is_nil(Fountain.Environments.get_environment!(env.id, env.user_id).checkpoint_id)
     end
 
     test "the creation stream is drained before the list is read" do

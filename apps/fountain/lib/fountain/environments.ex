@@ -11,12 +11,6 @@ defmodule Fountain.Environments do
 
   # ── environments ──────────────────────────────────────────────────────────
 
-  @doc "WARNING: lookup by id without owner check. Admin/internal use only."
-  def _unsafe_get_environment(id), do: Repo.get(Environment, id)
-
-  @doc "WARNING: lookup by id without owner check. Admin/internal use only."
-  def _unsafe_get_environment!(id), do: Repo.get!(Environment, id)
-
   @doc "List environments scoped to user."
   def list_environments(user_id) when is_binary(user_id) do
     Repo.all(
