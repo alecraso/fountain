@@ -33,7 +33,8 @@ Gate 7 (#1510) is built: the `-core` release tags (`vX.Y.Z-core`), the manual
 as the tenth callback (#1548), and decision 8's marketing rule (#1525) — core
 copy that needs an extension declares it and renders only where it is
 installed, asserted on the running core release by the `core-distribution` CI
-job. The repository split is #1550 and is deliberately not done.
+job. The repository split is deliberately not done; #1550 tracked it and
+was closed as not planned on 2026-09-14, so this ADR is the record.
 
 Gate 7's distribution half is built too: CI builds and boots a core release
 against an empty database on every PR, and each release publishes
@@ -47,7 +48,9 @@ URLs they always had.
 **Not built:** the graduation to `BinaryBourbon/fountain_buzz`, which is
 deferred rather than blocked — its precondition was met by `fountain_support`
 (#1528), and the maintainer has chosen to keep the extensions in this
-repository for now. The Go CLI split is #1508.
+repository for now. #1550 carried that deferral and was closed as not planned
+on 2026-09-14; there is no open issue for the split, and none is needed until
+someone wants it. The Go CLI split is #1508.
 
 ADR [0020](0020-buzz-as-a-client-of-the-acp-gateway.md)'s hosted harness and
 brokered signer ship in the image today and keep working unchanged throughout.
@@ -516,7 +519,8 @@ the OpenAPI check and guarded the same way: if no card declares
 
 Each gate is a sub-issue of [#1503](https://github.com/BinaryBourbon/fountain/issues/1503),
 each leaves bundled behaviour green. Every gate below is built except the
-repository split (#1550), which is deliberately deferred.
+repository split (#1550, closed as not planned on 2026-09-14), which is
+deliberately deferred.
 
 1. **#1504 — this ADR.** Accepted and indexed.
 2. **#1505 — the seam.** `Fountain.Extension` with `id/0`, `enabled?/0`,
