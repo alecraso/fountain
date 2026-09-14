@@ -2782,12 +2782,7 @@ export interface components {
             model: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
-            permission_policy?: ({
-                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
-                ask_timeout?: number;
-            } & {
-                [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
-            }) | null;
+            permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
@@ -2847,12 +2842,7 @@ export interface components {
             model?: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
-            permission_policy?: ({
-                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
-                ask_timeout?: number;
-            } & {
-                [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
-            }) | null;
+            permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
@@ -2909,12 +2899,7 @@ export interface components {
             model?: string | null;
             name?: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
-            permission_policy?: ({
-                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
-                ask_timeout?: number;
-            } & {
-                [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
-            }) | null;
+            permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @enum {string} */
             runtime?: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
@@ -3715,12 +3700,7 @@ export interface components {
             /** @description Permission requests that outlived a turn and are still waiting for an answer (#1635). Served on GET /api/conversations/{id} only; absent from the list and from the create response. */
             pending_requests?: components["schemas"]["PendingPermissionRequest"][];
             /** @description The per-launch permission override this conversation was started with, or null if it had none. The policy actually in force is this merged with the agent's, taking the stricter of the two per tool. */
-            permission_policy?: ({
-                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
-                ask_timeout?: number;
-            } & {
-                [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
-            }) | null;
+            permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             runtime_session_id?: string | null;
@@ -3772,12 +3752,7 @@ export interface components {
                 [key: string]: string;
             } | null;
             /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped, and one the runtime never consults is refused with 422 permission_policy_unenforceable. */
-            permission_policy?: ({
-                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
-                ask_timeout?: number;
-            } & {
-                [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
-            }) | null;
+            permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @description Optional first turn prompt. A launch may open with no prompt at all, but a prompt that is present must carry words: blank and whitespace-only text is refused with 422 invalid_prompt, before the launch reserves a sandbox. */
             prompt?: string;
             /** @description When a fresh start reaches the tenant or the fleet concurrency ceiling, wait in the bounded sandbox queue and return 202 with a SandboxRequest instead of 429 or 503 (ADR 0042). Starts carrying images or an explicit sandbox_id are never queued, and a full queue keeps the immediate error. */
@@ -4389,6 +4364,16 @@ export interface components {
         PermissionAnswerResponse: {
             /** @example true */
             ok: boolean;
+        };
+        /**
+         * PermissionPolicy
+         * @description The wire shape of a permission policy: a map of key to verdict, plus the optional `ask_timeout` key, whose value is a number rather than a verdict. Every place a policy travels shares this shape and says there what a policy means at that door.
+         */
+        PermissionPolicy: {
+            /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
+            ask_timeout?: number;
+        } & {
+            [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
         };
         /** PromptRequest */
         PromptRequest: {
