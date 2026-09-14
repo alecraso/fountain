@@ -41,10 +41,6 @@ defmodule Fountain.Conversations.ConversationServerAcpFixtureTest do
 
     stub_happy_sprite()
 
-    Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
-      {:error, :stubbed_in_test}
-    end)
-
     _ref = Fountain.FixtureAcpProcess.stub_spawn()
 
     {pid, _mon, :alive} =

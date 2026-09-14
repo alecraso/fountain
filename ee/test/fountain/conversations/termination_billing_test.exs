@@ -48,7 +48,6 @@ defmodule Fountain.Conversations.TerminationBillingTest do
         :ok
       end)
 
-      stub(Fountain.Conversations.TitleGenerator, :generate, fn _, _ -> {:error, :stubbed} end)
       {pid, monitor, :alive} = start_server(conv)
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
@@ -132,7 +131,6 @@ defmodule Fountain.Conversations.TerminationBillingTest do
     stub(Managoat.Sandbox.Sprites, :write_stdin, fn _, _ -> :ok end)
     stub(Managoat.Sandbox.Sprites, :stop_command, fn _ -> :ok end)
     stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
-    stub(Fountain.Conversations.TitleGenerator, :generate, fn _, _ -> {:error, :stubbed} end)
     {pid, monitor, :alive} = start_server(conv)
     on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
     assert :ok = GenServer.call(pid, {:send_prompt, "work", []})

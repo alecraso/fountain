@@ -30,10 +30,6 @@ defmodule Fountain.Conversations.ConversationServerAcpRuntimeTest do
   defp start_acp_turn(conv) do
     stub_happy_sprite()
 
-    Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
-      {:error, :stubbed_in_test}
-    end)
-
     test = self()
     ref = make_ref()
 

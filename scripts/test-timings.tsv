@@ -88,7 +88,6 @@ apps/fountain/test/fountain/conversations/sandbox_url_test.exs	1375
 apps/fountain/test/fountain/conversations/shared_sandbox_test.exs	2801
 apps/fountain/test/fountain/conversations/sprite_env_test.exs	509
 apps/fountain/test/fountain/conversations/stream_filter_test.exs	1797
-apps/fountain/test/fountain/conversations/title_generator_test.exs	171
 apps/fountain/test/fountain/conversations/turn_machine_test.exs	9964
 apps/fountain/test/fountain/conversations/turn_test.exs	8
 apps/fountain/test/fountain/conversations/turn_usage_test.exs	507

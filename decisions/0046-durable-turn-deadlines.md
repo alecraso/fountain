@@ -223,12 +223,8 @@ retirement takes the locks a frame later, where `_unsafe_complete/3` arbitrates
 completion against expiry. Same argument as the coordinator's tick: bounded
 turns are inert today, so the shape that ships is the thing to get right.
 
-A bounded turn also generates no **title**. Titling is a second inference call
-the journal neither bounds nor prices, so spending it under a wall-clock
-ceiling would be usage the caller asked to cap and cannot see. The cost is a
-known gap rather than an oversight: titling runs once, on the first turn, so a
-conversation whose first turn is bounded has no title until an unbounded turn
-follows.
+Fountain no longer makes a separate inference call to generate conversation
+titles, for either bounded or unbounded turns.
 
 ### Admission stays where it already was
 

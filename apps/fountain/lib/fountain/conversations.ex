@@ -1226,6 +1226,30 @@ defmodule Fountain.Conversations do
     end)
   end
 
+  @doc "Apply a harness title without overwriting an explicit name or a teammate's name."
+  def _unsafe_update_harness_title(conversation_id, title)
+      when is_binary(title) or is_nil(title) do
+    team_channel = Fountain.Team.channel()
+
+    # A single conditional write arbitrates against concurrent user renames.
+    # Updating title_source also lets an owner claim an unchanged harness title.
+    query =
+      from(c in Conversation,
+        where: c.id == ^conversation_id,
+        where: is_nil(c.channel_id) or c.channel_id != ^team_channel,
+        where: is_nil(c.title) or c.title_source == "harness",
+        where: fragment("? IS DISTINCT FROM ?", c.title, ^title),
+        select: c.user_id
+      )
+
+    case Repo.update_all(query,
+           set: [title: title, title_source: "harness", updated_at: DateTime.utc_now(:second)]
+         ) do
+      {1, [user_id]} -> broadcast_sidebar_update(user_id)
+      {0, _} -> :ok
+    end
+  end
+
   @doc "Idle only the latest ended turn's still-running parent."
   def _unsafe_idle_after_turn(%Turn{} = turn),
     do: write_turn_parent(turn, :idle, %{status: "idle"})

@@ -238,8 +238,11 @@ defmodule Fountain.Conversations.TurnMachine do
         {turn, []}
 
       stream == "acp" and Managoat.ACP.Protocol.session_metadata?(data) ->
+        Conversations.SessionInfo.apply(turn.conversation_id, data)
+
         if is_nil(turn.row) do
-          # No turn to attach it to, and not worth opening one: dropped.
+          # Metadata updates the conversation even when there is no transcript
+          # turn to attach the protocol line to.
           {turn, []}
         else
           {turn, [{:persist_lines, stream, data}]}
@@ -1240,31 +1243,6 @@ defmodule Fountain.Conversations.TurnMachine do
 
         :ok
     end
-  end
-
-  # On the first turn, asynchronously generate a short title for the sidebar.
-  # Not for a teammate's conversation: there the title is the name the user
-  # gave the teammate when adding it (or nothing, and the agent's name
-  # shows), and a generated summary would rename the teammate on the team
-  # page after its first message (#807).
-  @spec generate_title(Conversation.t(), Conversations.Turn.t(), String.t(), map()) :: :ok
-  def generate_title(conv, turn, prompt, creds) do
-    if turn.turn_number == 1 and conv.channel_id != Fountain.Team.channel() do
-      conv_id = conv.id
-
-      Task.start(fn ->
-        case Fountain.Conversations.TitleGenerator.generate(prompt, creds) do
-          {:ok, title} ->
-            fresh = Conversations._unsafe_get_conversation!(conv_id)
-            Conversations.update_conversation(fresh, %{title: title})
-
-          {:error, reason} ->
-            Logger.warning("Title generation failed for conv #{conv_id}: #{inspect(reason)}")
-        end
-      end)
-    end
-
-    :ok
   end
 
   @doc """

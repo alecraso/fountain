@@ -40,6 +40,9 @@ defmodule Fountain.Conversations.Conversation do
     # Immutable launch boundary: none never mints a sandbox callback credential.
     field :sandbox_api_access, :string, default: "owner"
     field :title, :string
+    # Internal provenance: ACP may revise its own titles, never an owner's name.
+    # Existing titles are treated as user-owned because their origin is unknown.
+    field :title_source, :string, default: "user"
     field :last_read_at, :utc_datetime_usec
     # Client-supplied key for the external channel this conversation is bound
     # to (a Buzz channel id via ACP `session/new` `_meta.channelId`, #774).
@@ -156,6 +159,7 @@ defmodule Fountain.Conversations.Conversation do
     ])
     |> validate_length(:channel_id, max: 255)
     |> validate_length(:title, max: 120)
+    |> mark_user_title()
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:source, @sources)
     |> validate_inclusion(:sandbox_api_access, @sandbox_api_access_modes)
@@ -168,5 +172,17 @@ defmodule Fountain.Conversations.Conversation do
     |> foreign_key_constraint(:environment_id)
     |> foreign_key_constraint(:inference_credential_id)
     |> foreign_key_constraint(:parent_conversation_id)
+  end
+
+  defp mark_user_title(changeset) do
+    if Map.has_key?(changeset.params || %{}, "title") do
+      # The harness can update the row after the owner loaded it. Always
+      # write both fields, even when the submitted title matches that snapshot.
+      changeset
+      |> force_change(:title, get_field(changeset, :title))
+      |> force_change(:title_source, "user")
+    else
+      changeset
+    end
   end
 end

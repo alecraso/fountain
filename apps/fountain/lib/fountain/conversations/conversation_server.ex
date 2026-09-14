@@ -2173,15 +2173,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
     TurnMachine.store_images(turn, images)
 
-    # A bounded turn generates no title. Titling is a second inference call that
-    # the journal does not bound and the allowance does not price, so spending
-    # it under a wall-clock ceiling would be usage the caller asked to cap and
-    # cannot see. The cost is real and is a known gap, not an oversight: a
-    # conversation whose *first* turn is bounded has no title until an unbounded
-    # turn follows, because titling only ever runs once. ADR 0046 records it.
-    unless execution,
-      do: TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
-
     # An idle peer carries the next turn without spawn, handshake or resume
     # (#817). It applies the model before prompting; background tasks and
     # Codex session grants survive.

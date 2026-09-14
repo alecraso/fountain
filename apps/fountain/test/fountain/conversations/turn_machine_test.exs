@@ -97,12 +97,22 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert MapSet.size(dedup) == 0
     end
 
-    test "session metadata lands on a running turn and is dropped without one", %{machine: m} do
+    test "session metadata updates the title with or without a running turn", %{machine: m} do
       assert {^m, [{:persist_lines, "acp", @metadata_line}]} =
                TurnMachine.handle(m, {:lines, "acp", @metadata_line})
 
       idle = idle(m)
       assert {^idle, []} = TurnMachine.handle(idle, {:lines, "acp", @metadata_line})
+      assert Conversations._unsafe_get_conversation!(m.conversation_id).title == "t"
+    end
+
+    test "a deduplicated metadata replay cannot overwrite a newer title", %{machine: m} do
+      m = %{m | replay_dedup: MapSet.new([@metadata_line])}
+      Conversations._unsafe_update_harness_title(m.conversation_id, "New title")
+
+      assert {%{replay_dedup: dedup}, []} = TurnMachine.handle(m, {:lines, "acp", @metadata_line})
+      assert MapSet.size(dedup) == 0
+      assert Conversations._unsafe_get_conversation!(m.conversation_id).title == "New title"
     end
 
     test "an update with no turn opens an autonomous one before persisting", %{machine: m} do
@@ -794,13 +804,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
                ])
 
       assert :ok = TurnMachine.store_images(row, [%{media_type: "text/plain", data: "nope"}])
-    end
-
-    test "generate_title/4 is a no-op after the first turn and on the team channel",
-         %{conv: conv, row: row} do
-      assert :ok = TurnMachine.generate_title(conv, %{row | turn_number: 2}, "hi", %{})
-      team = %{conv | channel_id: Fountain.Team.channel()}
-      assert :ok = TurnMachine.generate_title(team, %{row | turn_number: 1}, "hi", %{})
     end
 
     test "effective_permission_policy/2 and agent_for/1", %{conv: conv, agent: agent} do

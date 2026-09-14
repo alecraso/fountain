@@ -39,16 +39,6 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
         Fountain.InferenceCredentials.put_credential(conv.user_id, <<0::256>>, kind, value)
     end
 
-    # Turn 1 fires title generation, which is a live HTTPS call to the model
-    # provider. Every other test here leaves `credentials` empty, so it used to
-    # bail at `:no_credentials` before reaching the network — the moment a test
-    # supplies a key-shaped credential it dials out for real. Nothing in this
-    # file asserts on titles, so stub the boundary rather than let an offline
-    # or egress-restricted runner decide how long the call takes to fail.
-    Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
-      {:error, :stubbed_in_test}
-    end)
-
     ref = stub_acp_transport()
 
     {pid, _mon, :alive} = start_server(conv, initial_prompt: "first", runtime: runtime)
@@ -833,6 +823,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       assert is_nil(:sys.get_state(pid).current_turn)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      assert Conversations._unsafe_get_conversation!(conv.id).title ==
+               "Research Xfinity internet promotion pricing"
+
       assert [%{origin: "user"}] = Conversations._unsafe_list_turns(conv.id)
 
       # With no turn to attach it to, the line is dropped, not persisted.
@@ -850,6 +844,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       prompt_id = drive_to_prompt(pid, ref)
 
       notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "Early title"})
+      assert Conversations._unsafe_get_conversation!(conv.id).title == "Early title"
 
       assert Enum.any?(
                Conversations._unsafe_list_log_events(conv.id),

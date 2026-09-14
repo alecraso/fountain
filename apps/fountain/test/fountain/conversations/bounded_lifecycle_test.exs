@@ -479,10 +479,6 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
     test = self()
     ref = make_ref()
 
-    stub(Fountain.Conversations.TitleGenerator, :generate, fn _, _ ->
-      flunk("bounded turn generated an untracked title")
-    end)
-
     stub(Fountain.Conversations.Provisioning, :prepare_acp_adapter, fn _, _, _ ->
       flunk("turn ran a separate adapter install")
     end)

@@ -494,28 +494,6 @@ defmodule Fountain.PlatformChatGPTTest do
     end
   end
 
-  describe "titles for a conversation on the grant" do
-    test "fall back to the platform OpenAI key, and to no title without one" do
-      creds = %{codex_chatgpt_access_token: "at_placeholder"}
-
-      assert {:error, :no_credentials} =
-               Fountain.Conversations.TitleGenerator.generate("fix the login bug", creds)
-
-      Application.put_env(:fountain, :platform_openai_api_key, "sk-platform")
-
-      Req
-      |> expect(:post, fn url, opts ->
-        assert url =~ "api.openai.com"
-        assert Enum.any?(Keyword.get(opts, :headers, []), fn {_k, v} -> v =~ "sk-platform" end)
-        refute inspect(opts) =~ "at_placeholder"
-        {:ok, %{status: 200, body: %{"choices" => [%{"message" => %{"content" => "Fix Login"}}]}}}
-      end)
-
-      assert {:ok, "Fix Login"} =
-               Fountain.Conversations.TitleGenerator.generate("fix the login bug", creds)
-    end
-  end
-
   describe "the broker and the per-turn re-read (decisions 4 and 5)" do
     test "split_inference/2 brokers the grant to chatgpt.com with an unprefixed placeholder" do
       {creds, brokered, implicit} =

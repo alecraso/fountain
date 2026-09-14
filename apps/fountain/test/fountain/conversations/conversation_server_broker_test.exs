@@ -797,10 +797,6 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         {:ok, 1}
       end)
 
-      Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
-        {:error, :stubbed_in_test}
-      end)
-
       ref = make_ref()
 
       Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
