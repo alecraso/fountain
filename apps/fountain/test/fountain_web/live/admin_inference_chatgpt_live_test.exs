@@ -145,7 +145,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       refute html =~ "secret-api-key"
     end
 
-    refute PlatformChatGPT.active?()
+    refute ChatGPTAccounts.platform_active?()
     assert Repo.all(AdminEvent) == []
   end
 
