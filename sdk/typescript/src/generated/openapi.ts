@@ -4367,14 +4367,14 @@ export interface components {
         };
         /**
          * PermissionPolicy
-         * @description The wire shape of a permission policy: a map of key to verdict, plus the optional `ask_timeout` key, whose value is a number rather than a verdict. Every place a policy travels shares this shape and says there what a policy means at that door.
+         * @description The wire shape of a permission policy: a map of key to verdict, plus the optional `ask_timeout` key, whose value is a number rather than a verdict. Every place a policy travels shares this shape and says there what a policy means at that door. Null everywhere a policy is absent.
          */
-        PermissionPolicy: {
+        PermissionPolicy: ({
             /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is a number rather than a verdict, which is why the value schema below is a union. Absent leaves the global ask timeout. A request may shorten it with `_meta.fountain.timeout` on its own session/request_permission, and may not lengthen it. A launch may only shorten what the agent set, or the global ask timeout where the agent set nothing. Capped at a year, which is where the deadline stops fitting in a timestamp rather than a limit on how long a wait is useful. */
             ask_timeout?: number;
         } & {
             [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
-        };
+        }) | null;
         /** PromptRequest */
         PromptRequest: {
             /** @description Optional images to attach to this prompt. */

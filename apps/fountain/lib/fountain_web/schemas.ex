@@ -432,8 +432,18 @@ defmodule FountainWeb.Schemas do
         "The wire shape of a permission policy: a map of key to verdict, plus the " <>
           "optional `ask_timeout` key, whose value is a number rather than a verdict. " <>
           "Every place a policy travels shares this shape and says there what a " <>
-          "policy means at that door.",
+          "policy means at that door. Null everywhere a policy is absent.",
       type: :object,
+      # Nullable HERE, not only on the five properties that reference this.
+      # In OpenAPI 3.0 `nullable` relaxes the type of the schema it sits on and
+      # nothing else, so a `nullable: true` wrapper whose shape comes from an
+      # `allOf` branch still fails a standards validator on null: the branch is
+      # what carries `type: object`, and it is the branch that refuses. The
+      # five inline copies this replaced each wrote `type: :object` and
+      # `nullable: true` on one node; hoisting the pair together is what keeps
+      # that meaning. `check_nullable_composition` in
+      # scripts/sdk-contract/build.py is the guard.
+      nullable: true,
       properties: %{
         ask_timeout: %Schema{
           type: :integer,

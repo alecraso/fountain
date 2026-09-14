@@ -157,6 +157,13 @@ def project_schema(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     if isinstance(schema.get("type"), str):
         out["type"] = schema["type"]
+    # A named schema may be nullable itself, and that is the difference between
+    # a `$ref` to it accepting null and refusing it (#1899). `project_type`
+    # has always recorded this on a property; without it here the projection
+    # said nullability was part of the contract while a whole half of it was
+    # invisible, so the fix for a null-refusing field diffed to nothing.
+    if schema.get("nullable") is True:
+        out["nullable"] = True
     if isinstance(schema.get("enum"), list):
         out["enum"] = sorted(str(value) for value in schema["enum"])
 
@@ -358,6 +365,138 @@ def check_defaults(contract: Dict[str, Any]) -> List[str]:
     return problems
 
 
+def resolve_ref(spec: Dict[str, Any], node: Any) -> Any:
+    """Follow `$ref` within this document, or None if it does not resolve.
+
+    Siblings of a `$ref` are ignored in 3.0. None rather than `{}` for a
+    dangling or cyclic pointer, because an empty schema accepts everything and
+    a broken one should not be mistaken for it.
+    """
+    seen = set()
+    while isinstance(node, dict) and "$ref" in node:
+        pointer = node["$ref"]
+        if pointer in seen or not isinstance(pointer, str) or not pointer.startswith("#/"):
+            return None
+        seen.add(pointer)
+        target: Any = spec
+        for part in pointer[2:].split("/"):
+            part = part.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or part not in target:
+                return None
+            target = target[part]
+        node = target
+    return node
+
+
+def accepts_null(spec: Dict[str, Any], node: Any, depth: int = 0) -> bool:
+    """Does this schema node accept `null` under OpenAPI 3.0?
+
+    3.0 has no `"type": "null"`. `nullable: true` relaxes the type of the schema
+    it sits on and NOTHING else, so a node that borrows its shape from a
+    composition keyword must also be given null by that composition:
+
+      * `allOf` — every branch must accept null, because the instance has to
+        satisfy all of them.
+      * `anyOf`/`oneOf` — at least one branch must, because the instance has to
+        satisfy one.
+
+    The trap this exists for (#1899): a wrapper written as
+    `{"nullable": true, "allOf": [{"$ref": ...}]}` reads as nullable and is not.
+    The wrapper's own `nullable` is vacuous — it carries no `type` to relax —
+    and the referenced schema is where `type: object` lives, so that is the
+    branch that refuses null. Adding `type: object` to the wrapper does not
+    help: the branch still refuses. Either the referenced schema carries
+    `nullable: true` itself, or a union needs an explicit null-only branch.
+
+    Verified against `openapi-schema-validator` 0.9.0's `OAS30Validator` on
+    every shape in `scripts/ci/test_sdk_contract_nullable.py`.
+    """
+    node = resolve_ref(spec, node)
+    if not isinstance(node, dict) or depth > 20:
+        return False
+
+    for keyword, needs_all in (("allOf", True), ("anyOf", False), ("oneOf", False)):
+        branches = node.get(keyword)
+        if isinstance(branches, list) and branches:
+            results = [accepts_null(spec, branch, depth + 1) for branch in branches]
+            if (all(results) if needs_all else any(results)) is False:
+                return False
+            # A composition that admits null still has to get past this node's
+            # own constraints, which is the `type`/`enum` pair below.
+
+    # A node with no `type` of its own constrains no type, so null gets past it
+    # whether or not it bothered to say `nullable`. A node that declares a
+    # `type` refuses null unless `nullable: true` relaxes it. This is the
+    # asymmetry the trap lives in: the wrapper has no type, so its `nullable`
+    # buys nothing, and the branch that HAS the type never saw the flag.
+    if "type" in node and node.get("nullable") is not True:
+        return False
+    # `enum` narrows whatever the type allows, null included.
+    values = node.get("enum")
+    if isinstance(values, list) and None not in values:
+        return False
+    return True
+
+
+# Properties already in this state when the guard below was written (#1899),
+# each independently confirmed with `openapi-schema-validator`'s OAS30Validator.
+# Both are the same shape the guard exists for — `{"nullable": true, "oneOf":
+# [{"$ref": ...}]}` — and both are real: the server sends null for each.
+#
+# The list only shrinks. A new property in this state fails the build, and an
+# entry here that has been fixed fails it too rather than leaving a stale
+# reason behind, the same contract the omissions allowlist keeps.
+KNOWN_NOT_NULLABLE = {
+    ("Conversation", "sandbox"): "#2189 — null until a sandbox is provisioned",
+    ("Turn", "usage"): "#2189 — null while the turn runs, and on older turns",
+}
+
+
+def check_nullable_composition(spec: Dict[str, Any]) -> List[str]:
+    """A property that says `nullable: true` must actually accept null (#1899).
+
+    Walks every property of every named schema. One that declares itself
+    nullable and then delegates its shape to `allOf`/`anyOf`/`oneOf`/`$ref` is
+    checked for whether the composition admits null too, because a generated
+    client and any standards-based validator read the document, not our casting
+    layer — `OpenApiSpex` resolves null before it ever reaches the composition,
+    which is why the whole Elixir suite stayed green while the published
+    contract refused a value the server returns.
+    """
+    problems = []
+    broken = set()
+    schemas = ((spec.get("components") or {}).get("schemas") or {})
+    for name, schema in sorted(schemas.items()):
+        if not isinstance(schema, dict):
+            continue
+        for prop, node in sorted((schema.get("properties") or {}).items()):
+            if not isinstance(node, dict) or node.get("nullable") is not True:
+                continue
+            if not any(k in node for k in ("allOf", "anyOf", "oneOf", "$ref")):
+                continue  # declares its own type; `nullable` means what it says
+            if accepts_null(spec, node):
+                continue
+            broken.add((name, prop))
+            if (name, prop) in KNOWN_NOT_NULLABLE:
+                continue
+            problems.append(
+                f"  {name}.{prop} says nullable: true but does not accept null.\n"
+                "      In OpenAPI 3.0 `nullable` relaxes the type of the node it sits\n"
+                "      on, so a composed shape refuses null unless the composition\n"
+                "      does too. Put `nullable: true` on the referenced schema, or\n"
+                "      give the union an explicit null branch. Adding `type: object`\n"
+                "      to the wrapper does not work."
+            )
+
+    for name, prop in sorted(set(KNOWN_NOT_NULLABLE) - broken):
+        problems.append(
+            f"  {name}.{prop} accepts null now, and is still on KNOWN_NOT_NULLABLE.\n"
+            "      Delete the line: the list is a record of what is broken, and a\n"
+            "      stale entry hides the next one."
+        )
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -381,7 +520,9 @@ def main() -> int:
     contract = project(canonical(raw))
     rendered = dump(contract)
 
-    problems = check_defaults(contract)
+    # Over `raw`, not the projection: the projection records the wrapper's own
+    # `nullable` and so reads as correct in exactly the case this catches.
+    problems = check_defaults(contract) + check_nullable_composition(raw)
 
     # The artifact is written in both modes. `mix openapi.export` renders it in
     # the encoder's order, so it is never canonical when it lands and there
