@@ -115,6 +115,32 @@ a second issue splits the evidence. What makes one actionable is in CLAUDE.md
 under *Flaky tests*: the failing assertion, a rate rather than an adjective,
 and the run URLs.
 
+## Go dependency updates span two modules
+
+Buzz's Go module replaces `github.com/managoat/fountain/cli` with the local
+`cli/` directory. A dependency bump there can require changes to Buzz's
+`go.mod` and `go.sum` even when no Buzz source changes.
+
+Dependabot monitors both directories in one Go update job and groups version
+updates by dependency name across them. This includes major updates.
+[GitHub's grouping rules](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#groups)
+exclude security updates and can split incompatible version constraints into
+separate PRs. Whenever a shared dependency changes, tidy both modules on the
+same PR branch and commit every resulting module-file change together:
+
+```bash
+go -C cli mod tidy
+go -C apps/fountain_buzz/cli mod tidy
+go -C cli test -mod=readonly -count=1 ./...
+go -C cli vet -mod=readonly ./...
+go -C apps/fountain_buzz/cli test -mod=readonly -count=1 ./...
+go -C apps/fountain_buzz/cli vet -mod=readonly ./...
+```
+
+Run tidy again after committing those files; it should leave no diff in either
+module. CI retains separate test and vet steps for both modules. A green core
+CLI check alone does not cover Buzz.
+
 ## Extension migrations share one `schema_migrations`
 
 A first-party extension (ADR 0043) contributes migration directories through
