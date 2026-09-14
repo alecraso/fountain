@@ -24,8 +24,9 @@ elixir_report() {
   # Keep compiler diagnostics visible and propagate analyzer failures. Only
   # dead-code hints enter the report: mix_unused 0.4.1 cannot disable its
   # Private analyzer through config, and a same-module caller is still live.
+  # shellcheck disable=SC1010 # `do` is mix's task, not the shell keyword
   (cd "$root/apps/fountain" &&
-    MIX_UNUSED=1 MIX_ENV=dev mix do clean --only dev, compile --force) |
+    MIX_UNUSED=1 MIX_ENV=dev mix do clean --only dev + compile --force) |
     tee /dev/stderr |
     awk '/^hint: .* (is unused|is called only recursively)$/ { print; if (getline > 0) print }'
 }

@@ -1,13 +1,14 @@
 name: Dead code report
 
-# Findings are advisory; tool failures fail this report, not merge CI.
-# On the first of the month (and on demand) this
+# Advisory, never blocking. On the first of the month (and on demand) this
 # publishes two reports as artifacts: public Elixir functions no compiled
 # module calls (mix_unused, enabled only under MIX_UNUSED=1 in
 # apps/fountain/mix.exs) and unreachable Go functions (x/tools deadcode).
 # Both see only static calls, so the Elixir report is a list of candidates;
 # CONTRIBUTING.md, "Finding dead code", says how to read it. The job summary
 # carries the counts so nobody has to download an artifact to see the trend.
+# A tool failure fails this workflow's own job so it is never mistaken for a
+# clean scan; it fails nothing in merge CI.
 
 on:
   schedule:
