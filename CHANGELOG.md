@@ -102,6 +102,10 @@ upgrade, is in
   before row locks. The migration's triggers do not make older serving nodes
   safe to mix with the new admission path.
 
+- Eight tunables are fixed at their defaults and no longer read from the
+  environment: the six `PRINCIPAL_*` bounds (ADR 0044) and the two
+  `PLATFORM_CHATGPT_*` timings (ADR 0047). A value set for one is ignored.
+
 ### Added
 
 - **An account can hold several named sets of inference credentials, and an

@@ -71,7 +71,7 @@ config :fountain, Oban,
        # being read, not about precision.
        {"7 17 * * *", Fountain.Workers.SecretExpirySweeper},
        # 04:29 UTC daily: renew the deployment's ChatGPT grant for codex if
-       # nobody has for PLATFORM_CHATGPT_KEEPALIVE_DAYS (ADR 0047), so it
+       # nobody has for six days (ADR 0047), so it
        # never idles past the auth server's window. No-op when not connected.
        {"29 4 * * *", Fountain.Workers.PlatformChatGPTKeepalive},
        # Bounded user-grant pages; provider calls run in a separate queue so
@@ -161,7 +161,9 @@ config :fountain, :credits,
 # Claimable principals (ADR 0044): the anonymous tenant an application opens
 # for a visitor who has no account yet. Every number here bounds a leaked
 # application key; the application's own credit balance is the backstop
-# underneath them, since it funds each principal it opens.
+# underneath them, since it funds each principal it opens. These are fixed
+# here, not read from the environment: a deployment that wants a different
+# bound changes the number in a fork, and nobody has.
 config :fountain, Fountain.Principals,
   default_ttl_seconds: 86_400,
   max_ttl_seconds: 604_800,
