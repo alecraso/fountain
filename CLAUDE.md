@@ -442,6 +442,11 @@ build tells you which toolchain to go and look at:
 | **docs-prose** | Advisory wording reports when docs, prose configuration or the workflow changes, and on a full main run. Docs-only PRs get them from `docs`; structural checks still block |
 | **gate** | `CI required`: validates all expected job results and records a successful PR checkout tree |
 
+Outside `ci.yml`, `dead-code.yml` publishes a monthly advisory report of
+public Elixir functions nothing calls and unreachable Go functions
+(`scripts/dead-code.sh` runs the same thing locally; CONTRIBUTING.md,
+"Finding dead code", says how to read it). It gates nothing.
+
 Measure the slowest partition plus coverage and runner queue delays before
 adding runners. Dialyzer can dominate cold runs; the core release has its own
 compiled-build cache. `scripts/ci/README.md` describes timing refresh and

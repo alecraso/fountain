@@ -1,0 +1,120 @@
+name: Dead code report
+
+# Advisory, never blocking. On the first of the month (and on demand) this
+# publishes two reports as artifacts: public Elixir functions no compiled
+# module calls (mix_unused, enabled only under MIX_UNUSED=1 in
+# apps/fountain/mix.exs) and unreachable Go functions (x/tools deadcode).
+# Both see only static calls, so the Elixir report is a list of candidates;
+# CONTRIBUTING.md, "Finding dead code", says how to read it. The job summary
+# carries the counts so nobody has to download an artifact to see the trend.
+
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  elixir:
+    name: Unused public Elixir functions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
+
+      - name: Restore deps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-deadcode-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-deadcode-
+
+      # Its own build cache: the report compiles in dev with an extra
+      # compiler, so a ci.yml cache would neither fit nor be worth poisoning.
+      - name: Restore build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-deadcode-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-deadcode-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Report
+        run: scripts/dead-code.sh elixir | tee dead-code-elixir.md
+
+      - name: Summarise
+        run: |
+          total=$(grep -c '^hint: ' dead-code-elixir.md || true)
+          {
+            echo "## Unused public Elixir functions: $total"
+            echo
+            echo "By namespace (top 15):"
+            echo
+            echo '```'
+            grep '^hint: ' dead-code-elixir.md \
+              | sed -E 's/^hint: ([A-Za-z]+\.[A-Za-z]+)\..*/\1/' \
+              | sort | uniq -c | sort -rn | head -15
+            echo '```'
+            echo
+            echo "The full report is the \`dead-code-elixir\` artifact. Candidates, not verdicts: see CONTRIBUTING.md, \"Finding dead code\"."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dead-code-elixir
+          path: dead-code-elixir.md
+          retention-days: 90
+
+  go:
+    name: Unreachable Go functions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: |
+            cli/go.sum
+            apps/fountain_buzz/cli/go.sum
+
+      - name: Report
+        run: scripts/dead-code.sh go | tee dead-code-go.md
+
+      - name: Summarise
+        run: |
+          total=$(grep -c 'unreachable func' dead-code-go.md || true)
+          {
+            echo "## Unreachable Go functions: $total"
+            echo
+            echo '```'
+            grep 'unreachable func' dead-code-go.md || echo "none"
+            echo '```'
+            echo
+            echo "Exported functions in \`cli/api\` and \`cli/credentials\` are imported by \`apps/fountain_buzz/cli\`; read those as API, not dead code."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dead-code-go
+          path: dead-code-go.md
+          retention-days: 90

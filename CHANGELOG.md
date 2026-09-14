@@ -175,6 +175,13 @@ upgrade, is in
 
 ### Added
 
+- A dead-code report. `scripts/dead-code.sh` runs `mix_unused` over the
+  server (a compiler tracer `apps/fountain/mix.exs` enables only under
+  `MIX_UNUSED=1`) and `deadcode` over the two Go modules, and
+  `.github/workflows/dead-code.yml` publishes both on the first of the month.
+  Advisory only; CONTRIBUTING.md says how to read the Elixir half, which
+  cannot see dynamic dispatch, extension callers or tests.
+
 - **An account can hold several named sets of inference credentials, and an
   agent or a launch can name one** (ADR 0053, #2018). `inference_credentials`
   becomes one row per set, each with a `name` and an `is_default` flag; every
