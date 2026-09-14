@@ -229,7 +229,7 @@ defmodule Fountain.RuntimeConfigTest do
   end
 
   describe "the egress broker (ADR 0019)" do
-    @broker_vars ~w(BROKER_URL BROKER_TOKEN BROKER_LISTEN_PORT BROKER_PROXY_URL BROKER_TENANTS)
+    @broker_vars ~w(BROKER_LISTEN_PORT BROKER_PROXY_URL BROKER_TENANTS)
 
     setup %{base: base} do
       on_exit(fn -> for k <- @broker_vars, do: System.delete_env(k) end)
@@ -267,43 +267,8 @@ defmodule Fountain.RuntimeConfigTest do
       end
     end
 
-    test "BROKER_URL is a boot error, not a silent no-op", %{base: base} do
-      # It used to select a whole backend (#1487), so a deployment still
-      # carrying it would otherwise broker nothing at all and say nothing.
-      assert_raise RuntimeError,
-                   ~r/BROKER_URL is set, but the Agent Vault backend was removed/,
-                   fn ->
-                     read_prod_config(Map.put(base, "BROKER_URL", "http://agent-vault:14321"))
-                   end
-    end
-
-    test "BROKER_TOKEN only warns, because refusing to boot over it broke a real rollout",
-         %{base: base} do
-      # It never turned anything on by itself, and it outlives a deployment
-      # change by sitting in a secret store: dropped from the Deployment, it
-      # still arrived through `envFrom` and crash-looped the rollout that
-      # removed the backend. A warning is the proportionate answer.
-      cfg =
-        read_prod_config(
-          Map.merge(base, %{
-            "BROKER_TOKEN" => "av_sess_owner",
-            "BROKER_LISTEN_PORT" => "14322",
-            "BROKER_PROXY_URL" => "http://broker.example:14322"
-          })
-        )
-
-      assert cfg[:broker_listen_port] == 14_322
-    end
-
-    test "blank means off, including for the retired variables", %{base: base} do
-      cfg =
-        read_prod_config(
-          Map.merge(base, %{
-            "BROKER_URL" => "",
-            "BROKER_TOKEN" => "",
-            "BROKER_LISTEN_PORT" => ""
-          })
-        )
+    test "blank means off", %{base: base} do
+      cfg = read_prod_config(Map.put(base, "BROKER_LISTEN_PORT", ""))
 
       assert cfg[:broker_listen_port] == nil
     end

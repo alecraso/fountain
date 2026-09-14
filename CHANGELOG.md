@@ -39,6 +39,14 @@ upgrade, is in
   itself (numbers, inboxes and the teammate tools) is removed in a following
   change.
 
+- Three retired switches are gone. `HONEYCOMB_ENDPOINT` and
+  `HONEYCOMB_API_KEY` were shortcuts for the two standard variables: set
+  `OTEL_EXPORTER_OTLP_ENDPOINT` and put the key in
+  `OTEL_EXPORTER_OTLP_HEADERS` as `x-honeycomb-team=<key>`. `DNS_CLUSTER_QUERY`
+  was a second peer-discovery mechanism beside `CLUSTER_DNS_QUERY`, which is
+  the one the guides use. The boot guards for `BROKER_URL` and `BROKER_TOKEN`,
+  the Agent Vault backend removed in #1487, are gone too: a leftover value is
+  now ignored like any other unknown variable.
 - **A sandbox without a recorded build fingerprint now requires an explicit
   rebuild before configuration reapply** (#2102). The API returns
   `409 rebuild_required` with `field: "environment"` and a missing-build-evidence

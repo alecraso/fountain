@@ -12,7 +12,7 @@ defmodule Fountain.OtelConfigTest do
 
   @runtime_exs Path.expand("../../../../config/runtime.exs", __DIR__)
 
-  @otel_vars ~w(OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS HONEYCOMB_ENDPOINT HONEYCOMB_API_KEY)
+  @otel_vars ~w(OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS)
 
   @required %{
     "PHX_SERVER" => "true",
@@ -57,18 +57,24 @@ defmodule Fountain.OtelConfigTest do
     assert cfg[:opentelemetry_exporter][:otlp_endpoint] == "http://collector:4318"
   end
 
-  test "HONEYCOMB_API_KEY alone turns the exporter on with the auth header", %{base: base} do
-    cfg = read_prod_config(Map.put(base, "HONEYCOMB_API_KEY", "hc-key"))
+  test "a vendor's auth header travels in OTEL_EXPORTER_OTLP_HEADERS", %{base: base} do
+    # The HONEYCOMB_ENDPOINT / HONEYCOMB_API_KEY shortcuts are gone; this is
+    # the standard spelling of what they did.
+    cfg =
+      read_prod_config(
+        Map.merge(base, %{
+          "OTEL_EXPORTER_OTLP_ENDPOINT" => "https://api.honeycomb.io",
+          "OTEL_EXPORTER_OTLP_HEADERS" => "x-honeycomb-team=hc-key"
+        })
+      )
 
     assert cfg[:opentelemetry][:traces_exporter] == :otlp
-    assert cfg[:opentelemetry_exporter][:otlp_endpoint] == "https://api.honeycomb.io"
     assert {"x-honeycomb-team", "hc-key"} in cfg[:opentelemetry_exporter][:otlp_headers]
   end
 
-  test "HONEYCOMB_ENDPOINT alone turns the exporter on", %{base: base} do
-    cfg = read_prod_config(Map.put(base, "HONEYCOMB_ENDPOINT", "https://api.eu1.honeycomb.io"))
+  test "headers alone do not turn the exporter on", %{base: base} do
+    cfg = read_prod_config(Map.put(base, "OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=hc-key"))
 
-    assert cfg[:opentelemetry][:traces_exporter] == :otlp
-    assert cfg[:opentelemetry_exporter][:otlp_endpoint] == "https://api.eu1.honeycomb.io"
+    assert cfg[:opentelemetry][:traces_exporter] == :none
   end
 end
