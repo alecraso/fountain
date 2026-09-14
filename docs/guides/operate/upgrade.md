@@ -125,23 +125,62 @@ Every unrevoked key with `principal` scope must have an expiry. The database
 CHECK enforces this independently of the issuer. Full and sprite keys can
 still omit expiry. Existing deadlines and revoked keys remain unchanged.
 
-The application now rejects a principal key write without an explicit expiry.
-The database trigger still supplies 30 days for older writers during a rolling
-upgrade. This release installs and validates the permanent CHECK in separate
-migrations, so validation does not hold the installation's exclusive table lock.
-A timeout leaves validation pending; retry after you resolve the contention.
-
-Principal issuance, claim replay and owner renewal supply deadlines starting
+Principal issuance, create replay, claim, claim replay and owner renewal all
+supply an explicit deadline through `Principals.principal_key_opts/2` starting
 with [commit af1178dd](https://github.com/managoat/fountain/commit/af1178dd2b3462eb7a26e9d655ff3fe09681a0ed).
-This is a verified code boundary, not evidence that every deployed replica
-uses it. No published release floor for trigger removal is established here.
+Anonymous credentials use their grant deadline; claimed credentials get 30 days
+from issuance. The shared `Accounts.build_api_key/3` and `create_api_key/3`
+changeset also rejects missing principal expiry starting with
+[commit 1a005023](https://github.com/managoat/fountain/commit/1a005023d49556405d18dabc8cd11fed33a51db2).
+The console, API key, login-token and OAuth issuers create full credentials;
+sandbox callback issuers create sprite credentials. Those lifetimes are
+unaffected. Principal inference-credential writes change provider secrets,
+not the principal API key.
 
-Before a later migration removes the trigger, finish a deployment containing
-that writer change and this validation. Confirm all older replicas, workers
-and release-task processes have stopped. Include any external database writers
-in that check. Boot migrations can run before replacement replicas serve
-requests, so the trigger cannot disappear in the first rollout of new writers.
-[Issue #2103](https://github.com/managoat/fountain/issues/2103) tracks that remaining step.
+Migration `20260913125930` removes the old-writer trigger and its function.
+Missing expiry then fails the CHECK rather than receiving an implicit 30-day
+deadline. The migration first requires the permanent CHECK to be validated;
+it never updates keys. Lock waits are bounded to five seconds and statements
+to 30 seconds. A failure rolls back the retirement and leaves it pending.
+
+**Finish the writer rollout before applying this migration.** Deploy a revision
+containing both commits above, but preceding the retirement migration, to
+every serving replica, worker and release-task process. Complete migrations
+through `20260913111350`, then drain and stop every older process. Inventory
+external database writers too: they must supply deadlines for principal keys.
+Only after that boundary is verified may a deployment containing the retirement
+migration start. Boot migrations run before replacement replicas serve requests,
+so a direct rolling upgrade from older writers is unsupported. A fresh database
+with no older processes can run the full migration sequence.
+
+Record each writer's deployed revision and the completed drain before removal.
+An image build, a published release or a validated CHECK alone does not prove
+that old writers have stopped.
+
+The hosted service's 2026-09-13 audit observed both ready replicas at commit
+`31a74cc9`, with no older pods or active replica sets. The CHECK was validated,
+and database clients belonged only to those replicas. No other Fountain writer
+workloads or jobs were inventoried. That establishes the hosted rollout boundary;
+self-hosted operators must establish it for their own processes and external
+writers. There is still no published release tag containing the writer floor.
+
+To check the database prerequisite, this query must return one row with
+`convalidated = true`:
+
+```text
+SELECT convalidated
+FROM pg_constraint
+WHERE conrelid = 'api_keys'::regclass
+  AND conname = 'api_keys_active_principal_expiry_required';
+```
+
+A controlled rollback of this migration alone restores the 30-day default
+trigger, retaining the CHECK and every assigned deadline. It restores only
+this writer accommodation; it does not establish whole-release downgrade
+support. Any older writer would require that accommodation before restarting:
+an application-only rollback would reject its missing-expiry writes. Follow
+[the recovery policy](#when-an-upgrade-goes-wrong) for a failed release.
+Do not roll back the invariant or clear deadlines.
 
 ## Conversation message compatibility
 

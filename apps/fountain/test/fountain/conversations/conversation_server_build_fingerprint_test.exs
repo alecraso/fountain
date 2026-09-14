@@ -45,7 +45,14 @@ defmodule Fountain.Conversations.ConversationServerBuildFingerprintTest do
         applied_skills: nil
       )
 
-    conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+    conv =
+      insert_conversation(
+        user_id: user.id,
+        agent: agent,
+        sandbox: sandbox,
+        status: "idle",
+        agent_version_id: Fountain.Agents._unsafe_current_version_id(agent.id)
+      )
 
     for _wake <- 1..2 do
       {pid, _ref, :alive} = start_server(conv)
@@ -53,6 +60,35 @@ defmodule Fountain.Conversations.ConversationServerBuildFingerprintTest do
       assert current.build_fingerprint == nil
       assert current.applied_skills == []
       assert current.id == sandbox.id
+      GenServer.stop(pid, :normal)
+    end
+  end
+
+  test "wake cannot replace unknown historical ownership with an empty applied selection" do
+    stub_happy_sprite()
+
+    expect(Fountain.SandboxSkills, :reconcile, 2, fn _handle, _runtime, _skills, nil ->
+      {:error, :legacy_skill_ownership_unknown}
+    end)
+
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    sandbox = insert_sandbox(user_id: user.id, status: "suspended", agent_id: agent.id)
+
+    conv =
+      insert_conversation(
+        user_id: user.id,
+        agent: agent,
+        sandbox: sandbox,
+        status: "idle",
+        agent_version_id: nil
+      )
+
+    for _wake <- 1..2 do
+      {pid, _ref, :alive} = start_server(conv)
+      current = Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert current.build_fingerprint == nil
+      assert current.applied_skills == nil
       GenServer.stop(pid, :normal)
     end
   end

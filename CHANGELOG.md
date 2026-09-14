@@ -28,6 +28,19 @@ upgrade, is in
   `MARKETING_SITE=true` keeps one job: the manual's header and footer link
   the site's pages. Nothing in `docs/` linked the retired routes.
 
+- **Team comms is removed.** A teammate no longer gets an email address or
+  a phone number: `GET /api/team/comms`, the three
+  `/api/team/:agent_id/contact` operations, the `fountain-comms` MCP server,
+  `POST /api/webhooks/agentphone` and the `contact` field on a teammate are
+  gone, and the `team_comms` flag no longer exists. `AGENTMAIL_API_KEY`,
+  `AGENTMAIL_BASE_URL`, `AGENTMAIL_DOMAIN`, `AGENTPHONE_API_KEY`,
+  `AGENTPHONE_BASE_URL`, `AGENTPHONE_WEBHOOK_SECRET` and
+  `TEAM_CONTACT_CEILING` are no longer read. The migration drops the
+  `team_contacts` and `comms_messages` tables. If any teammate still holds
+  an inbox or a number, note their provider ids from `team_contacts` before
+  you upgrade, and release them with AgentMail and AgentPhone directly; the
+  migration does not call the providers. The feature had no users.
+
 - **Teammate contacts are no longer rented, and messages are no longer
   priced.** `CREDIT_NUMBER_CENTS`, `CREDIT_INBOX_CENTS`,
   `CREDIT_EMAIL_MESSAGE_CENTS`, `CREDIT_SMS_MESSAGE_CENTS`,
@@ -57,6 +70,19 @@ upgrade, is in
   stopping all old cluster processes first. See
   [Conversation message compatibility](https://managoat.com/docs/guides/operate/upgrade#conversation-message-compatibility).
 
+- **Skill manifests now take precedence over historical skill names** (#2102).
+  An absent manifest is upgraded before skill changes; retries cannot reclaim
+  a name that Fountain has removed and the user has reused. Invalid manifests
+  and missing source-lock evidence for unnamed legacy GitHub skills stop
+  reconciliation without deleting skills. Restore trustworthy metadata or
+  rebuild; see the release-task guide for disk inspection and migration.
+  Installs now record their intent before execution and commit ownership per
+  skill, so an interrupted manifest write cannot orphan a newly installed
+  skill. Pending installs stop automatic reconciliation. Operator recovery
+  requires a quiesced sandbox and new source-lock evidence for unnamed
+  directories. Shared-sandbox reconcilers serialize across connected nodes.
+  Stop older reconcilers before resuming changes on that disk.
+
 - **A sandbox without a recorded build fingerprint now requires an explicit
   rebuild before configuration reapply** (#2102). The API returns
   `409 rebuild_required` with `field: "environment"` and a missing-build-evidence
@@ -82,8 +108,10 @@ upgrade, is in
 
 - New principal-key writes must provide an expiry. The database now checks
   that unrevoked principal keys have deadlines, preserving existing deadlines
-  and revoked history (#2103). The old-writer trigger remains during rollout;
-  its removal requires evidence that every writer supplies an expiry.
+  and revoked history (#2103). A follow-up migration retires the implicit
+  30-day default only after the permanent CHECK is validated. Deploy and drain
+  all older writers before applying it; see the principal expiry upgrade
+  sequence. Rolling back restores the default without changing deadlines.
 
 - ChatGPT `auth.json` imports now require explicit `"auth_mode": "chatgpt"`
   (#2106). Use Codex 0.93.0 or newer to sign in again with file storage,

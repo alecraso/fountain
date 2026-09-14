@@ -82,13 +82,22 @@ defmodule Fountain.SandboxSkillsTest do
   test "a nil skills list mounts the bundled skills alone" do
     test = self()
     stub(Managoat.Sandbox, :exec, fn _, _, _, _ -> {:ok, "", 0} end)
-    stub(Managoat.Sandbox, :write_file, fn _h, path, _b -> send(test, {:wrote, path}) && :ok end)
+
+    stub(Managoat.Sandbox, :write_file, fn _h, path, _b ->
+      assert path in [
+               "/home/sprite/.codex/skills/fountain/SKILL.md",
+               "/home/sprite/.codex/skills/create-team/SKILL.md",
+               "/home/sprite/.codex/skills/.fountain-managed-skills"
+             ]
+
+      send(test, {:wrote, path})
+      :ok
+    end)
 
     assert :ok = SandboxSkills.mount(@handle, "codex", nil)
     assert_receive {:wrote, "/home/sprite/.codex/skills/fountain/SKILL.md"}
     assert_receive {:wrote, "/home/sprite/.codex/skills/create-team/SKILL.md"}
     assert_receive {:wrote, "/home/sprite/.codex/skills/.fountain-managed-skills"}
-    refute_receive {:wrote, _}
   end
 
   defmodule DiskRuntime do
@@ -156,19 +165,133 @@ defmodule Fountain.SandboxSkillsTest do
       refute File.exists?(Path.join(root, "legacy"))
     end
 
-    test "seeds legacy named skills and ignores unsafe manifest paths", %{root: root} do
+    test "refuses malformed, unsafe and non-file manifests without touching skills", %{root: root} do
+      manifest = Path.join(root, ".fountain-managed-skills")
       File.mkdir_p!(Path.join(root, "legacy"))
       File.write!(Path.join(root, "legacy/SKILL.md"), "Old skill")
-      File.write!(Path.join(root, ".fountain-managed-skills"), "..\n../outside\n/absolute\n")
+      previous = [%{"name" => "legacy", "content" => "Old skill"}]
+
+      for contents <- [
+            "",
+            "..\n../outside\n",
+            "[]",
+            ~s({"owned":["../outside"]}),
+            ~s({"owned":["legacy",null]}),
+            ~s({"owned":"legacy"})
+          ] do
+        File.write!(manifest, contents)
+        assert {:ok, :invalid} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+
+        assert {:error, :invalid_skill_manifest} =
+                 SandboxSkills.upgrade_manifest(@handle, DiskRuntime, previous)
+
+        assert {:error, :invalid_skill_manifest} =
+                 SandboxSkills.reconcile(@handle, DiskRuntime, [], previous)
+
+        assert File.read!(manifest) == contents
+        assert File.read!(Path.join(root, "legacy/SKILL.md")) == "Old skill"
+      end
+
+      File.rm!(manifest)
+      File.ln_s!(Path.join(root, "legacy/SKILL.md"), manifest)
+      assert {:ok, :invalid} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+
+      assert {:error, :invalid_skill_manifest} =
+               SandboxSkills.upgrade_manifest(@handle, DiskRuntime, previous)
+
+      File.rm!(manifest)
+      File.mkdir!(manifest)
+      assert {:ok, :invalid} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+    end
+
+    test "migration records ownership without changing skills and never reclaims released names",
+         %{root: root} do
+      manifest = Path.join(root, ".fountain-managed-skills")
+      File.mkdir_p!(Path.join(root, "legacy"))
+      File.write!(Path.join(root, "legacy/SKILL.md"), "Old skill")
+      previous = [%{"name" => "legacy", "content" => "Old skill"}]
+
+      assert {:ok, :missing} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+      refute File.exists?(manifest)
+      assert :ok = SandboxSkills.upgrade_manifest(@handle, DiskRuntime, previous)
+      assert {:ok, :present} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+      assert File.read!(Path.join(root, "legacy/SKILL.md")) == "Old skill"
+      refute File.exists?(Path.join(root, "fountain"))
+      before = File.read!(manifest)
+      assert :ok = SandboxSkills.upgrade_manifest(@handle, DiskRuntime, [])
+      assert File.read!(manifest) == before
+
+      assert :ok = SandboxSkills.reconcile(@handle, DiskRuntime, [], previous)
+      File.mkdir_p!(Path.join(root, "legacy"))
+      File.write!(Path.join(root, "legacy/SKILL.md"), "Personal replacement")
+      assert :ok = SandboxSkills.reconcile(@handle, DiskRuntime, [], previous)
+      assert File.read!(Path.join(root, "legacy/SKILL.md")) == "Personal replacement"
+    end
+
+    test "upgrades a fresh root and leaves unknown legacy ownership unrecorded", %{root: root} do
+      missing_root = Path.join(root, "not-created-yet")
+      Process.put(:skills_test_root, missing_root)
+
+      assert {:error, :legacy_skill_ownership_unknown} =
+               SandboxSkills.upgrade_manifest(@handle, DiskRuntime, nil)
+
+      refute File.exists?(missing_root)
+      assert :ok = SandboxSkills.upgrade_manifest(@handle, DiskRuntime, [])
+      assert {:ok, :present} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+      assert :ok = SandboxSkills.upgrade_manifest(@handle, DiskRuntime, nil)
+    end
+
+    test "a failed ownership write leaves old skills intact and migration is retryable", %{
+      root: root
+    } do
+      File.mkdir_p!(Path.join(root, "legacy"))
+      File.write!(Path.join(root, "legacy/SKILL.md"), "Old skill")
+      previous = [%{"name" => "legacy", "content" => "Old skill"}]
+      expect(Managoat.Sandbox, :write_file, fn _, _, _ -> {:error, :offline} end)
+      assert {:error, :offline} = SandboxSkills.reconcile(@handle, DiskRuntime, [], previous)
+      assert File.read!(Path.join(root, "legacy/SKILL.md")) == "Old skill"
+      assert {:ok, :missing} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+      assert :ok = SandboxSkills.reconcile(@handle, DiskRuntime, [], previous)
+      assert {:ok, :present} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+      refute File.exists?(Path.join(root, "legacy"))
+    end
+
+    test "missing source-lock evidence does not certify an unnamed legacy install", %{root: root} do
+      File.mkdir_p!(Path.join(root, "unknown-remote"))
+
+      stub(Managoat.Sandbox, :exec, fn _, "bash", args, _ ->
+        if Enum.any?(args, &String.contains?(&1, "skills_lock=")) do
+          {:ok, "", 0}
+        else
+          {output, code} = System.cmd("bash", args, stderr_to_stdout: true)
+          {:ok, output, code}
+        end
+      end)
+
+      for _retry <- 1..2 do
+        assert {:error, :legacy_skill_ownership_unknown} =
+                 SandboxSkills.upgrade_manifest(@handle, DiskRuntime, [
+                   %{"source" => "owner/repo"}
+                 ])
+
+        assert {:ok, :missing} = SandboxSkills.manifest_status(@handle, DiskRuntime)
+        assert File.dir?(Path.join(root, "unknown-remote"))
+      end
+    end
+
+    test "current manifests do not consult an unavailable historical GitHub source lock", %{
+      root: root
+    } do
+      File.write!(Path.join(root, ".fountain-managed-skills"), "{}")
+
+      stub(Managoat.Sandbox, :exec, fn _, "bash", args, _ ->
+        refute Enum.any?(args, &String.contains?(&1, "skills_lock="))
+        {output, code} = System.cmd("bash", args, stderr_to_stdout: true)
+        {:ok, output, code}
+      end)
 
       assert :ok =
-               SandboxSkills.reconcile(@handle, DiskRuntime, [], [
-                 %{"name" => "legacy", "content" => "Old skill"}
-               ])
-
-      refute File.exists?(Path.join(root, "legacy"))
-      # A manifest naming anything but a direct child removes nothing.
-      assert File.dir?(root)
+               SandboxSkills.reconcile(@handle, DiskRuntime, [], [%{"source" => "owner/repo"}])
     end
 
     test "recovers unnamed legacy GitHub skills from the source lock", %{root: root} do
@@ -182,7 +305,8 @@ defmodule Fountain.SandboxSkillsTest do
            Jason.encode!(%{
              "skills" => %{
                "legacy-remote" => %{"source" => "owner/repo", "sourceType" => "github"},
-               "unrelated" => %{"source" => "another/repo", "sourceType" => "github"}
+               "unrelated" => %{"source" => "another/repo", "sourceType" => "github"},
+               "../outside" => %{"source" => "owner/repo", "sourceType" => "github"}
              }
            }), 0}
         else
