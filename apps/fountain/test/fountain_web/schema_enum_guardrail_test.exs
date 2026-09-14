@@ -104,15 +104,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     # domain knows about, with nowhere to ask until #940, and both doors refuse
     # it — so publishing it in the spec would advertise a value every request
     # carrying it gets a 422 for.
-    {FountainWeb.Schemas.Agent, "permission_policy.{}"} =>
-      {Managoat.ACP.Permissions, :buildable_verdicts},
-    {FountainWeb.Schemas.ConversationCreateRequest, "permission_policy.{}"} =>
-      {Managoat.ACP.Permissions, :buildable_verdicts},
-    {FountainWeb.Schemas.AgentRequest, "permission_policy.{}"} =>
-      {Managoat.ACP.Permissions, :buildable_verdicts},
-    {FountainWeb.Schemas.AgentUpdate, "permission_policy.{}"} =>
-      {Managoat.ACP.Permissions, :buildable_verdicts},
-    {FountainWeb.Schemas.Conversation, "permission_policy.{}"} =>
+    # One entry, not five: the five call sites reference the PermissionPolicy
+    # schema module (#1899), so the enum is declared once and `walk/2` sees it
+    # only there — a module reference is that module's own responsibility.
+    {FountainWeb.Schemas.PermissionPolicy, "{}"} =>
       {Managoat.ACP.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.Conversation, "status"} => {Conversation, :statuses},
     {FountainWeb.Schemas.Conversation, "source"} => {Conversation, :sources},

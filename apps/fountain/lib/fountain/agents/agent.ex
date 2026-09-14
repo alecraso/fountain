@@ -170,6 +170,7 @@ defmodule Fountain.Agents.Agent do
     ])
     |> validate_skills()
     |> validate_mcp_servers()
+    |> null_permission_policy_clears()
     |> validate_permission_policy()
     |> unique_constraint(:name, name: :agents_user_id_name_index)
     |> foreign_key_constraint(:environment_id)
@@ -313,6 +314,18 @@ defmodule Fountain.Agents.Agent do
           []
       end
     end)
+  end
+
+  # `"permission_policy": null` on the wire clears the agent's policy. The
+  # OpenAPI document has said the field takes null since #939, and a generated
+  # client is typed to send it; the column is NOT NULL with `{}` as its
+  # default, so without this a null passed the cast and the changeset and
+  # surfaced as a 500 from PostgreSQL rather than as an empty policy (#1899).
+  defp null_permission_policy_clears(changeset) do
+    case fetch_change(changeset, :permission_policy) do
+      {:ok, nil} -> put_change(changeset, :permission_policy, %{})
+      _ -> changeset
+    end
   end
 
   # A policy is a flat map of tool name (or "default") to verdict. Validated

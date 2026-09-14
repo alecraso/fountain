@@ -135,6 +135,30 @@ are in that state today (`ChatCompletionRequest.stream`,
 two as `optional`, so the day the server makes one required, the client that
 omits it is told.
 
+## The `nullable` trap
+
+In OpenAPI 3.0 `nullable: true` relaxes the type of the schema it sits on and
+nothing else. A property that borrows its shape from a composition —
+`{"nullable": true, "allOf": [{"$ref": ...}]}` — reads as nullable and is not:
+the wrapper carries no `type` to relax, and the referenced schema, which is
+where `type: object` lives, never saw the flag. A standards validator and a
+generated client both read the document, so both refuse the `null` the server
+still sends. Nothing on the server side can see it: OpenApiSpex resolves null
+before it consults the composition, so every casting test stays green.
+
+`build.py` refuses to write a contract where a property says `nullable: true`
+and the composition would still reject null (`check_nullable_composition`, over
+the exported document rather than the projection). The repair is to put
+`nullable: true` on the referenced schema itself, or to give the union an
+explicit null-only branch; adding `type: object` to the wrapper does not work.
+`PermissionPolicy` is the shape done right. Two properties already in the
+broken state, `Conversation.sandbox` and `Turn.usage`, are recorded in the
+guard's `KNOWN_NOT_NULLABLE` ratchet and tracked in
+[#2189](https://github.com/managoat/fountain/issues/2189); the list only
+shrinks, and a stale entry fails the build too. The projection records a named
+schema's own `nullable` for the same reason — without it, hoisting the flag
+onto a component diffs `contract.json` to nothing.
+
 ## Per-SDK commands
 
 | SDK | Command | Run from |

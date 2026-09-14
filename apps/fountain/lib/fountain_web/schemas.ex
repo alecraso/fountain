@@ -422,6 +422,56 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule PermissionPolicy do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PermissionPolicy",
+      description:
+        "The wire shape of a permission policy: a map of key to verdict, plus the " <>
+          "optional `ask_timeout` key, whose value is a number rather than a verdict. " <>
+          "Every place a policy travels shares this shape and says there what a " <>
+          "policy means at that door. Null everywhere a policy is absent.",
+      type: :object,
+      # Nullable HERE, not only on the five properties that reference this.
+      # In OpenAPI 3.0 `nullable` relaxes the type of the schema it sits on and
+      # nothing else, so a `nullable: true` wrapper whose shape comes from an
+      # `allOf` branch still fails a standards validator on null: the branch is
+      # what carries `type: object`, and it is the branch that refuses. The
+      # five inline copies this replaced each wrote `type: :object` and
+      # `nullable: true` on one node; hoisting the pair together is what keeps
+      # that meaning. `check_nullable_composition` in
+      # scripts/sdk-contract/build.py is the guard.
+      nullable: true,
+      properties: %{
+        ask_timeout: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
+          description:
+            "Seconds a permission request that outlived its turn waits before it " <>
+              "is denied (#1635). Names no tool, so it is the one key whose value " <>
+              "is a number rather than a verdict, which is why the value schema " <>
+              "below is a union. Absent leaves the global ask timeout. A request " <>
+              "may shorten it with `_meta.fountain.timeout` on its own " <>
+              "session/request_permission, and may not lengthen it. A launch may " <>
+              "only shorten what the agent set, or the global ask timeout where " <>
+              "the agent set nothing. Capped at a year, which is where the " <>
+              "deadline stops fitting in a timestamp rather than a limit on how " <>
+              "long a wait is useful."
+        }
+      },
+      additionalProperties: %Schema{
+        oneOf: [
+          %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
+          %Schema{type: :integer, minimum: 1}
+        ]
+      },
+      required: []
+    })
+  end
+
   defmodule Conversation do
     @moduledoc false
     require OpenApiSpex
@@ -468,32 +518,8 @@ defmodule FountainWeb.Schemas do
             "Immutable sandbox callback credential policy. none never issues a callback token."
         },
         permission_policy: %Schema{
-          type: :object,
+          allOf: [PermissionPolicy],
           nullable: true,
-          properties: %{
-            ask_timeout: %Schema{
-              type: :integer,
-              minimum: 1,
-              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
-              description:
-                "Seconds a permission request that outlived its turn waits before it " <>
-                  "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is a number rather than a verdict, which is why the value schema " <>
-                  "below is a union. Absent leaves the global ask timeout. A request " <>
-                  "may shorten it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission, and may not lengthen it. A launch may " <>
-                  "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing. Capped at a year, which is where the " <>
-                  "deadline stops fitting in a timestamp rather than a limit on how " <>
-                  "long a wait is useful."
-            }
-          },
-          additionalProperties: %Schema{
-            oneOf: [
-              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
-              %Schema{type: :integer, minimum: 1}
-            ]
-          },
           description:
             "The per-launch permission override this conversation was started with, or " <>
               "null if it had none. The policy actually in force is this merged with the " <>
@@ -678,32 +704,8 @@ defmodule FountainWeb.Schemas do
             "none omits the sandbox Fountain credential on provision and every wake. Requires a fresh ephemeral sandbox; unavailable on attach or policy-changing channel resume."
         },
         permission_policy: %Schema{
-          type: :object,
+          allOf: [PermissionPolicy],
           nullable: true,
-          properties: %{
-            ask_timeout: %Schema{
-              type: :integer,
-              minimum: 1,
-              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
-              description:
-                "Seconds a permission request that outlived its turn waits before it " <>
-                  "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is a number rather than a verdict, which is why the value schema " <>
-                  "below is a union. Absent leaves the global ask timeout. A request " <>
-                  "may shorten it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission, and may not lengthen it. A launch may " <>
-                  "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing. Capped at a year, which is where the " <>
-                  "deadline stops fitting in a timestamp rather than a limit on how " <>
-                  "long a wait is useful."
-            }
-          },
-          additionalProperties: %Schema{
-            oneOf: [
-              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
-              %Schema{type: :integer, minimum: 1}
-            ]
-          },
           description:
             "Per-launch permission override (#939). Keys are matched against the tool " <>
               "card's title first and then ACP's kind (execute, edit, read, fetch, …); " <>
@@ -1122,32 +1124,8 @@ defmodule FountainWeb.Schemas do
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         permission_policy: %Schema{
-          type: :object,
+          allOf: [PermissionPolicy],
           nullable: true,
-          properties: %{
-            ask_timeout: %Schema{
-              type: :integer,
-              minimum: 1,
-              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
-              description:
-                "Seconds a permission request that outlived its turn waits before it " <>
-                  "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is a number rather than a verdict, which is why the value schema " <>
-                  "below is a union. Absent leaves the global ask timeout. A request " <>
-                  "may shorten it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission, and may not lengthen it. A launch may " <>
-                  "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing. Capped at a year, which is where the " <>
-                  "deadline stops fitting in a timestamp rather than a limit on how " <>
-                  "long a wait is useful."
-            }
-          },
-          additionalProperties: %Schema{
-            oneOf: [
-              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
-              %Schema{type: :integer, minimum: 1}
-            ]
-          },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
               "\"default\" key. A key is matched against the tool card's title first and " <>
@@ -1338,32 +1316,8 @@ defmodule FountainWeb.Schemas do
               "may name the other with sandbox_mode on POST /api/conversations."
         },
         permission_policy: %Schema{
-          type: :object,
+          allOf: [PermissionPolicy],
           nullable: true,
-          properties: %{
-            ask_timeout: %Schema{
-              type: :integer,
-              minimum: 1,
-              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
-              description:
-                "Seconds a permission request that outlived its turn waits before it " <>
-                  "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is a number rather than a verdict, which is why the value schema " <>
-                  "below is a union. Absent leaves the global ask timeout. A request " <>
-                  "may shorten it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission, and may not lengthen it. A launch may " <>
-                  "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing. Capped at a year, which is where the " <>
-                  "deadline stops fitting in a timestamp rather than a limit on how " <>
-                  "long a wait is useful."
-            }
-          },
-          additionalProperties: %Schema{
-            oneOf: [
-              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
-              %Schema{type: :integer, minimum: 1}
-            ]
-          },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
               "\"default\" key. A key is matched against the tool card's title first and " <>
@@ -1511,32 +1465,8 @@ defmodule FountainWeb.Schemas do
               "may name the other with sandbox_mode on POST /api/conversations."
         },
         permission_policy: %Schema{
-          type: :object,
+          allOf: [PermissionPolicy],
           nullable: true,
-          properties: %{
-            ask_timeout: %Schema{
-              type: :integer,
-              minimum: 1,
-              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
-              description:
-                "Seconds a permission request that outlived its turn waits before it " <>
-                  "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is a number rather than a verdict, which is why the value schema " <>
-                  "below is a union. Absent leaves the global ask timeout. A request " <>
-                  "may shorten it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission, and may not lengthen it. A launch may " <>
-                  "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing. Capped at a year, which is where the " <>
-                  "deadline stops fitting in a timestamp rather than a limit on how " <>
-                  "long a wait is useful."
-            }
-          },
-          additionalProperties: %Schema{
-            oneOf: [
-              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
-              %Schema{type: :integer, minimum: 1}
-            ]
-          },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
               "\"default\" key. A key is matched against the tool card's title first and " <>

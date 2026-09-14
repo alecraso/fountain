@@ -413,6 +413,29 @@ defmodule FountainWeb.AgentControllerTest do
       assert body["data"]["permission_policy"] == %{"Bash" => "auto_deny"}
     end
 
+    test "PUT with null clears the policy", %{conn: conn, user: user, raw_key: raw_key} do
+      # `permission_policy` is `allOf: [PermissionPolicy], nullable: true` at
+      # every call site (#1899). OpenApiSpex answers null on the wrapper's own
+      # `nullable` before it dispatches to the composition, so this is the
+      # casting half of "the field takes null"; the document half — that a
+      # standards validator agrees — is `check_nullable_composition` in
+      # scripts/sdk-contract/build.py. Both have to hold for a generated client
+      # to send the null it is typed to send. An agent's policy is never null in
+      # storage (the column is NOT NULL, default `{}`), so null clears it and
+      # the response shows the empty policy; it used to be a 500 from the
+      # not-null constraint.
+      agent = insert_agent(user_id: user.id, permission_policy: %{"Bash" => "ask"})
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> put("/api/agents/#{agent.id}", %{"permission_policy" => nil})
+
+      body = json_response(conn, 200)
+      assert body["data"]["permission_policy"] == %{}
+    end
+
     test "an unknown verdict is refused", %{conn: conn, raw_key: raw_key} do
       conn =
         conn

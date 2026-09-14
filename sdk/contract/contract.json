@@ -8515,30 +8515,13 @@
           "type": "string"
         },
         "permission_policy": {
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "enum": [
-                  "ask",
-                  "auto_allow",
-                  "auto_deny"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              }
-            ]
-          },
-          "nullable": true,
-          "properties": {
-            "ask_timeout": {
-              "required": false,
-              "type": "integer"
+          "allOf": [
+            {
+              "ref": "PermissionPolicy"
             }
-          },
-          "required": false,
-          "type": "object"
+          ],
+          "nullable": true,
+          "required": false
         },
         "runtime": {
           "enum": [
@@ -8690,30 +8673,13 @@
           "type": "string"
         },
         "permission_policy": {
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "enum": [
-                  "ask",
-                  "auto_allow",
-                  "auto_deny"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              }
-            ]
-          },
-          "nullable": true,
-          "properties": {
-            "ask_timeout": {
-              "required": false,
-              "type": "integer"
+          "allOf": [
+            {
+              "ref": "PermissionPolicy"
             }
-          },
-          "required": false,
-          "type": "object"
+          ],
+          "nullable": true,
+          "required": false
         },
         "runtime": {
           "enum": [
@@ -8857,30 +8823,13 @@
           "type": "string"
         },
         "permission_policy": {
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "enum": [
-                  "ask",
-                  "auto_allow",
-                  "auto_deny"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              }
-            ]
-          },
-          "nullable": true,
-          "properties": {
-            "ask_timeout": {
-              "required": false,
-              "type": "integer"
+          "allOf": [
+            {
+              "ref": "PermissionPolicy"
             }
-          },
-          "required": false,
-          "type": "object"
+          ],
+          "nullable": true,
+          "required": false
         },
         "runtime": {
           "enum": [
@@ -10720,30 +10669,13 @@
           "type": "array"
         },
         "permission_policy": {
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "enum": [
-                  "ask",
-                  "auto_allow",
-                  "auto_deny"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              }
-            ]
-          },
-          "nullable": true,
-          "properties": {
-            "ask_timeout": {
-              "required": false,
-              "type": "integer"
+          "allOf": [
+            {
+              "ref": "PermissionPolicy"
             }
-          },
-          "required": false,
-          "type": "object"
+          ],
+          "nullable": true,
+          "required": false
         },
         "runtime": {
           "enum": [
@@ -10882,30 +10814,13 @@
           "type": "object"
         },
         "permission_policy": {
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "enum": [
-                  "ask",
-                  "auto_allow",
-                  "auto_deny"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              }
-            ]
-          },
-          "nullable": true,
-          "properties": {
-            "ask_timeout": {
-              "required": false,
-              "type": "integer"
+          "allOf": [
+            {
+              "ref": "PermissionPolicy"
             }
-          },
-          "required": false,
-          "type": "object"
+          ],
+          "nullable": true,
+          "required": false
         },
         "prompt": {
           "required": false,
@@ -12192,6 +12107,31 @@
         "ok": {
           "required": true,
           "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "PermissionPolicy": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "enum": [
+              "ask",
+              "auto_allow",
+              "auto_deny"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "nullable": true,
+      "properties": {
+        "ask_timeout": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"

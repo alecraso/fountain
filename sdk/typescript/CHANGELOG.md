@@ -11,6 +11,25 @@ server releases.
 
 ---
 
+## [5.1.0] — 2026-09-14
+
+### Added
+
+- `components["schemas"]["PermissionPolicy"]`. The permission-policy object was
+  declared inline in five server schemas; it is now one named component that
+  all five reference, so the generated type has a name instead of being
+  repeated as an anonymous intersection. The named type includes `null`, which
+  is what a policy-less agent or conversation carries.
+
+### Changed
+
+- `permission_policy` on `Agent`, `AgentRequest`, `AgentUpdate`, `Conversation`
+  and `ConversationCreateRequest` is typed as
+  `components["schemas"]["PermissionPolicy"] | null`. It resolves to exactly
+  the type 5.0.0 had, so this is a rename and not a new shape: TypeScript is
+  structurally typed and existing code keeps compiling. Code that wrote the old
+  anonymous type out by hand can use the named one instead.
+
 ## [5.0.0] — 2026-09-14
 
 ### Breaking changes
