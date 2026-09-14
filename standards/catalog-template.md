@@ -327,7 +327,7 @@ filtering is a rendering change rather than a migration.
 ### One thing Fountain already has and does not use
 
 `GET /api/catalog` returns runtimes, model suggestions per runtime, sandbox
-providers, package managers, avatar bases and moods, and app URLs. Fountain
+providers, package managers, and app URLs. Fountain
 already publishes a machine-readable catalog and no human-readable one. The
 index pages above should render from the same source wherever the data
 overlaps, so the two cannot disagree, which is the argument

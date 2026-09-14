@@ -3173,14 +3173,6 @@ defmodule FountainWeb.Schemas do
               items: %Schema{type: :string},
               description: "The managers provisioning installs from an environment's `packages`."
             },
-            avatar: %Schema{
-              type: :object,
-              properties: %{
-                bases: %Schema{type: :array, items: %Schema{type: :string}},
-                moods: %Schema{type: :array, items: %Schema{type: :string}}
-              },
-              required: [:bases, :moods]
-            },
             apps: %Schema{
               type: :object,
               description:
@@ -3248,46 +3240,9 @@ defmodule FountainWeb.Schemas do
             :models,
             :sandbox_providers,
             :package_managers,
-            :avatar,
             :apps,
             :first_request
           ]
-        }
-      },
-      required: [:data]
-    })
-  end
-
-  defmodule AvatarGenerateRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AvatarGenerateRequest",
-      type: :object,
-      properties: %{
-        base: %Schema{type: :string, description: "One of `GET /api/catalog` `avatar.bases`."},
-        mood: %Schema{type: :string, description: "One of `GET /api/catalog` `avatar.moods`."}
-      },
-      required: [:base, :mood]
-    })
-  end
-
-  defmodule AvatarGenerateResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AvatarGenerateResponse",
-      type: :object,
-      properties: %{
-        data: %Schema{
-          type: :object,
-          properties: %{
-            data: %Schema{type: :string, description: "Base64 PNG bytes."},
-            media_type: %Schema{type: :string, example: "image/png"}
-          },
-          required: [:data, :media_type]
         }
       },
       required: [:data]

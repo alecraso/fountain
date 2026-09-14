@@ -3,7 +3,7 @@ defmodule FountainWeb.CatalogController do
   `GET /api/catalog`: the instance's vocabulary a client needs to build the
   agent and environment forms — runtimes and their model suggestions,
   the sandbox providers usable here and the default, the package managers
-  an environment accepts, the avatar generator's bases and moods (#815),
+  an environment accepts,
   where this instance's browser apps live (#866), and the remote MCP
   servers verified to complete connection discovery (#1322), and the first
   request (ADR 0038).
@@ -35,7 +35,7 @@ defmodule FountainWeb.CatalogController do
       "Runtimes with model suggestions per runtime (suggestions, not an allowlist — " <>
         "any `provider/model` under a known provider is accepted), sandbox providers " <>
         "usable on this instance and the default, package managers an environment " <>
-        "accepts, the avatar generator's bases and moods, the URLs of the " <>
+        "accepts, the URLs of the " <>
         "browser apps this instance sends people to for conversations and the team, " <>
         "and remote MCP servers verified to complete connection discovery " <>
         "(again suggestions — any URL can be discovered), each with the date " <>
@@ -60,10 +60,6 @@ defmodule FountainWeb.CatalogController do
           default: Atom.to_string(Fountain.SandboxProviders.default_provider())
         },
         package_managers: Fountain.Conversations.Provisioning.package_managers(),
-        avatar: %{
-          bases: Fountain.AvatarGenerator.bases(),
-          moods: Fountain.AvatarGenerator.moods()
-        },
         # Where a human is sent to watch a conversation or message a teammate.
         # Null for an app this deployment does not have.
         apps: %{

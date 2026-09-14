@@ -941,26 +941,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/avatars/generate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate an avatar image
-         * @description Generates a square PNG avatar with the tenant's OpenAI credential from a `base` and a `mood` (`GET /api/catalog` lists both). Returns base64 `data` and `media_type` in the shape `PUT /api/agents/:id/avatar` accepts. 422 `no_openai_key` when the tenant has no OpenAI credential; 502 when the provider refused.
-         */
-        post: operations["FountainWeb.AvatarGenerateController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/buzz/agents": {
         parameters: {
             query?: never;
@@ -1010,7 +990,7 @@ export interface paths {
         };
         /**
          * The instance's form vocabulary
-         * @description Runtimes with model suggestions per runtime (suggestions, not an allowlist — any `provider/model` under a known provider is accepted), sandbox providers usable on this instance and the default, package managers an environment accepts, the avatar generator's bases and moods, the URLs of the browser apps this instance sends people to for conversations and the team, and remote MCP servers verified to complete connection discovery (again suggestions — any URL can be discovered), each with the date it was last verified. Also `first_request`, the one onboarding snippet this deployment hands out, with its base URL already in it and the caller's own key and agent left as placeholders.
+         * @description Runtimes with model suggestions per runtime (suggestions, not an allowlist — any `provider/model` under a known provider is accepted), sandbox providers usable on this instance and the default, package managers an environment accepts, the URLs of the browser apps this instance sends people to for conversations and the team, and remote MCP servers verified to complete connection discovery (again suggestions — any URL can be discovered), each with the date it was last verified. Also `first_request`, the one onboarding snippet this deployment hands out, with its base URL already in it and the caller's own key and agent left as placeholders.
          */
         get: operations["FountainWeb.CatalogController.show"];
         put?: never;
@@ -3155,22 +3135,6 @@ export interface components {
             /** @description Leading characters of the key, the only part stored in the clear. */
             prefix: string;
         };
-        /** AvatarGenerateRequest */
-        AvatarGenerateRequest: {
-            /** @description One of `GET /api/catalog` `avatar.bases`. */
-            base: string;
-            /** @description One of `GET /api/catalog` `avatar.moods`. */
-            mood: string;
-        };
-        /** AvatarGenerateResponse */
-        AvatarGenerateResponse: {
-            data: {
-                /** @description Base64 PNG bytes. */
-                data: string;
-                /** @example image/png */
-                media_type: string;
-            };
-        };
         /**
          * AvatarRequest
          * @description JSON form of an avatar upload. The raw-bytes form sends the image directly with an image content-type instead.
@@ -3364,10 +3328,6 @@ export interface components {
                 apps: {
                     conversations: string | null;
                     team: string | null;
-                };
-                avatar: {
-                    bases: string[];
-                    moods: string[];
                 };
                 /** @description The one onboarding request this deployment hands out (ADR 0038), the same text the verified landing and the manual print. The base URL is already in it. The caller's key and agent are not: the server stores only a hash of a key, so a client substitutes the key it holds and an agent from `GET /api/agents`. */
                 first_request: {
@@ -9438,94 +9398,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthError"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AvatarGenerateController.create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Base and mood */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["AvatarGenerateRequest"];
-            };
-        };
-        responses: {
-            /** @description Generated image */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AvatarGenerateResponse"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description No OpenAI credential, or unknown base/mood */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The image provider refused */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

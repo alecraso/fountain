@@ -20,11 +20,6 @@ defmodule FountainWeb.CatalogControllerTest do
     assert data["sandbox_providers"]["default"] in Fountain.SandboxProviders.known_providers()
     assert data["package_managers"] == ["apt", "npm"]
 
-    assert data["avatar"] == %{
-             "bases" => ~w(robot human alien),
-             "moods" => ~w(serious casual goofy)
-           }
-
     assert length(data["mcp_servers"]) ==
              length(Fountain.Connections.McpServerCatalog.entries())
 

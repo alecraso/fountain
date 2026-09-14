@@ -68,10 +68,9 @@
     {
       "operations": [
         "PUT /api/agents/{id}/avatar",
-        "DELETE /api/agents/{id}/avatar",
-        "POST /api/avatars/generate"
+        "DELETE /api/agents/{id}/avatar"
       ],
-      "reason": "Avatar upload and generation belong to the console. FountainKit models fetching the image bytes."
+      "reason": "Avatar upload and removal belong to the console. FountainKit models fetching the image bytes."
     },
     {
       "operations": [

@@ -5801,60 +5801,6 @@
         }
       }
     },
-    "POST /api/avatars/generate": {
-      "operation_id": "FountainWeb.AvatarGenerateController.create",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "AvatarGenerateRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "AvatarGenerateResponse"
-          }
-        },
-        "400": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "502": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "POST /api/buzz/agents": {
       "operation_id": "FountainWeb.BuzzAgentController.create",
       "path_params": [],
@@ -9412,38 +9358,6 @@
       },
       "type": "object"
     },
-    "AvatarGenerateRequest": {
-      "properties": {
-        "base": {
-          "required": true,
-          "type": "string"
-        },
-        "mood": {
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "AvatarGenerateResponse": {
-      "properties": {
-        "data": {
-          "properties": {
-            "data": {
-              "required": true,
-              "type": "string"
-            },
-            "media_type": {
-              "required": true,
-              "type": "string"
-            }
-          },
-          "required": true,
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
     "AvatarRequest": {
       "properties": {
         "data": {
@@ -9868,26 +9782,6 @@
                   "nullable": true,
                   "required": true,
                   "type": "string"
-                }
-              },
-              "required": true,
-              "type": "object"
-            },
-            "avatar": {
-              "properties": {
-                "bases": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "required": true,
-                  "type": "array"
-                },
-                "moods": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "required": true,
-                  "type": "array"
                 }
               },
               "required": true,

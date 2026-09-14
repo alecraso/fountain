@@ -2,7 +2,7 @@ defmodule FountainWeb.AgentsLive.Form do
   @moduledoc false
   use FountainWeb, :live_view
 
-  alias Fountain.{Agents, AvatarGenerator, Environments, InferenceCredentials}
+  alias Fountain.{Agents, Environments, InferenceCredentials}
   alias Fountain.Agents.Agent
   alias Managoat.ACP.Permissions
   alias Managoat.Runtimes.ACP
@@ -36,13 +36,6 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:skills, agent_to_skill_list(agent.skills || []))
      |> assign(:mcp_servers, agent_to_mcp_server_list(agent.mcp_servers || %{}))
      |> assign(:connections, connections_for(user_id))
-     |> assign(:avatar_tab, :upload)
-     |> assign(:avatar_base, "robot")
-     |> assign(:avatar_mood, "serious")
-     |> assign(:generating_avatar, false)
-     |> assign(:generated_avatar_data, nil)
-     |> assign(:generated_avatar_preview, nil)
-     |> assign(:avatar_error, nil)
      |> allow_upload(:avatar,
        accept: ~w(image/jpeg image/png image/gif image/webp),
        max_entries: 1,
@@ -380,46 +373,6 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
-  def handle_event("switch_avatar_tab", %{"tab" => tab}, socket) do
-    {:noreply, assign(socket, :avatar_tab, String.to_existing_atom(tab))}
-  end
-
-  def handle_event("set_avatar_base", %{"base" => base}, socket)
-      when base in ["robot", "human", "alien"] do
-    {:noreply, assign(socket, :avatar_base, base)}
-  end
-
-  def handle_event("set_avatar_mood", %{"mood" => mood}, socket)
-      when mood in ["serious", "casual", "goofy"] do
-    {:noreply, assign(socket, :avatar_mood, mood)}
-  end
-
-  def handle_event("generate_avatar", _params, socket) do
-    user_id = socket.assigns.user_id
-    base = socket.assigns.avatar_base
-    mood = socket.assigns.avatar_mood
-
-    socket =
-      socket
-      |> assign(:generating_avatar, true)
-      |> assign(:avatar_error, nil)
-      |> assign(:generated_avatar_data, nil)
-      |> assign(:generated_avatar_preview, nil)
-
-    {:noreply,
-     start_async(socket, :generate_avatar, fn ->
-       AvatarGenerator.generate(user_id, base, mood)
-     end)}
-  end
-
-  def handle_event("discard_generated_avatar", _, socket) do
-    {:noreply,
-     socket
-     |> assign(:generated_avatar_data, nil)
-     |> assign(:generated_avatar_preview, nil)
-     |> assign(:avatar_error, nil)}
-  end
-
   def handle_event("submit", %{"agent" => params}, socket) do
     skills_list = extract_skills_from_params(params, socket.assigns.skills)
     mcp_servers_list = extract_mcp_servers_from_params(params, socket.assigns.mcp_servers)
@@ -475,47 +428,6 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
-  @impl true
-  def handle_async(:generate_avatar, {:ok, {:ok, data}}, socket) do
-    preview = "data:image/png;base64," <> Base.encode64(data)
-
-    {:noreply,
-     socket
-     |> assign(:generating_avatar, false)
-     |> assign(:generated_avatar_data, data)
-     |> assign(:generated_avatar_preview, preview)
-     |> assign(:avatar_error, nil)}
-  end
-
-  def handle_async(:generate_avatar, {:ok, {:error, :no_openai_key}}, socket) do
-    {:noreply,
-     socket
-     |> assign(:generating_avatar, false)
-     |> assign(:avatar_error, "No OpenAI API key found. Add one in Settings \u2192 Credentials.")}
-  end
-
-  def handle_async(:generate_avatar, {:ok, {:error, reason}}, socket)
-      when is_binary(reason) do
-    {:noreply,
-     socket
-     |> assign(:generating_avatar, false)
-     |> assign(:avatar_error, reason)}
-  end
-
-  def handle_async(:generate_avatar, {:ok, {:error, _reason}}, socket) do
-    {:noreply,
-     socket
-     |> assign(:generating_avatar, false)
-     |> assign(:avatar_error, "Avatar generation failed. Please try again.")}
-  end
-
-  def handle_async(:generate_avatar, {:exit, _reason}, socket) do
-    {:noreply,
-     socket
-     |> assign(:generating_avatar, false)
-     |> assign(:avatar_error, "Avatar generation failed. Please try again.")}
-  end
-
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     case Agents.create_agent(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, agent} ->
@@ -562,29 +474,18 @@ defmodule FountainWeb.AgentsLive.Form do
   # sobelow_skip ["Traversal.FileModule"] — path is the Phoenix-managed
   # upload tempfile, not client-supplied.
   defp maybe_set_avatar(socket, agent) do
-    uploaded =
-      consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
-        data = File.read!(path)
+    consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
+      data = File.read!(path)
 
-        Agents.upload_avatar(
-          agent,
-          data,
-          entry.client_type,
-          FountainWeb.Audited.attribution(socket)
-        )
+      Agents.upload_avatar(
+        agent,
+        data,
+        entry.client_type,
+        FountainWeb.Audited.attribution(socket)
+      )
 
-        {:ok, :uploaded}
-      end)
-
-    if uploaded == [] do
-      case socket.assigns.generated_avatar_data do
-        nil ->
-          :ok
-
-        data ->
-          Agents.upload_avatar(agent, data, "image/png", FountainWeb.Audited.attribution(socket))
-      end
-    end
+      {:ok, :uploaded}
+    end)
   end
 
   defp extract_skills_from_params(params, current_skills) do
@@ -1000,7 +901,7 @@ defmodule FountainWeb.AgentsLive.Form do
           <label class="block text-sm font-medium text-zinc-700">Avatar</label>
 
           <div
-            :if={@agent.id && @agent.avatar_media_type && !@generated_avatar_preview}
+            :if={@agent.id && @agent.avatar_media_type}
             class="flex items-center gap-3"
           >
             <img
@@ -1017,52 +918,7 @@ defmodule FountainWeb.AgentsLive.Form do
             </button>
           </div>
 
-          <div :if={@generated_avatar_preview} class="flex items-center gap-3">
-            <img
-              src={@generated_avatar_preview}
-              class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
-              alt="Generated avatar preview"
-            />
-            <div class="text-sm space-y-0.5">
-              <p class="text-zinc-500">Will be saved when you submit.</p>
-              <button
-                type="button"
-                phx-click="discard_generated_avatar"
-                class="text-rose-600 hover:text-rose-800 underline underline-offset-2"
-              >
-                Discard
-              </button>
-            </div>
-          </div>
-
-          <div class="flex gap-0.5 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 w-fit text-sm">
-            <button
-              type="button"
-              phx-click="switch_avatar_tab"
-              phx-value-tab="upload"
-              class={[
-                "px-3 py-1 rounded-md transition-colors",
-                @avatar_tab == :upload && "bg-white shadow-sm font-medium text-zinc-900",
-                @avatar_tab != :upload && "text-zinc-500 hover:text-zinc-700"
-              ]}
-            >
-              Upload
-            </button>
-            <button
-              type="button"
-              phx-click="switch_avatar_tab"
-              phx-value-tab="generate"
-              class={[
-                "px-3 py-1 rounded-md transition-colors",
-                @avatar_tab == :generate && "bg-white shadow-sm font-medium text-zinc-900",
-                @avatar_tab != :generate && "text-zinc-500 hover:text-zinc-700"
-              ]}
-            >
-              Generate with AI
-            </button>
-          </div>
-
-          <div :if={@avatar_tab == :upload} class="space-y-2">
+          <div class="space-y-2">
             <.live_file_input
               upload={@uploads.avatar}
               class="block text-sm text-zinc-700 file:mr-3 file:rounded file:border-0
@@ -1091,84 +947,6 @@ defmodule FountainWeb.AgentsLive.Form do
                 {upload_error_to_string(err)}
               </p>
             </div>
-          </div>
-
-          <div :if={@avatar_tab == :generate} class="space-y-3">
-            <div class="space-y-1.5">
-              <p class="text-xs font-medium text-zinc-600">Base</p>
-              <div class="flex gap-1.5">
-                <button
-                  :for={b <- AvatarGenerator.bases()}
-                  type="button"
-                  phx-click="set_avatar_base"
-                  phx-value-base={b}
-                  class={[
-                    "px-3 py-1.5 rounded-md text-sm border transition-colors",
-                    @avatar_base == b && "bg-zinc-900 text-white border-zinc-900",
-                    @avatar_base != b && "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"
-                  ]}
-                >
-                  {String.capitalize(b)}
-                </button>
-              </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <p class="text-xs font-medium text-zinc-600">Mood</p>
-              <div class="flex gap-1.5">
-                <button
-                  :for={m <- AvatarGenerator.moods()}
-                  type="button"
-                  phx-click="set_avatar_mood"
-                  phx-value-mood={m}
-                  class={[
-                    "px-3 py-1.5 rounded-md text-sm border transition-colors",
-                    @avatar_mood == m && "bg-zinc-900 text-white border-zinc-900",
-                    @avatar_mood != m && "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"
-                  ]}
-                >
-                  {String.capitalize(m)}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              phx-click="generate_avatar"
-              disabled={@generating_avatar}
-              class="flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium
-                     text-white hover:bg-zinc-700 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <%= if @generating_avatar do %>
-                <svg
-                  class="animate-spin h-4 w-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    class="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    stroke-width="4"
-                  >
-                  </circle>
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  >
-                  </path>
-                </svg>
-                Generating\u2026
-              <% else %>
-                Generate
-              <% end %>
-            </button>
-
-            <p :if={@avatar_error} class="text-rose-600 text-xs">{@avatar_error}</p>
           </div>
         </div>
 

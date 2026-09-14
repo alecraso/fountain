@@ -58,7 +58,7 @@ teammate.presence.state;       // "starting", a computer is being provisioned
 ```
 
 `catalog()` is what keeps the model dropdown fresh. The runtimes, the
-suggested `provider/model` ids and the avatar vocabulary come from the server.
+suggested `provider/model` ids come from the server.
 They do not come from a list in your bundle.
 
 The add is idempotent, so the **+** need not know whether this agent is on the
@@ -67,16 +67,8 @@ teammate's one long conversation, and that provisions its sandbox.
 
 !!! note "The face"
 
-    If the account holds an OpenAI credential, Fountain draws one.
-
-    ```ts
-    const image = await fountain.request<{ data: string; media_type: string }>(
-      "POST",
-      "/api/avatars/generate",
-      { body: { base: catalog.avatar.bases[0], mood: catalog.avatar.moods[0] } },
-    );
-    await fountain.request("PUT", `/api/agents/${agent.id}/avatar`, { body: image });
-    ```
+    Upload an avatar from the agent form. Clients can also send base64 image
+    bytes and a media type to `PUT /api/agents/:id/avatar`.
 
     A read of it needs the bearer key, so an `<img src>` pointed straight at
     the URL gets a 401. Fetch the bytes, then hand the element an object URL.
