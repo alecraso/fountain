@@ -11,6 +11,16 @@ server releases.
 
 ---
 
+## [4.0.0] — 2026-09-14
+
+### Breaking changes
+
+- Removed `Catalog.avatar` and the generated avatar-generation request,
+  response, and operation types. The server no longer provides
+  `POST /api/avatars/generate` or the catalog's avatar bases and moods.
+  Remove avatar-generation controls and calls from clients. Avatar uploads,
+  reads, and removal remain available.
+
 ## [3.0.0] — 2026-09-13
 
 ### Breaking changes
