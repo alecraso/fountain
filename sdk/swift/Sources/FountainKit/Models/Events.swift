@@ -69,7 +69,8 @@ public struct Block: Sendable, Decodable, Hashable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     kind = try container.decode(BlockKind.self, forKey: .kind)
     body = try? container.decodeIfPresent(String.self, forKey: .body)
-    planEntries = kind == .plan
+    planEntries =
+      kind == .plan
       ? try? container.decodeIfPresent([JSONValue].self, forKey: .body) : nil
     summary = try? container.decodeIfPresent(String.self, forKey: .summary)
     name = try? container.decodeIfPresent(String.self, forKey: .name)

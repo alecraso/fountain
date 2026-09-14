@@ -34,7 +34,9 @@ import Testing
     #expect(block.kind == .plan)
     #expect(block.body == nil)
     #expect(block.planEntries?.count == 1)
-    #expect(block.planEntries?.first == .object(["content": .string("Test"), "status": .string("pending")]))
+    #expect(
+      block.planEntries?.first
+        == .object(["content": .string("Test"), "status": .string("pending")]))
   }
 
   @Test func followsOneTurnStartToEnd() {
