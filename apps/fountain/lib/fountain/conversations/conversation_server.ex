@@ -26,11 +26,6 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.Conversations.{Pending, Provisioning, ProvisionWatchdog, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnLaunch, TurnMachine}
 
-  defguardp retired_or_resetting(reason)
-            when reason == :sandbox_reset_pending or
-                   (is_struct(reason, Ecto.Changeset) and
-                      reason.errors == [status: {"sandbox is retired", []}])
-
   # ── public api ────────────────────────────────────────────────────────────
 
   def start_link(args) do
@@ -799,11 +794,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp do_fresh_provision(state, conv, sandbox, agent, env, secrets) do
     try do
-      case Conversations.update_sandbox(sandbox, %{status: "starting"}) do
+      case Conversations.claim_sandbox(sandbox, %{status: "starting"}) do
         {:ok, _} ->
           do_fresh_provision_inner(state, conv, sandbox, agent, env, secrets)
 
-        {:error, reason} when retired_or_resetting(reason) ->
+        result when result in [:retired, {:error, :sandbox_reset_pending}] ->
           # No resources were created yet. Leave the winning retirement and
           # any replacement conversation alone, without announcing a start.
           {:stop, :normal, state}
@@ -936,7 +931,7 @@ defmodule Fountain.Conversations.ConversationServer do
              # Record what the disk was built from only if this attempt still
              # owns a live row. Retirement can win while provider I/O runs.
              {:ok, _} <-
-               Conversations.update_sandbox(sandbox, %{
+               Conversations.claim_sandbox(sandbox, %{
                  status: "ready",
                  build_fingerprint: Reapply.fingerprint(env),
                  applied_skills: skills
@@ -972,7 +967,7 @@ defmodule Fountain.Conversations.ConversationServer do
             {:ok, prepared_state} = prepared
             {:stop, :normal, prepared_state}
 
-          {:error, reason} when retired_or_resetting(reason) ->
+          result when result in [:retired, {:error, :sandbox_reset_pending}] ->
             # This handle and token belong to this attempt. Do not fail the
             # conversation or release every session: a replacement may own it.
             _ = Managoat.Sandbox.destroy(handle)
@@ -1137,7 +1132,7 @@ defmodule Fountain.Conversations.ConversationServer do
             %{status: "ready"}
           end
 
-        case Conversations.update_sandbox(sandbox, attrs) do
+        case Conversations.claim_sandbox(sandbox, attrs) do
           {:ok, sandbox} ->
             new_state = %{
               state
@@ -1156,7 +1151,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
             {:noreply, new_state}
 
-          {:error, reason} when retired_or_resetting(reason) ->
+          result when result in [:retired, {:error, :sandbox_reset_pending}] ->
             # Wake owns this connection's credentials, not the existing disk or
             # another connection's session. Never destroy the machine here.
             Egress.release_prepared({:ok, state})

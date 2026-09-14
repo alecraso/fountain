@@ -211,11 +211,19 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
 
     for terminal <- ["terminated", "failed"] do
       @tag park_retirement: true
-      test "retirement to #{terminal} during checkpoint does not park the replacement", ctx do
+      test "retirement to #{terminal} with another validation error during checkpoint does not park the replacement",
+           ctx do
         {:ok, home} = Conversations.update_sandbox(ctx.sandbox, %{mode: "persistent"})
         test = self()
 
         stub(Managoat.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
+
+        stub(Conversations, :claim_sandbox, fn row, attrs ->
+          attrs =
+            if attrs[:status] == "suspended", do: Map.put(attrs, :mode, "invalid"), else: attrs
+
+          Mimic.call_original(Conversations, :claim_sandbox, [row, attrs])
+        end)
 
         stub(Managoat.Sandbox, :create_checkpoint, fn _handle, _opts ->
           send(test, {:checkpoint_paused, self()})
@@ -240,6 +248,7 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
         on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
         Ecto.Adapters.SQL.Sandbox.allow(Repo, self(), pid)
         Mimic.allow(Managoat.Sandbox, self(), pid)
+        Mimic.allow(Conversations, self(), pid)
         send(pid, :park)
         assert_receive {:checkpoint_paused, ^pid}, 5_000
 
@@ -263,7 +272,7 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
         {:error,
          Ecto.Changeset.change(ctx.sandbox) |> Ecto.Changeset.add_error(:status, "other failure")}
 
-      stub(Conversations, :update_sandbox, fn _row, _attrs -> rejection end)
+      stub(Conversations, :claim_sandbox, fn _row, _attrs -> rejection end)
 
       assert_raise MatchError, fn ->
         Lifecycle.park(ctx.conv.id, ctx.sandbox.id, handle(), :idle)

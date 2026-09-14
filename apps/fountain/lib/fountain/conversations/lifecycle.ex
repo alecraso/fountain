@@ -430,9 +430,9 @@ defmodule Fountain.Conversations.Lifecycle do
     else
       HomeCheckpoint.on_park(sandbox)
 
-      case Conversations.update_sandbox(sandbox, %{status: "suspended"}) do
+      case Conversations.claim_sandbox(sandbox, %{status: "suspended"}) do
         {:ok, _} -> :ok
-        {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} -> :skipped
+        :retired -> :skipped
         {:error, :sandbox_reset_pending} -> :skipped
         error -> raise MatchError, term: error
       end

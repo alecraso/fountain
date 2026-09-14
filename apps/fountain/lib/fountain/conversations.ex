@@ -249,6 +249,29 @@ defmodule Fountain.Conversations do
   def update_sandbox(%Sandbox{} = sandbox, attrs),
     do: update_sandbox_if(sandbox, attrs, fn _ -> :ok end)
 
+  @doc """
+  Update a sandbox for provisioning, wake or park, returning `:retired` when
+  another operation has already retired it. Other write errors pass through.
+  """
+  @spec claim_sandbox(Sandbox.t(), map()) :: {:ok, Sandbox.t()} | :retired | {:error, term()}
+  def claim_sandbox(%Sandbox{} = sandbox, attrs) do
+    case update_sandbox(sandbox, attrs) do
+      {:ok, updated} -> {:ok, updated}
+      {:error, reason} -> if sandbox_retired?(reason), do: :retired, else: {:error, reason}
+    end
+  end
+
+  @doc "Returns whether a write was rejected because the sandbox is retired."
+  @spec sandbox_retired?(term()) :: boolean()
+  def sandbox_retired?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn
+      {:status, {"sandbox is retired", _metadata}} -> true
+      _ -> false
+    end)
+  end
+
+  def sandbox_retired?(_), do: false
+
   defp update_sandbox_if(sandbox, attrs, check) do
     # A provider callback may still hold a starting/ready struct after reset,
     # cancellation or the provision watchdog retired the persisted row. Read

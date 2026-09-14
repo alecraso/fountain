@@ -164,13 +164,14 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
     for initial <- ["ready", "suspended"],
         terminal <- ["terminated", "failed", "reset_pending"] do
       @tag initial: initial, terminal: terminal
-      test "retirement during #{initial} wake preserves #{terminal} and the replacement", %{
-        user: user,
-        conv: conv,
-        sandbox: sandbox,
-        initial: initial,
-        terminal: terminal
-      } do
+      test "retirement during #{initial} wake with another validation error preserves #{terminal} and the replacement",
+           %{
+             user: user,
+             conv: conv,
+             sandbox: sandbox,
+             initial: initial,
+             terminal: terminal
+           } do
         configure_broker()
         {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: initial})
         test = self()
@@ -179,6 +180,11 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
           {:ok, session} = Fountain.Broker.Native.prepare(id, secrets, bindings, opts)
           send(test, {:original_token, session.token})
           {:ok, session}
+        end)
+
+        stub(Conversations, :claim_sandbox, fn row, attrs ->
+          attrs = if attrs[:status] == "ready", do: Map.put(attrs, :mode, "invalid"), else: attrs
+          Mimic.call_original(Conversations, :claim_sandbox, [row, attrs])
         end)
 
         stub(Fountain.Conversations.Provisioning, :prepare_runtime_sprite, fn _h,
@@ -278,7 +284,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         {:error,
          Ecto.Changeset.change(sandbox) |> Ecto.Changeset.add_error(:status, "other failure")}
 
-      stub(Conversations, :update_sandbox, fn _row, _attrs -> rejection end)
+      stub(Conversations, :claim_sandbox, fn _row, _attrs -> rejection end)
 
       {_pid, ref, :stopped} = start_server(conv)
       assert {%MatchError{term: ^rejection}, _stack} = assert_stopped(ref)
@@ -585,11 +591,12 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
     for terminal <- ["terminated", "failed", "reset_pending"] do
       @tag terminal: terminal
-      test "retirement during provision preserves the #{terminal} row and replacement", %{
-        user: user,
-        agent: agent,
-        terminal: terminal
-      } do
+      test "retirement during provision with another validation error preserves the #{terminal} row and replacement",
+           %{
+             user: user,
+             agent: agent,
+             terminal: terminal
+           } do
         conv = insert_conversation(user_id: user.id, agent: agent, sandbox_api_access: "owner")
         sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
         test = self()
@@ -603,7 +610,25 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
           {:ok, session}
         end)
 
-        stub(Fountain.Conversations.Provisioning, :install_packages, fn _h, _e, _se, _id ->
+        stub(Conversations, :claim_sandbox, fn row, attrs ->
+          attrs =
+            if attrs[:status] == "ready" do
+              send(test, :ready_claimed)
+              Map.put(attrs, :mode, "invalid")
+            else
+              attrs
+            end
+
+          Mimic.call_original(Conversations, :claim_sandbox, [row, attrs])
+        end)
+
+        # Pause after inference reservation so the final ready write, rather
+        # than the source's configuration check, observes the retirement race.
+        stub(Fountain.Conversations.Provisioning, :prepare_runtime_sprite, fn _h,
+                                                                              _r,
+                                                                              _m,
+                                                                              _a,
+                                                                              _e ->
           send(test, {:provision_paused, self()})
           receive do: (:resume_provision -> :ok)
         end)
@@ -653,6 +678,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         send(pid, :resume_provision)
 
         assert :normal = assert_stopped(ref, 5_000)
+        assert_received :ready_claimed
         assert Fountain.Repo.reload!(sandbox).status == retired.status
         assert Fountain.Repo.reload!(sandbox).terminated_at == retired.terminated_at
         assert Fountain.Repo.reload!(sandbox).reset_requested_at == retired.reset_requested_at
@@ -675,13 +701,13 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
       stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts -> {:ok, @session} end)
 
-      stub(Conversations, :update_sandbox, fn sandbox, attrs ->
+      stub(Conversations, :claim_sandbox, fn sandbox, attrs ->
         if attrs[:status] == "ready" do
           {:error,
            Ecto.Changeset.change(sandbox)
            |> Ecto.Changeset.add_error(:build_fingerprint, "invalid")}
         else
-          Mimic.call_original(Conversations, :update_sandbox, [sandbox, attrs])
+          Mimic.call_original(Conversations, :claim_sandbox, [sandbox, attrs])
         end
       end)
 
