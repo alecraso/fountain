@@ -18,12 +18,14 @@ DEADCODE_VERSION=${DEADCODE_VERSION:-v0.50.0}
 elixir_report() {
   echo "## Elixir: public functions no compiled module calls (mix_unused)"
   echo
-  # --force so the tracer sees every module, not just the ones that changed.
+  # mix_unused merges its manifest across compiles, retaining deleted callers.
+  # Clean this app's dev artifacts first (not dependencies or other environments),
+  # then --force so the tracer sees every remaining module.
   # Keep compiler diagnostics visible and propagate analyzer failures. Only
   # dead-code hints enter the report: mix_unused 0.4.1 cannot disable its
   # Private analyzer through config, and a same-module caller is still live.
   (cd "$root/apps/fountain" &&
-    MIX_UNUSED=1 MIX_ENV=dev mix compile --force) |
+    MIX_UNUSED=1 MIX_ENV=dev mix do clean --only dev, compile --force) |
     tee /dev/stderr |
     awk '/^hint: .* (is unused|is called only recursively)$/ { print; if (getline > 0) print }'
 }
