@@ -490,7 +490,10 @@ defmodule FountainWeb.Schemas do
               "Harness titles may be revised or cleared; null when no title is set."
         },
         sandbox_id: %Schema{type: :string, format: :uuid, nullable: true},
-        sandbox: %Schema{oneOf: [Sandbox], nullable: true},
+        sandbox: %Schema{
+          anyOf: [%Schema{allOf: [Sandbox]}, %Schema{nullable: true, enum: [nil]}],
+          nullable: true
+        },
         agent_id: %Schema{type: :string, format: :uuid, nullable: true},
         agent_version_id: %Schema{
           type: :string,
@@ -1041,7 +1044,7 @@ defmodule FountainWeb.Schemas do
           }
         },
         usage: %Schema{
-          oneOf: [TurnUsage],
+          anyOf: [%Schema{allOf: [TurnUsage]}, %Schema{nullable: true, enum: [nil]}],
           nullable: true,
           description:
             "The end-of-turn token figure; null while the turn runs, when the runtime " <>
@@ -2804,7 +2807,10 @@ defmodule FountainWeb.Schemas do
             prompt: %Schema{type: :string},
             status: %Schema{type: :string},
             inserted_at: %Schema{type: :string, format: :"date-time"},
-            usage: %Schema{oneOf: [TurnUsage], nullable: true}
+            usage: %Schema{
+              anyOf: [%Schema{allOf: [TurnUsage]}, %Schema{nullable: true, enum: [nil]}],
+              nullable: true
+            }
           }
         },
         preview: %Schema{

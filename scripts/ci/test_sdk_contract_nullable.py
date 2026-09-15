@@ -122,7 +122,11 @@ class Check(unittest.TestCase):
     def setUp(self):
         self.known = dict(build.KNOWN_NOT_NULLABLE)
         build.KNOWN_NOT_NULLABLE.clear()
-        self.addCleanup(build.KNOWN_NOT_NULLABLE.update, self.known)
+        self.addCleanup(self.restore_known)
+
+    def restore_known(self):
+        build.KNOWN_NOT_NULLABLE.clear()
+        build.KNOWN_NOT_NULLABLE.update(self.known)
 
     def test_the_regression_shape_is_reported(self):
         document = spec(PLAIN_THING, thing={"nullable": True, "allOf": [REF]})
@@ -171,6 +175,18 @@ class CommittedContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.contract = json.loads((REPO / "sdk" / "contract" / "contract.json").read_text())
+
+    def test_response_compositions_have_an_explicit_null_branch(self):
+        for owner, field, target in [
+            ("Conversation", "sandbox", "Sandbox"),
+            ("Turn", "usage", "TurnUsage"),
+        ]:
+            with self.subTest(owner=owner, field=field):
+                node = self.contract["schemas"][owner]["properties"][field]
+                self.assertTrue(node["nullable"])
+                self.assertEqual(node["anyOf"][0], {"allOf": [{"ref": target}]})
+                self.assertEqual(node["anyOf"][1], {"enum": ["None"], "nullable": True})
+        self.assertEqual(build.KNOWN_NOT_NULLABLE, {})
 
     def test_the_component_is_nullable(self):
         # This is the whole fix. Drop it and all five fields below stop taking

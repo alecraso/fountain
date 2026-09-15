@@ -447,18 +447,9 @@ def accepts_null(spec: Dict[str, Any], node: Any, depth: int = 0) -> bool:
     return True
 
 
-# Properties already in this state when the guard below was written (#1899),
-# each independently confirmed with `openapi-schema-validator`'s OAS30Validator.
-# Both are the same shape the guard exists for — `{"nullable": true, "oneOf":
-# [{"$ref": ...}]}` — and both are real: the server sends null for each.
-#
-# The list only shrinks. A new property in this state fails the build, and an
-# entry here that has been fixed fails it too rather than leaving a stale
-# reason behind, the same contract the omissions allowlist keeps.
-KNOWN_NOT_NULLABLE = {
-    ("Conversation", "sandbox"): "#2189 — null until a sandbox is provisioned",
-    ("Turn", "usage"): "#2189 — null while the turn runs, and on older turns",
-}
+# The original Conversation.sandbox / Turn.usage exceptions were repaired in
+# #2189. Keep the ratchet empty: future regressions must fail the build.
+KNOWN_NOT_NULLABLE = {}
 
 
 def check_nullable_composition(spec: Dict[str, Any]) -> List[str]:
