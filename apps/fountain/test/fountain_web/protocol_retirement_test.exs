@@ -1,7 +1,8 @@
 defmodule FountainWeb.ProtocolRetirementTest do
   @moduledoc """
-  The retired compatibility dialects (ADR 0057, #2252): the OpenAI-compatible
-  gateway at `/v1` and the AG-UI run endpoint.
+  The retired compatibility surfaces (ADR 0057, #2252): the OpenAI-compatible
+  gateway at `/v1`, the AG-UI run endpoint, and the caller-tool MCP adapter
+  the two dialects fed.
 
   This suite is the guard that neither comes back by accident — a new route at
   one of these paths turns it red — and the record of what a client that still
@@ -12,7 +13,8 @@ defmodule FountainWeb.ProtocolRetirementTest do
     * `/v1/*` matches no route at all. Phoenix renders `NoRouteError` as
       **404** `{"errors": {"detail": "Not Found"}}` for every Accept header,
       with or without a key, because nothing authenticates first.
-    * `/api/agui/*` falls through to `FountainWeb.Plugs.ExtensionDispatch`,
+    * `/api/agui/*` and `/api/mcp/caller/*` fall through to
+      `FountainWeb.Plugs.ExtensionDispatch`,
       whose scope pipes through `:accepts_json` inside the `:api` pipeline. An
       authenticated JSON client gets **404**; an unauthenticated one gets
       **401**, because `TenantAPIAuth` runs before dispatch; and a client
@@ -115,6 +117,26 @@ defmodule FountainWeb.ProtocolRetirementTest do
     end
   end
 
+  describe "the caller-tool MCP adapter is gone" do
+    test "POST /api/mcp/caller/:conversation_id is the unmatched-path 404", ctx do
+      assert caller_mcp(ctx, ctx.conv.id) == unknown_api_at("/api/never-existed/x", ctx)
+    end
+
+    test "a conversation the caller does not own answers the same way", ctx do
+      # It used to be a tenant-scoped 404 from `build_ctx/2`. Now it is the
+      # same unmatched-path 404 every other id gets, which is the point: the
+      # route cannot be probed for whether a conversation exists.
+      assert caller_mcp(ctx, Ecto.UUID.generate()) == caller_mcp(ctx, ctx.conv.id)
+    end
+
+    test "the team MCP adapter's route is untouched", _ctx do
+      paths = Enum.map(FountainWeb.Router.__routes__(), & &1.path)
+
+      assert "/api/mcp/team/:conversation_id" in paths
+      refute "/api/mcp/caller/:conversation_id" in paths
+    end
+  end
+
   describe "the neighbours that stay" do
     test "the native API still answers the same key, so this is removal and not breakage", ctx do
       conn = ctx.conn |> authed_with_key(ctx.raw) |> get("/api/conversations")
@@ -127,6 +149,7 @@ defmodule FountainWeb.ProtocolRetirementTest do
 
       refute Enum.any?(paths, &String.starts_with?(&1, "/v1"))
       refute Enum.any?(paths, &String.starts_with?(&1, "/api/agui"))
+      refute Enum.any?(paths, &String.starts_with?(&1, "/api/mcp/caller"))
 
       # Guard the guard: the same walk still sees the routes that stay.
       assert "/api/conversations" in paths
@@ -144,6 +167,17 @@ defmodule FountainWeb.ProtocolRetirementTest do
   defp agui(ctx, fun), do: ctx.conn |> authed_with_key(ctx.raw) |> fun.() |> summary()
   defp unknown_api(ctx, fun), do: ctx.conn |> authed_with_key(ctx.raw) |> fun.() |> summary()
   defp summary(conn), do: {conn.status, Jason.decode!(conn.resp_body)}
+
+  defp caller_mcp(ctx, conv_id),
+    do:
+      unknown_api_at(
+        "/api/mcp/caller/#{conv_id}",
+        ctx,
+        %{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}
+      )
+
+  defp unknown_api_at(path, ctx, body \\ %{}),
+    do: ctx.conn |> authed_with_key(ctx.raw) |> post_json(path, body) |> summary()
 
   # An OpenAI error body is `{"error": {"type": ..., "code": ...}}` and AG-UI's
   # is a `RUN_ERROR` event. Neither shape may survive the route.

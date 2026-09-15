@@ -441,6 +441,52 @@ defmodule Fountain.WebhooksTest do
       assert byte_size(delivery.response_body) <= Delivery.max_body_bytes()
     end
   end
+
+  # The defect this replaced a data migration to avoid (#2252 review): an
+  # endpoint that still subscribes to a retired event must stay editable.
+  # `validate_event_types/1` runs over the whole array on every update, so if
+  # the retired vocabulary were simply deleted, changing an unrelated field
+  # would be refused with "unknown event" over a subscription the owner never
+  # chose to keep.
+  describe "an endpoint carrying a retired event type (ADR 0057)" do
+    setup do
+      user = insert_verified_user()
+
+      {:ok, {endpoint, _secret}} =
+        Webhooks.create_endpoint(user.id, %{
+          "url" => "https://example.com/hook",
+          "event_types" => ["conversation.turn.done", "conversation.caller_tool.started"]
+        })
+
+      %{user: user, endpoint: endpoint}
+    end
+
+    test "is created and kept with the retired type intact", ctx do
+      assert "conversation.caller_tool.started" in ctx.endpoint.event_types
+    end
+
+    test "can still have an unrelated field changed", ctx do
+      assert {:ok, updated} =
+               Webhooks.update_endpoint(ctx.endpoint, %{"url" => "https://example.com/moved"})
+
+      assert updated.url == "https://example.com/moved"
+      # Untouched, not silently rewritten: no migration widened this
+      # subscription behind its owner's back.
+      assert updated.event_types == ctx.endpoint.event_types
+    end
+
+    test "never receives the retired event, because nothing emits it", ctx do
+      refute Enum.any?(
+               Fountain.Webhooks.Events.types(),
+               &(&1 == "conversation.caller_tool.started")
+             )
+
+      # Guard the guard: the endpoint's other filter is a live type, so this
+      # endpoint is genuinely wired up.
+      assert "conversation.turn.done" in Fountain.Webhooks.Events.types()
+      assert "conversation.turn.done" in ctx.endpoint.event_types
+    end
+  end
 end
 
 defmodule Fountain.WebhooksDisabledTest do

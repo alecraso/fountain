@@ -12,5 +12,6 @@
   unchanged, as are OpenAI and Codex inference, credentials and runtimes,
   which share nothing with the retired dialects but the vendor's name. A
   conversation that still carries request-defined tools from the old bridge no
-  longer offers them to its agent, because the controllers that could have
-  answered such a call are what this change removes (#2252).
+  longer offers them to its agent, and `POST /api/mcp/caller/{conversation_id}`
+  — the endpoint a sandbox called to use them — is retired with them, so all
+  five retired paths answer as above (#2252).

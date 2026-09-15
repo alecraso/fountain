@@ -14,6 +14,25 @@ defmodule Fountain.Webhooks.Events do
   thousands of stdout chunks, and turning those into HTTP POSTs is a
   self-inflicted denial of service on both ends. Streaming output is what
   `GET /api/conversations/:id/events` is for.
+
+  `@retired` is the other list: stages Fountain **used** to publish and never
+  will again. They are not in `types/0` and not in the catalogue the manual
+  renders, so nothing subscribes to one by choice any more — but
+  `valid_filter?/1` still accepts them, which is the whole point. An
+  endpoint's whole `event_types` array is re-validated on every update
+  (`Webhooks.Endpoint.validate_event_types/1`), so dropping a retired type out
+  of the accepted vocabulary would refuse an endpoint that still carries one
+  the next time its owner changed the URL — a row made uneditable by a removal
+  it had no part in. Keeping it valid-but-never-emitted costs nothing: a
+  filter that matches no type simply never fires, and `matches?/2` is a string
+  compare that never consults this module.
+
+  That also keeps the code release reversible, which ADR 0057 requires while
+  the physical tool definitions remain: rolling back restores the emitter and
+  finds the filters that consumed it still in place, rather than a subscription
+  someone's migration rewrote. Delete an entry here only once the rollback
+  floor has moved past the release that retired it — for `caller_tool`, the
+  same gate as [#2273](https://github.com/managoat/fountain/issues/2273).
   """
 
   # stage => the statuses that stage is published with.
@@ -29,7 +48,6 @@ defmodule Fountain.Webhooks.Events do
     {"connection", ~w(started done)},
     {"turn", ~w(started done failed interrupted)},
     {"request", ~w(started done)},
-    {"caller_tool", ~w(started done)},
     {"model", ~w(done failed)},
     {"session", ~w(done)},
     {"sandbox", ~w(done)},
@@ -40,6 +58,14 @@ defmodule Fountain.Webhooks.Events do
   @types for {stage, statuses} <- @catalogue,
              status <- statuses,
              do: "conversation.#{stage}.#{status}"
+
+  # Retired stages: still accepted as a filter, never emitted. The moduledoc
+  # says why these are not simply deleted.
+  @retired [{"caller_tool", ~w(started done)}]
+
+  @retired_types for {stage, statuses} <- @retired,
+                     status <- statuses,
+                     do: "conversation.#{stage}.#{status}"
 
   # What a new endpoint subscribes to when it names nothing. The three an
   # integrator almost always wants; everything else is opt-in.
@@ -66,6 +92,15 @@ defmodule Fountain.Webhooks.Events do
   def known?(type), do: type in @types
 
   @doc """
+  Stages that were published once and are not any more, as `{stage, statuses}`.
+
+  Subscribable but never delivered — `valid_filter?/1` accepts them so an
+  endpoint that still names one stays editable.
+  """
+  @spec retired() :: [{String.t(), [String.t()]}]
+  def retired, do: @retired
+
+  @doc """
   Whether `entry` is something an endpoint may subscribe to.
 
   Three shapes: `"*"` (everything), a trailing wildcard over one stage
@@ -78,8 +113,11 @@ defmodule Fountain.Webhooks.Events do
 
   def valid_filter?(entry) when is_binary(entry) do
     case String.split(entry, ".") do
-      ["conversation", stage, "*"] -> List.keymember?(@catalogue, stage, 0)
-      _ -> known?(entry)
+      ["conversation", stage, "*"] ->
+        List.keymember?(@catalogue, stage, 0) or List.keymember?(@retired, stage, 0)
+
+      _ ->
+        known?(entry) or entry in @retired_types
     end
   end
 

@@ -527,11 +527,6 @@ defmodule FountainWeb.Router do
     # they are the `fountain_google` extension's now (ADR 0043, #2152), mounted
     # by `ExtensionDispatch` at the same path.
 
-    # The tools a chat-completions / AG-UI client defined on its request,
-    # served back to that conversation's sandbox (#1202). A call parks until
-    # the client answers it with a `role: "tool"` message.
-    post "/mcp/caller/:conversation_id", CallerMcpController, :handle
-
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end

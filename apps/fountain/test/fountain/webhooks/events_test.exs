@@ -56,9 +56,20 @@ defmodule Fountain.Webhooks.EventsTest do
     assert length(published_pairs()) > 20
   end
 
+  # A retired stage keeps its `publish_stage/4` call sites until the code
+  # holding them is deleted, but nothing can reach them — the two exclusive
+  # things that could are already gone. It must be out of the catalogue and out
+  # of the docs by then, so the two assertions below skip it in both
+  # directions, and the test after this one pins that it really is retired
+  # rather than merely missing.
+  defp retired_stages, do: MapSet.new(Events.retired(), fn {stage, _statuses} -> stage end)
+
   test "every stage transition in the source is in the catalogue" do
+    retired = retired_stages()
+
     missing =
       published_pairs()
+      |> Enum.reject(fn {stage, _status} -> MapSet.member?(retired, stage) end)
       |> Enum.map(fn {stage, status} -> Events.type(stage, status) end)
       |> Enum.reject(&Events.known?/1)
       |> Enum.sort()
@@ -71,8 +82,21 @@ defmodule Fountain.Webhooks.EventsTest do
       #{Enum.join(missing, "\n  ")}
 
     Add them to `Fountain.Webhooks.Events`, and to the table in
-    docs/reference/webhooks.md.
+    docs/reference/webhooks.md. If the stage is being retired instead, put it
+    in `@retired` and mark it historical on the docs page.
     """
+  end
+
+  test "a retired stage is out of the catalogue while its call sites remain" do
+    # The transitional state this suite has to allow, asserted rather than
+    # assumed: `caller_tool` is still published from `Pending` and is already
+    # unreachable, so it must be retired vocabulary and not a catalogue entry.
+    assert Enum.any?(published_pairs(), fn {stage, _} -> stage == "caller_tool" end),
+           "no caller_tool call site left — drop it from @retired and from this test"
+
+    refute Events.known?("conversation.caller_tool.started")
+    refute List.keymember?(Events.catalogue(), "caller_tool", 0)
+    assert List.keymember?(Events.retired(), "caller_tool", 0)
   end
 
   test "the catalogue names nothing the source cannot produce" do
@@ -82,6 +106,8 @@ defmodule Fountain.Webhooks.EventsTest do
 
     # `turn.done` and `turn.failed` also come from a conditional call site the
     # regex cannot read, and both are in `published` from other call sites.
+    # A retired stage is deliberately absent from `types/0`, so it cannot be
+    # stale here; this direction only sees what the catalogue still names.
     stale = Enum.reject(Events.types(), &MapSet.member?(published, &1))
 
     assert stale == [],
@@ -116,6 +142,38 @@ defmodule Fountain.Webhooks.EventsTest do
       refute Events.valid_filter?("conversation.*")
       refute Events.valid_filter?("**")
       refute Events.valid_filter?(nil)
+    end
+
+    # ADR 0057 (#2252). The catalogue stopped emitting `caller_tool` when the
+    # tool bridge was retired, but the vocabulary still accepts it: every
+    # endpoint update re-validates the whole `event_types` array, so an
+    # endpoint that still subscribes to a retired type would otherwise be
+    # refused the next time its owner changed the URL.
+    test "a retired type stays a valid filter, so a stale endpoint stays editable" do
+      for type <- ["conversation.caller_tool.started", "conversation.caller_tool.done"] do
+        assert Events.valid_filter?(type)
+      end
+
+      assert Events.valid_filter?("conversation.caller_tool.*")
+    end
+
+    test "but a retired type is not emitted, and is not in the catalogue" do
+      refute "conversation.caller_tool.started" in Events.types()
+      refute "conversation.caller_tool.done" in Events.types()
+      refute List.keymember?(Events.catalogue(), "caller_tool", 0)
+      refute Events.known?("conversation.caller_tool.started")
+
+      # It is a bare star's business too: `*` delivers what is emitted, and a
+      # retired type is never emitted, so nothing reaches a subscriber.
+      refute Enum.any?(Events.types(), &String.starts_with?(&1, "conversation.caller_tool."))
+
+      # Guard the guard: the retired list is not simply empty.
+      assert List.keymember?(Events.retired(), "caller_tool", 0)
+    end
+
+    test "a typo inside a retired stage is still refused" do
+      refute Events.valid_filter?("conversation.caller_tool.finished")
+      refute Events.valid_filter?("conversation.caller_tul.done")
     end
 
     test "the three shapes are valid filters" do

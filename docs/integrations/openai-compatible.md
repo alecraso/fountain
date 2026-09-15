@@ -31,27 +31,44 @@ it. Creating a new one instead gets you a fresh sandbox and loses that.
 
 The thread key you were sending — `X-Fountain-Thread`, else `user`, else
 `safety_identifier` — was stored as the conversation's `channel_id`, prefixed
-`openai:`. So find it, then prompt the id you get back:
+`openai:`. Find it, **check it is the one you mean**, then prompt it by id.
 
 ```bash
-# 1. Find the conversation your thread key is bound to.
-curl -H "Authorization: Bearer ftn_..." \
-  "https://your-fountain/api/conversations?channel_id=openai:<your-thread-key>"
+# 1. Find candidates. Filter by the agent too: a thread key is only unique
+#    within the agent it was used against, and `--data-urlencode` keeps a key
+#    containing /, ?, & or a space from breaking the query.
+curl -G -H "Authorization: Bearer ftn_..." \
+  --data-urlencode "channel_id=openai:<your-thread-key>" \
+  --data-urlencode "agent_id=<agent-uuid>" \
+  --data-urlencode "status=idle,running,pending" \
+  "https://your-fountain/api/conversations"
+```
 
+This is a **list**, most recently updated first, not a single answer. Without
+the `status` filter it also returns `failed` and `terminated` rows, which
+cannot take a prompt.
+
+**Before prompting, confirm the row is the one you want:** its `agent_id`,
+`environment_id` and `vault_id` are the identity the work was done under, and
+a conversation whose sandbox is gone is not a continuation. If several rows
+come back, the thread key was reused across configurations — pick by that
+identity, not by recency. If none comes back, there is nothing to continue and
+a fresh conversation is the right answer.
+
+```bash
 # 2. Prompt it by id. Same sandbox, same history.
 curl -X POST -H "Authorization: Bearer ftn_..." -H "Content-Type: application/json" \
   -d '{"prompt":"..."}' \
   "https://your-fountain/api/conversations/<id>/prompts"
 ```
 
-Two things to get right:
+**Do not replay your transcript.** The sandbox is the memory. Send only the new
+message; replaying the history feeds the agent its own words back.
 
-- **Do not replay your transcript.** The sandbox is the memory. Send only the
-  new message; replaying the history feeds the agent its own words back.
-- If you resume by `channel_id` rather than by id, **send the same
-  `agent_id`, `environment_id` and `vault_id`** the conversation was created
-  with. An incomplete identity resolves to a different machine, which is the
-  same lost-sandbox outcome by another route.
+If you resume by `channel_id` instead of prompting an id, send the same
+`agent_id`, `environment_id` and `vault_id` — an incomplete identity resolves
+to a different machine, which is the same lost-sandbox outcome by another
+route.
 
 Existing `openai:` bindings are left intact by the retirement — nothing was
 renamed or migrated.
