@@ -148,17 +148,28 @@ defmodule Fountain.Webhooks.EventsTest do
       refute Events.valid_filter?(nil)
     end
 
-    # ADR 0057 (#2252). The catalogue stopped emitting `caller_tool` when the
-    # tool bridge was retired, but the vocabulary still accepts it: every
-    # endpoint update re-validates the whole `event_types` array, so an
-    # endpoint that still subscribes to a retired type would otherwise be
-    # refused the next time its owner changed the URL.
-    test "a retired type stays a valid filter, so a stale endpoint stays editable" do
-      for type <- ["conversation.caller_tool.started", "conversation.caller_tool.done"] do
-        assert Events.valid_filter?(type)
+    # ADR 0057 (#2252). A retired stage is NOT subscribable: an endpoint saved
+    # against one would look fine and receive nothing, which is the failure
+    # save-time validation exists to prevent. `retired_filter?/1` recognises it
+    # only so `Webhooks.Endpoint` can grandfather a value already stored on a
+    # row — see `webhooks_test.exs` for both halves of that.
+    test "a retired type is not a valid filter" do
+      for type <- [
+            "conversation.caller_tool.started",
+            "conversation.caller_tool.done",
+            "conversation.caller_tool.*"
+          ] do
+        refute Events.valid_filter?(type)
+        assert Events.retired_filter?(type)
       end
+    end
 
-      assert Events.valid_filter?("conversation.caller_tool.*")
+    test "retired_filter?/1 recognises only retired stages" do
+      refute Events.retired_filter?("conversation.turn.done")
+      refute Events.retired_filter?("conversation.turn.*")
+      refute Events.retired_filter?("conversation.caller_tool.finished")
+      refute Events.retired_filter?("*")
+      refute Events.retired_filter?(nil)
     end
 
     test "but a retired type is not emitted, and is not in the catalogue" do

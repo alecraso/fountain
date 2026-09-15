@@ -84,7 +84,21 @@ defmodule Fountain.Webhooks.Endpoint do
   # change-scoped validation would never see it.
   defp validate_event_types(changeset) do
     types = get_field(changeset, :event_types) || []
-    unknown = Enum.reject(types, &Events.valid_filter?/1)
+
+    # A retired stage is not subscribable: an endpoint created against one
+    # would save cleanly and then receive nothing, which is the failure this
+    # validation exists to prevent. The exception is a value that is *already*
+    # on this row — refusing that would make the row uneditable because of a
+    # removal it had no part in, so it is grandfathered and only that. On a new
+    # record `changeset.data.event_types` is the `[]` default, so nothing is
+    # grandfathered there; on an update, a retired type the caller newly adds
+    # is not in the stored list and is refused like any other unknown.
+    stored = changeset.data.event_types || []
+
+    unknown =
+      Enum.reject(types, fn type ->
+        Events.valid_filter?(type) or (type in stored and Events.retired_filter?(type))
+      end)
 
     cond do
       types == [] ->

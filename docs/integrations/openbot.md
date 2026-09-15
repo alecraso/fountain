@@ -47,19 +47,34 @@ curl -G -H "Authorization: Bearer ftn_..." \
   "https://your-fountain/api/conversations"
 ```
 
-This is a **list**, most recently updated first, not a single answer. Without
-the `status` filter it also returns `failed` and `terminated` rows, which
-cannot take a prompt.
-
-**Before prompting, confirm the row is the one you want:** its `agent_id`,
-`environment_id` and `vault_id` are the identity the work was done under, and
-a conversation whose sandbox is gone is not a continuation. If several rows
-come back, the thread key was reused across configurations — pick by that
-identity, not by recency. If none comes back, there is nothing to continue and
-a fresh conversation is the right answer.
+**This is a list, not an answer.** It is ordered by `updated_at`, and without
+the `status` filter it also returns `failed` and `terminated` conversations,
+which cannot take a prompt.
 
 ```bash
-# 2. Prompt it by id. Same sandbox, same history.
+# 2. For each candidate, fetch it by id. Only the show route loads the
+#    sandbox — the list above renders `sandbox: null` for every row, so it
+#    cannot tell you whether the machine is still there.
+curl -H "Authorization: Bearer ftn_..." \
+  "https://your-fountain/api/conversations/<id>"
+```
+
+Prompt a candidate only if all of this holds:
+
+- `data.sandbox` is **not null**, and its `status` is not `terminated` or
+  `failed`. An `idle` conversation can still point at a dead sandbox; prompting
+  that one provisions a fresh machine, which is the outcome this whole section
+  exists to avoid.
+- `data.agent_id`, `data.environment_id` and `data.vault_id` are the identity
+  the work was done under.
+
+If several candidates come back, the thread key was reused across
+configurations — pick by that identity, not by recency, and expect some of them
+to have terminal sandboxes. If none survives both checks, there is nothing to
+continue and a fresh conversation is the right answer.
+
+```bash
+# 3. Prompt it by id. Same sandbox, same history.
 curl -X POST -H "Authorization: Bearer ftn_..." -H "Content-Type: application/json" \
   -d '{"prompt":"..."}' \
   "https://your-fountain/api/conversations/<id>/prompts"

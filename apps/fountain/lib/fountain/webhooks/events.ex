@@ -16,15 +16,19 @@ defmodule Fountain.Webhooks.Events do
   `GET /api/conversations/:id/events` is for.
 
   `@retired` is the other list: stages Fountain **used** to publish and never
-  will again. They are not in `types/0` and not in the catalogue the manual
-  renders, so nothing subscribes to one by choice any more — but
-  `valid_filter?/1` still accepts them, which is the whole point. An
-  endpoint's whole `event_types` array is re-validated on every update
-  (`Webhooks.Endpoint.validate_event_types/1`), so dropping a retired type out
-  of the accepted vocabulary would refuse an endpoint that still carries one
-  the next time its owner changed the URL — a row made uneditable by a removal
-  it had no part in. Keeping it valid-but-never-emitted costs nothing: a
-  filter that matches no type simply never fires, and `matches?/2` is a string
+  will again. They are not in `types/0`, not in the catalogue the manual
+  renders, and **not accepted by `valid_filter?/1`** — nobody may subscribe to
+  one, because an endpoint that did would look saved and receive nothing,
+  which is exactly the outcome save-time validation exists to prevent.
+
+  `retired_filter?/1` is the narrow exception, and it is about *existing* rows
+  only. An endpoint's whole `event_types` array is re-validated on every update
+  (`Webhooks.Endpoint.validate_event_types/1`), so a row that already carries a
+  retired type would be refused the next time its owner changed the URL — made
+  uneditable by a removal it had no part in. `validate_event_types/1` therefore
+  grandfathers a retired value it finds unchanged on the stored row, and
+  refuses one on create or newly added on update. Keeping such a value costs
+  nothing: it matches no type, so it never fires, and `matches?/2` is a string
   compare that never consults this module.
 
   That also keeps the code release reversible, which ADR 0057 requires while
@@ -94,8 +98,9 @@ defmodule Fountain.Webhooks.Events do
   @doc """
   Stages that were published once and are not any more, as `{stage, statuses}`.
 
-  Subscribable but never delivered — `valid_filter?/1` accepts them so an
-  endpoint that still names one stays editable.
+  Not subscribable: `valid_filter?/1` refuses them. `retired_filter?/1`
+  recognises them so `Webhooks.Endpoint` can grandfather one already stored on
+  a row, which is what keeps that row editable.
   """
   @spec retired() :: [{String.t(), [String.t()]}]
   def retired, do: @retired
@@ -113,15 +118,29 @@ defmodule Fountain.Webhooks.Events do
 
   def valid_filter?(entry) when is_binary(entry) do
     case String.split(entry, ".") do
-      ["conversation", stage, "*"] ->
-        List.keymember?(@catalogue, stage, 0) or List.keymember?(@retired, stage, 0)
-
-      _ ->
-        known?(entry) or entry in @retired_types
+      ["conversation", stage, "*"] -> List.keymember?(@catalogue, stage, 0)
+      _ -> known?(entry)
     end
   end
 
   def valid_filter?(_), do: false
+
+  @doc """
+  Whether `entry` names a retired stage — an exact type or its wildcard.
+
+  Not a licence to subscribe. `Webhooks.Endpoint` asks this only about a value
+  it found already stored on the row it is updating, so that removing a stage
+  from the catalogue does not make such a row impossible to edit.
+  """
+  @spec retired_filter?(term()) :: boolean()
+  def retired_filter?(entry) when is_binary(entry) do
+    case String.split(entry, ".") do
+      ["conversation", stage, "*"] -> List.keymember?(@retired, stage, 0)
+      _ -> entry in @retired_types
+    end
+  end
+
+  def retired_filter?(_), do: false
 
   @doc "Whether an endpoint subscribing to `filters` wants `type`."
   @spec matches?([String.t()], String.t()) :: boolean()

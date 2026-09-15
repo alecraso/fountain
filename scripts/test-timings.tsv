@@ -194,7 +194,6 @@ apps/fountain/test/fountain_web/controllers/audit_controller_test.exs	3045
 apps/fountain/test/fountain_web/controllers/auth_completion_controller_test.exs	5374
 apps/fountain/test/fountain_web/controllers/auth_me_controller_test.exs	1671
 apps/fountain/test/fountain_web/controllers/auth_token_controller_test.exs	4534
-apps/fountain/test/fountain_web/controllers/caller_mcp_controller_test.exs	3027
 apps/fountain/test/fountain_web/controllers/catalog_controller_test.exs	881
 apps/fountain/test/fountain_web/controllers/changeset_json_test.exs	7
 apps/fountain/test/fountain_web/controllers/claimable_user_controller_test.exs	5424

@@ -442,47 +442,68 @@ defmodule Fountain.WebhooksTest do
     end
   end
 
-  # The defect this replaced a data migration to avoid (#2252 review): an
-  # endpoint that still subscribes to a retired event must stay editable.
-  # `validate_event_types/1` runs over the whole array on every update, so if
-  # the retired vocabulary were simply deleted, changing an unrelated field
-  # would be refused with "unknown event" over a subscription the owner never
-  # chose to keep.
-  describe "an endpoint carrying a retired event type (ADR 0057)" do
+  # ADR 0057 (#2252). Two halves, and the second is the one a fix for the first
+  # is likely to break: an endpoint that ALREADY names a retired event must
+  # stay editable, and a brand-new subscription to one must still be refused.
+  # `validate_event_types/1` re-validates the whole array on every update, so
+  # grandfathering has to be scoped to values found on the stored row.
+  describe "a retired event type on a webhook endpoint (ADR 0057)" do
     setup do
       user = insert_verified_user()
 
       {:ok, {endpoint, _secret}} =
         Webhooks.create_endpoint(user.id, %{
           "url" => "https://example.com/hook",
-          "event_types" => ["conversation.turn.done", "conversation.caller_tool.started"]
+          "event_types" => ["conversation.turn.done"]
         })
+
+      # Put a retired type on the row the way a pre-retirement release did,
+      # bypassing today's validation — which is exactly the state this exists
+      # for.
+      endpoint =
+        endpoint
+        |> Ecto.Changeset.change(
+          event_types: ["conversation.turn.done", "conversation.caller_tool.started"]
+        )
+        |> Repo.update!()
 
       %{user: user, endpoint: endpoint}
     end
 
-    test "is created and kept with the retired type intact", ctx do
-      assert "conversation.caller_tool.started" in ctx.endpoint.event_types
-    end
-
-    test "can still have an unrelated field changed", ctx do
+    test "an existing row keeps it and can still be edited", ctx do
       assert {:ok, updated} =
                Webhooks.update_endpoint(ctx.endpoint, %{"url" => "https://example.com/moved"})
 
       assert updated.url == "https://example.com/moved"
-      # Untouched, not silently rewritten: no migration widened this
-      # subscription behind its owner's back.
+      # Untouched, not silently rewritten: nothing widened this subscription
+      # behind its owner's back.
       assert updated.event_types == ctx.endpoint.event_types
     end
 
-    test "never receives the retired event, because nothing emits it", ctx do
-      refute Enum.any?(
-               Fountain.Webhooks.Events.types(),
-               &(&1 == "conversation.caller_tool.started")
-             )
+    test "but a new endpoint cannot subscribe to one", ctx do
+      assert {:error, changeset} =
+               Webhooks.create_endpoint(ctx.user.id, %{
+                 "url" => "https://example.com/new",
+                 "event_types" => ["conversation.caller_tool.started"]
+               })
+
+      assert "unknown event conversation.caller_tool.started" in errors_on(changeset).event_types
+    end
+
+    test "nor can an existing one add a different retired type", ctx do
+      assert {:error, changeset} =
+               Webhooks.update_endpoint(ctx.endpoint, %{
+                 "event_types" => ctx.endpoint.event_types ++ ["conversation.caller_tool.done"]
+               })
+
+      assert "unknown event conversation.caller_tool.done" in errors_on(changeset).event_types
+    end
+
+    test "the retired event is never delivered to the row that keeps it", ctx do
+      refute "conversation.caller_tool.started" in Fountain.Webhooks.Events.types()
 
       # Guard the guard: the endpoint's other filter is a live type, so this
-      # endpoint is genuinely wired up.
+      # row is genuinely wired up.
       assert "conversation.turn.done" in Fountain.Webhooks.Events.types()
       assert "conversation.turn.done" in ctx.endpoint.event_types
     end
