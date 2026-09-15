@@ -57,34 +57,69 @@ defmodule Fountain.Webhooks.EventsTest do
         do: {stage, status}
   end
 
-  # One entry per call site (not uniq), from the fixed @sources list, so the
-  # two frequency maps below line up: a stage whose stage-only count exceeds
-  # its literal-pair count has at least one call site the literal regex could
-  # not read the status of.
-  defp stage_call_sites(regex) do
-    for source <- @sources,
-        path = Path.join(app_dir(), source),
-        File.exists?(path),
-        stage <- stage_matches(regex, File.read!(path)),
-        do: stage
-  end
-
   defp stage_matches(regex, content) do
     Regex.scan(regex, content) |> Enum.map(fn [_, stage | _] -> stage end)
   end
 
-  # Stages that have at least one call site among @sources where the status
-  # argument is not a literal string — @call_site cannot see these, so
-  # `published_pairs/0` under-reports them. A catalogue entry for one of
-  # these stages counts as producible even without a literal (stage, status)
-  # pair to point at.
-  defp non_literal_status_stages do
-    literal = Enum.frequencies(stage_call_sites(@call_site))
-    all = Enum.frequencies(stage_call_sites(@stage_only))
+  # {source, stage} pairs among @sources where the stage-only count exceeds
+  # the literal-pair count for that same stage in that same file — i.e. a
+  # call site in `source` publishes `stage` with a status @call_site cannot
+  # read. Kept alongside the file's content, because resolving *which*
+  # statuses that computed branch can produce means reading the file, not
+  # just knowing the stage.
+  defp computed_status_sites do
+    for source <- @sources,
+        path = Path.join(app_dir(), source),
+        File.exists?(path),
+        content = File.read!(path),
+        literal = Enum.frequencies(stage_matches(@call_site, content)),
+        all = Enum.frequencies(stage_matches(@stage_only, content)),
+        {stage, count} <- all,
+        count > Map.get(literal, stage, 0),
+        do: {source, stage, content}
+  end
 
-    for {stage, count} <- all, count > Map.get(literal, stage, 0), into: MapSet.new() do
-      stage
-    end
+  # A catalogue (stage, status) pair may be producible without a literal
+  # (stage, status) pair in `published_pairs/0`, but only when the SAME file
+  # that has a computed-status call site for `stage` also spells `status`
+  # out as a literal string somewhere in it. This is deliberately scoped to
+  # one (stage, status) pair at a time, not the whole stage: a status the
+  # catalogue names that no computed branch anywhere ever writes still
+  # fails, even when that stage has some other computed call site.
+  #
+  # What resolves each computed site on main, as of this writing:
+  #   - home_checkpoint.ex's `publish(sandbox, "done"/"failed", meta)`
+  #     resolves conversation.checkpoint.done and .failed
+  #   - turn_machine.ex's
+  #     `if(row.status == "completed", do: "done", else: "failed")`
+  #     resolves conversation.turn.done and .failed
+  #   - conversations.ex's
+  #     `status = if updated_turn.status == "failed", do: "failed", else:
+  #     "interrupted"` resolves conversation.turn.failed and .interrupted
+  # `turn.done` and `turn.failed` are also literally published elsewhere
+  # (conversation_server.ex, turn_machine.ex), so this is redundant for
+  # `turn` today; it is load-bearing for `checkpoint`, which has no other
+  # call site.
+  defp resolvable_by_computed_status?(stage, status) do
+    literal = ~s("#{status}")
+
+    Enum.any?(computed_status_sites(), fn {_source, s, content} ->
+      s == stage and String.contains?(content, literal)
+    end)
+  end
+
+  # The stale-entry check as a pure function of the catalogue and the pairs
+  # `published_pairs/0` found, so a test can hand it a deliberately mutated
+  # catalogue without touching `Events` itself.
+  defp stale_catalogue_entries(catalogue, published) do
+    produced = MapSet.new(published, fn {s, st} -> Events.type(s, st) end)
+
+    for {stage, statuses} <- catalogue,
+        status <- statuses,
+        type = Events.type(stage, status),
+        not MapSet.member?(produced, type),
+        not resolvable_by_computed_status?(stage, status),
+        do: type
   end
 
   # The independent, no-fixed-list version: every stage published anywhere
@@ -189,28 +224,50 @@ defmodule Fountain.Webhooks.EventsTest do
   test "the catalogue names nothing the source cannot produce" do
     # The other direction. A stale entry is a documented event that never
     # arrives, which is worse than an undocumented one.
-    published = MapSet.new(published_pairs(), fn {s, st} -> Events.type(s, st) end)
-    non_literal = non_literal_status_stages()
-
-    # `turn.done`/`turn.failed` and `checkpoint.done`/`checkpoint.failed` come
-    # from call sites whose status is a variable, so the literal-pair regex
-    # cannot see them. A catalogue entry counts as producible when either its
-    # exact pair is literally published, or its stage has at least one
-    # call site the literal regex could not read the status of. A stage that
-    # appears at no call site at all is in neither set, so it still fails.
-    stale =
-      Events.types()
-      |> Enum.reject(fn type ->
-        MapSet.member?(published, type) or MapSet.member?(non_literal, stage_of(type))
-      end)
+    stale = stale_catalogue_entries(Events.catalogue(), published_pairs())
 
     assert stale == [],
            "these catalogue entries match no publish_stage call site: #{inspect(stale)}"
   end
 
-  defp stage_of(type) do
-    ["conversation", stage, _status] = String.split(type, ".")
-    stage
+  # Three ways `stale_catalogue_entries/2` must not be fooled, run against
+  # the real `published_pairs()` but a deliberately mutated catalogue, so
+  # none of them touch `Fountain.Webhooks.Events` itself.
+  describe "the stale-entry check does not over-forgive a computed status" do
+    defp with_extra_status(stage, status) do
+      Enum.map(Events.catalogue(), fn
+        {^stage, statuses} -> {stage, statuses ++ [status]}
+        other -> other
+      end)
+    end
+
+    test "an extra status on a stage with a computed call site still fails" do
+      # `turn` has two computed-status call sites (turn_machine.ex,
+      # conversations.ex). Excusing the whole stage once any of its call
+      # sites has a computed status — rather than the exact (stage, status)
+      # pair — would let this made-up status through silently.
+      catalogue = with_extra_status("turn", "never_emitted")
+
+      assert stale_catalogue_entries(catalogue, published_pairs()) == [
+               "conversation.turn.never_emitted"
+             ]
+    end
+
+    test "an extra status on checkpoint, whose only call site is computed, still fails" do
+      catalogue = with_extra_status("checkpoint", "bogus")
+
+      assert stale_catalogue_entries(catalogue, published_pairs()) == [
+               "conversation.checkpoint.bogus"
+             ]
+    end
+
+    test "a wholly new stage with no call site at all still fails" do
+      catalogue = [{"totally_bogus_stage_2294", ~w(done)} | Events.catalogue()]
+
+      assert stale_catalogue_entries(catalogue, published_pairs()) == [
+               "conversation.totally_bogus_stage_2294.done"
+             ]
+    end
   end
 
   describe "filters" do
