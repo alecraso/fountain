@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the FountainKit conversation boundary from the committed contract.
+"""Generate FountainKit wire models from the committed contract.
 
 Only compatibility names/order and reused value types live here. Properties,
 requiredness, nullability and coding keys are read from the contract. Unknown
@@ -57,20 +57,163 @@ ENUM_TYPES.update({("SandboxConversation", "status"): "ConversationStatus",
 # Swift argument ordering is source API. New fields append automatically.
 INIT_ORDER = "agent_id prompt title vault_id environment_id permission_policy images sprite_name sandbox_mode sandbox_api_access sandbox_id channel_id fresh".split()
 
+# Resource-family names, source API differences and initializer order.
+RESOURCE_ROOTS = [
+    'Agent',
+    'AgentVersion',
+    'AgentUpdate',
+    'Environment',
+    'EnvironmentUpdate',
+    'Vault',
+    'VaultUpdate',
+    'Secret',
+    'Connection',
+    'ConnectionProvider',
+    'Teammate',
+    'TeamSchedule',
+    'TeamScheduleUpdateRequest',
+    'ApiKey',
+    'ApiKeyCreatedResponse',
+    'AuditEvent',
+    'SearchHit',
+    'Catalog',
+    'ApplyResult',
+    'AdminUser',
+    'AdminSandbox',
+    'AdminEvent',
+]
+
+SCHEMA_PATHS = {
+    'Catalog': ['CatalogResponse', 'properties', 'data'],
+    'AdminEvent': ['AdminEventListResponse', 'properties', 'data', 'items'],
+}
+
+TYPE_NAMES.update({
+    'AgentUpdate': 'AgentInput',
+    'EnvironmentUpdate': 'EnvironmentInput',
+    'VaultUpdate': 'VaultInput',
+    'TeamScheduleUpdateRequest': 'TeamScheduleInput',
+    'ApiKey': 'APIKey',
+    'ApiKeyCreatedResponse': 'CreatedAPIKey',
+    'ApplySecretResult': 'ApplyResult.SecretResult',
+    'AgentSkillsItem': 'Skill',
+    'TeammatePresence': 'Teammate.Presence',
+    'TeammateLastTurn': 'Teammate.LastTurn',
+    'TeammatePreview': 'Teammate.Preview',
+    'CatalogSandboxProviders': 'Catalog.SandboxProviders',
+    'CatalogApps': 'Catalog.Apps',
+})
+
+INLINE_TYPES.update({
+    ('Agent', 'skills_item'): 'AgentSkillsItem',
+    ('AgentUpdate', 'skills_item'): 'AgentSkillsItem',
+})
+
+ENUM_TYPES.update({
+    ('Environment', 'networking_type'): 'NetworkingType',
+    ('EnvironmentUpdate', 'networking_type'): 'NetworkingType',
+    ('AdminUser', 'role'): 'UserRole',
+    ('AdminSandbox', 'provider'): 'SandboxProvider',
+    ('AdminSandbox', 'status'): 'SandboxStatus',
+    ('Connection', 'status'): 'ConnectionStatus',
+    ('Agent', 'runtime'): 'Runtime',
+    ('Agent', 'sandbox_provider'): 'SandboxProvider',
+    ('Agent', 'sandbox_mode'): 'SandboxMode',
+    ('AgentUpdate', 'runtime'): 'Runtime',
+    ('AgentUpdate', 'sandbox_provider'): 'SandboxProvider',
+    ('AgentUpdate', 'sandbox_mode'): 'SandboxMode',
+    ('SearchHit', 'kind'): 'SearchHitKind',
+    ('TeammatePresence', 'state'): 'PresenceState',
+    ('TeammateLastTurn', 'status'): 'TurnStatus',
+})
+
+TYPE_OVERRIDES = {
+    ('Environment', 'packages'): 'JSONValue',
+    ('Environment', 'networking_config'): 'JSONValue',
+    ('Environment', 'repositories'): '[JSONValue]',
+    ('Environment', 'metadata'): 'JSONValue',
+    ('EnvironmentUpdate', 'packages'): 'JSONValue',
+    ('EnvironmentUpdate', 'networking_config'): 'JSONValue',
+    ('EnvironmentUpdate', 'repositories'): '[JSONValue]',
+    ('EnvironmentUpdate', 'metadata'): 'JSONValue',
+    ('Vault', 'metadata'): 'JSONValue',
+    ('VaultUpdate', 'metadata'): 'JSONValue',
+    ('AdminEvent', 'metadata'): 'JSONValue',
+    ('Agent', 'mcp_servers'): 'JSONValue',
+    ('Agent', 'metadata'): 'JSONValue',
+    ('AgentVersion', 'config'): 'JSONValue',
+    ('AgentUpdate', 'mcp_servers'): 'JSONValue',
+    ('AgentUpdate', 'metadata'): 'JSONValue',
+    ('AuditEvent', 'metadata'): 'JSONValue',
+    ('ApplyResult', 'errors'): 'JSONValue',
+    ('ApplySecretResult', 'errors'): 'JSONValue',
+}
+
+OPTIONAL_COMPAT.update({
+    ('AdminSandbox', 'status'),
+    ('AdminUser', 'role'),
+    ('AgentVersion', 'config'),
+    ('AgentVersion', 'inserted_at'),
+    ('ApiKey', 'created_at'),
+    ('ApiKey', 'prefix'),
+    ('ApiKeyCreatedResponse', 'name'),
+    ('ApiKeyCreatedResponse', 'prefix'),
+    ('AuditEvent', 'inserted_at'),
+    ('Catalog', 'apps'),
+    ('Catalog', 'models'),
+    ('Catalog', 'package_managers'),
+    ('Catalog', 'runtimes'),
+    ('Catalog', 'sandbox_providers'),
+    ('CatalogSandboxProviders', 'default'),
+    ('CatalogSandboxProviders', 'enabled'),
+    ('Connection', 'account_email'),
+    ('Connection', 'env_key'),
+    ('Connection', 'scopes'),
+    ('Connection', 'status'),
+    ('ConnectionProvider', 'configured'),
+    ('ConnectionProvider', 'connect_url'),
+    ('ConnectionProvider', 'env_key'),
+    ('ConnectionProvider', 'name'),
+    ('ConnectionProvider', 'slug'),
+    ('SearchHit', 'snippet'),
+    ('SearchHit', 'ts'),
+    ('Secret', 'environment_id'),
+    ('TeamSchedule', 'enabled'),
+    ('TeamSchedule', 'one_off'),
+    ('TeammateLastTurn', 'id'),
+    ('TeammateLastTurn', 'prompt'),
+    ('TeammateLastTurn', 'status'),
+    ('TeammateLastTurn', 'turn_number'),
+    ('TeammatePresence', 'label'),
+})
+
+INPUT_ORDERS = {
+    'VaultUpdate': ['name', 'description', 'metadata'],
+    'EnvironmentUpdate': ['name', 'packages', 'env_vars', 'setup_script', 'setup_timeout_seconds', 'networking_type', 'networking_config', 'repositories', 'metadata'],
+    'TeamScheduleUpdateRequest': ['cron', 'prompt', 'name', 'one_off', 'enabled'],
+    'AgentUpdate': ['name', 'description', 'system', 'model', 'runtime', 'runtime_command', 'sandbox_provider', 'sandbox_mode', 'environment_id', 'permission_policy', 'skills', 'mcp_servers', 'metadata', 'allowed_vault_ids', 'allowed_environment_ids'],
+    'AgentSkillsItem': ['name', 'content', 'source', 'ref'],
+}
 
 def camel(key):
     first, *rest = key.split("_")
-    return first + "".join(p.upper() if p in {"id", "api", "url"} else p.title() for p in rest)
+    return first + "".join({"id": "ID", "ids": "IDs", "ip": "IP", "api": "API", "url": "URL"}.get(p, p.title()) for p in rest)
 
 
 class Generator:
     def __init__(self, contract):
-        self.schemas = contract["schemas"]
-        self.pending = ["Conversation", "Turn", "ConversationCreateRequest", "ImageInput", "TurnUsage", "UsageAccounting", "SandboxDetail", "Runner", "ConversationTreeNode"]
+        self.schemas = copy.deepcopy(contract["schemas"])
+        for name, path in SCHEMA_PATHS.items():
+            node = contract["schemas"]
+            for key in path:
+                node = node[key]
+            self.schemas[name] = node
+        self.pending = ["Conversation", "Turn", "ConversationCreateRequest", "ImageInput", "TurnUsage", "UsageAccounting", "SandboxDetail", "Runner", "ConversationTreeNode"] + RESOURCE_ROOTS
         self.done = set()
         self.nested = {}
         self.dependencies = {}
-        self.encodable = {"ConversationCreateRequest", "ImageInput"}
+        self.input_roots = {"ConversationCreateRequest", "ImageInput", "AgentUpdate", "EnvironmentUpdate", "VaultUpdate", "TeamScheduleUpdateRequest"}
+        self.encodable = set(self.input_roots)
 
     def reference(self, owner, ref):
         if ref == "PermissionPolicy":
@@ -83,6 +226,8 @@ class Generator:
         return TYPE_NAMES.get(ref, ref)
 
     def type(self, owner, key, node):
+        if (owner, key) in TYPE_OVERRIDES:
+            return TYPE_OVERRIDES[owner, key]
         if (owner, key) in ENUM_TYPES:
             return ENUM_TYPES[owner, key]
         if "ref" in node:
@@ -129,6 +274,18 @@ class Generator:
             for branch in self.schemas["TeammateConversation"]["allOf"]:
                 for key, value in branch.get("properties", {}).items():
                     props[key] = dict(value, required=False)
+        if owner == "Secret":
+            # One public Secret serves both environment and vault endpoints.
+            other = self.schemas["VaultSecret"]["properties"]
+            for key in props.keys() & other.keys():
+                shape = lambda node: {k: v for k, v in node.items() if k != "required"}
+                if shape(props[key]) != shape(other[key]):
+                    raise ValueError(f"Incompatible secret field: {key}")
+            props = {
+                key: dict(value, required=props.get(key, {}).get("required", False)
+                          and other.get(key, {}).get("required", False))
+                for key, value in {**props, **other}.items()
+            }
         if owner == "TurnUsage":
             # Usage is the public superset used for both a turn and a total.
             # New total fields must propagate too; incompatible shared names
@@ -144,7 +301,7 @@ class Generator:
         for key, value in sorted(props.items()):
             if (owner, key) in OPTIONAL_COMPAT:
                 value["required"] = False
-            swift = "permissionPolicyValues" if key == "permission_policy" else camel(key)
+            swift = "permissionPolicyValues" if key == "permission_policy" else ("`default`" if key == "default" else camel(key))
             fields.append((key, swift, self.type(owner, key, value), value))
         return fields
 
@@ -152,7 +309,7 @@ class Generator:
         name = TYPE_NAMES.get(owner, owner)
         request = owner == "ConversationCreateRequest"
         encodable = owner in self.encodable
-        decodable = owner not in {"ConversationCreateRequest", "ImageInput"}
+        decodable = owner not in self.input_roots
         nullable = [f for f in fields if f[3].get("nullable")]
         # Keep Optional source APIs, but retain a separate null state anywhere
         # a generated input accepts null, including shared response models.
@@ -162,7 +319,7 @@ class Generator:
             conform = "Sendable, Codable, Hashable" if encodable else "Sendable, Decodable, Hashable"
         else:
             conform = "Sendable, Encodable"
-        if decodable and "id" in props:
+        if decodable and ("id" in props or owner == "Teammate"):
             conform += ", Identifiable"
         parent, _, short_name = name.rpartition(".")
         lines = [f"public struct {short_name or name}: {conform} {{"]
@@ -175,13 +332,15 @@ class Generator:
                           f"    set {{ _{swift} = newValue.map(ConversationInputField.value) ?? .omitted }}", "  }"]
             else:
                 lines += [f'  public var {swift}: {typ}{"?" if optional else ""}']
+        if owner == "Teammate":
+            lines += ["  public var id: String { agentID }"]
         if "permission_policy" in props:
             lines += ["", "  /// String verdicts for compatibility. Use permissionPolicyValues for numeric policy values.",
                       "  public var permissionPolicy: [String: String]? {",
                       "    get { permissionPolicyValues?.compactMapValues(\\.stringValue) }",
                       "    set { permissionPolicyValues = newValue?.mapValues(JSONValue.string) }", "  }"]
         if encodable:
-            order = INIT_ORDER if request else []
+            order = INIT_ORDER if request else INPUT_ORDERS.get(owner, [])
             ordered = sorted(fields, key=lambda f: (order.index(f[0]) if f[0] in order else len(order), f[0]))
             lines += ["", "  public init("]
             params = []

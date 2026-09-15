@@ -82,7 +82,8 @@ import Testing
     ("https://talk.fountain.test/base/", "https://talk.fountain.test/base/#/c/c1"),
   ])
   func conversationURLUsesTheCatalogApp(_ app: String, expected: String) async throws {
-    let transport = FakeTransport(json: "{\"data\": {\"apps\": {\"conversations\": \"\(app)\"}}}")
+    let transport = FakeTransport(
+      json: try catalogFixture("{\"apps\": {\"conversations\": \"\(app)\"}}"))
     let client = FountainClient(
       config: FountainConfig(
         baseURL: URL(string: "https://fountain.test")!, apiKey: "ftn_live_test",
@@ -106,7 +107,7 @@ import Testing
       baseURL: URL(string: "https://fountain.test/base/")!, apiKey: "ftn_live_test",
       appURL: configured ? URL(string: "https://configured.fountain.test/")! : nil)
     let client = FountainClient(
-      config: config, transport: FakeTransport(json: "{\"data\": \(data)}"))
+      config: config, transport: FakeTransport(json: try catalogFixture(data)))
     let catalog = try await client.catalog()
     let expected =
       configured
@@ -114,6 +115,16 @@ import Testing
 
     #expect(client.conversationURL("c1", apps: catalog.apps).absoluteString == expected)
     #expect(client.conversationURL("c1", apps: nil).absoluteString == expected)
+  }
+
+  private func catalogFixture(_ data: String) throws -> String {
+    var payload = try JSONDecoder().decode([String: JSONValue].self, from: Data(data.utf8))
+    payload["first_request"] = .object([
+      "curl": .string("curl"), "typescript": .string("runRequest"),
+      "prompt": .string("hello"), "placeholders": .array([]),
+    ])
+    return String(
+      decoding: try JSONEncoder().encode(["data": JSONValue.object(payload)]), as: UTF8.self)
   }
 
 }
