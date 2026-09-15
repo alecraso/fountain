@@ -115,7 +115,10 @@ defmodule Fountain.Conversations.McpServers do
   of everything the host serves itself. That ordering is a host decision, not a
   promise to an extension — ADR 0043 fixes "extensions before team" and nothing
   finer. Buzz's reply tools reach a turn through that fan-out since #1507; the
-  `buzz/2` clause that used to sit here went with them.
+  `buzz/2` clause that used to sit here went with them. The retired
+  caller-tool bridge (#1202) appended a third list here; it left with the
+  dialects that fed it (ADR 0057, #2252), and the agent's own servers above
+  are untouched by that removal.
   """
   @spec fountain_served(map(), String.t() | nil) :: [map()]
   def fountain_served(%{id: conv_id}, token) do
@@ -136,15 +139,4 @@ defmodule Fountain.Conversations.McpServers do
     do: Fountain.Team.conversation_mcp_servers(conv_id, token)
 
   def team(_conv_id, _token), do: []
-
-  # The caller-tool bridge (#1202) appended a third list here, built from the
-  # conversation row's `caller_tools`. The append goes with the routes in this
-  # change rather than with the rest of the bridge in the next one, and that
-  # ordering is the whole point: the two dialect controllers were the only
-  # things that could ever hand a parked call back to the client. Keep
-  # advertising those tools after the controllers are gone and an agent on a
-  # legacy `openai:`/`agui:` row — which ADR 0057 promises stays usable
-  # natively — can still pick one, park a call nobody can answer, and cycle
-  # 60-second waits until the permission deadline fails it. Not advertised is
-  # not selectable. `Fountain.CallerTools` itself goes in the next change.
 end

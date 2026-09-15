@@ -31,7 +31,6 @@ apps/fountain/test/fountain/audit_test.exs	6145
 apps/fountain/test/fountain/brand_test.exs	0
 apps/fountain/test/fountain/broker/native_request_log_test.exs	2291
 apps/fountain/test/fountain/broker_native_test.exs	11159
-apps/fountain/test/fountain/caller_tools_test.exs	0
 apps/fountain/test/fountain/compose_passthrough_config_test.exs	317
 apps/fountain/test/fountain/config_reference_test.exs	17
 apps/fountain/test/fountain/connections/mcp_discovery_test.exs	748

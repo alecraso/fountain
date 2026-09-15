@@ -1,9 +1,10 @@
 defmodule Fountain.Conversations.PendingTest do
   @moduledoc """
   What a turn waits on (#1375), driven without a server: a permission request
-  answered, denied by timeout and drained at the turn's end; a parked
-  caller-tool call answered, expired and dropped. The peer is this process,
-  so what would reach it is asserted as messages; the timers land here too.
+  answered, denied by timeout and drained at the turn's end. The parked
+  caller-tool calls this suite also covered went with the retired tool bridge
+  (ADR 0057, #2252). The peer is this process, so what would reach it is
+  asserted as messages; the timers land here too.
   """
   use Fountain.DataCase, async: true
 
@@ -48,9 +49,9 @@ defmodule Fountain.Conversations.PendingTest do
   end
 
   describe "from_state/1 and into_state/2" do
-    test "round-trip the two server fields" do
-      state = %{caller_calls: %{"c" => %{}}, permission_timer: :t, other: 1}
-      assert %Pending{calls: %{"c" => %{}}, permission_timer: :t} = p = Pending.from_state(state)
+    test "round-trip the server field" do
+      state = %{permission_timer: :t, other: 1}
+      assert %Pending{permission_timer: :t} = p = Pending.from_state(state)
 
       assert Pending.into_state(state, %{p | permission_timer: nil}) == %{
                state
@@ -230,114 +231,6 @@ defmodule Fountain.Conversations.PendingTest do
 
       assert {{:error, :unknown_option}, ^turn, ^pending} =
                Pending.answer_permission(pending, conv.id, turn, refusing, 7, "made-up")
-    end
-  end
-
-  describe "a parked caller-tool call" do
-    test "park/6 announces it, arms a deadline and lists it oldest first", %{
-      conv: conv,
-      turn: turn,
-      pending: pending
-    } do
-      {id1, pending} = Pending.park(pending, conv.id, turn, "lookup", %{"a" => 1}, self())
-      # Oldest first is by the monotonic millisecond a call was parked at, so
-      # two parks in the same millisecond have no order to assert.
-      Process.sleep(2)
-      {id2, pending} = Pending.park(pending, conv.id, turn, "other", %{}, nil)
-
-      assert String.starts_with?(id1, "call_")
-
-      assert [%{id: ^id1, name: "lookup", arguments: %{"a" => 1}}, %{id: ^id2, name: "other"}] =
-               Pending.calls(pending)
-
-      assert [
-               {"started", %{"call_id" => ^id1, "name" => "lookup", "arguments" => %{"a" => 1}}},
-               {"started", _}
-             ] =
-               stages(conv.id, "caller_tool")
-
-      for call <- Map.values(pending.calls), do: Process.cancel_timer(call.timer)
-    end
-
-    test "await/3 is pending until resolved, then the kept result; unknown ids are refused", %{
-      conv: conv,
-      turn: turn,
-      pending: pending
-    } do
-      {id, pending} = Pending.park(pending, conv.id, turn, "lookup", %{}, nil)
-
-      assert {:pending, pending} = Pending.await(pending, id, self())
-      assert pending.calls[id].waiter == self()
-      assert {{:error, :unknown_call}, ^pending} = Pending.await(pending, "call_nope", self())
-
-      pending = Pending.resolve_call(pending, conv.id, id, "answered", {:ok, "shipped"})
-      assert_receive {:caller_tool_result, ^id, {:ok, "shipped"}}
-      assert {{:ok, {:ok, "shipped"}}, ^pending} = Pending.await(pending, id, self())
-    end
-
-    test "answer_calls/3 resolves the matched ids, ignores strays and reports the rest", %{
-      conv: conv,
-      turn: turn,
-      pending: pending
-    } do
-      {a, pending} = Pending.park(pending, conv.id, turn, "a", %{}, self())
-      {b, pending} = Pending.park(pending, conv.id, turn, "b", %{}, nil)
-
-      assert {{:ok, %{turn_id: turn_id, remaining: [%{id: ^b}]}}, pending} =
-               Pending.answer_calls(pending, conv.id, %{a => "one", "stray" => "x"})
-
-      assert turn_id == turn.id
-      assert_receive {:caller_tool_result, ^a, {:ok, "one"}}
-      assert Pending.calls(pending) |> Enum.map(& &1.id) == [b]
-
-      assert [_, _, {"done", %{"call_id" => ^a, "outcome" => "answered"}}] =
-               stages(conv.id, "caller_tool")
-
-      assert {{:error, :no_pending_calls}, ^pending} =
-               Pending.answer_calls(pending, conv.id, %{a => "again"})
-
-      Process.cancel_timer(pending.calls[b].timer)
-    end
-
-    test "resolve_call/5 cancels the deadline and resolves once", %{
-      conv: conv,
-      turn: turn,
-      pending: pending
-    } do
-      {id, pending} = Pending.park(pending, conv.id, turn, "a", %{}, nil)
-      timer = pending.calls[id].timer
-
-      pending = Pending.resolve_call(pending, conv.id, id, "timeout", {:error, "late"})
-      assert Process.read_timer(timer) == false
-      assert %{result: {:error, "late"}, timer: nil, waiter: nil} = pending.calls[id]
-
-      assert ^pending = Pending.resolve_call(pending, conv.id, id, "answered", {:ok, "x"})
-      assert [_, {"done", %{"outcome" => "timeout"}}] = stages(conv.id, "caller_tool")
-    end
-
-    test "drop_calls/3 errors what is still parked and empties the registry", %{
-      conv: conv,
-      turn: turn,
-      pending: pending
-    } do
-      {a, pending} = Pending.park(pending, conv.id, turn, "a", %{}, self())
-      {b, pending} = Pending.park(pending, conv.id, turn, "b", %{}, self())
-      pending = Pending.resolve_call(pending, conv.id, a, "answered", {:ok, "done"})
-
-      pending = Pending.drop_calls(pending, conv.id, "turn_ended")
-
-      assert pending.calls == %{}
-
-      assert_receive {:caller_tool_result, ^b,
-                      {:error, "the turn ended before the caller answered"}}
-
-      assert [
-               _,
-               _,
-               {"done", %{"call_id" => ^a}},
-               {"done", %{"call_id" => ^b, "outcome" => "turn_ended"}}
-             ] =
-               stages(conv.id, "caller_tool")
     end
   end
 end

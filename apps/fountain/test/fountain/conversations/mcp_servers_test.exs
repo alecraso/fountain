@@ -130,6 +130,96 @@ defmodule Fountain.Conversations.McpServersTest do
     end
   end
 
+  # The regression the bridge removal (ADR 0057, #2252) is actually risky for.
+  # People configure tools on an *agent* that call their own application, and
+  # those are not the retired request-defined bridge: they come off the agent
+  # row, their `${VAR}` references resolve against the environment and vault,
+  # and they are authenticated with whatever credential the tenant put in the
+  # document. Deleting `caller/2` from `fountain_served/2` must not touch any
+  # of that.
+  describe "an agent-configured application tool survives the bridge removal" do
+    setup do
+      user = insert_verified_user()
+
+      raw = %{
+        "my-app" => %{
+          "type" => "http",
+          "url" => "${APP_HOST}/mcp",
+          "headers" => %{"Authorization" => "Bearer ${APP_KEY}"}
+        }
+      }
+
+      agent = insert_agent(user_id: user.id, mcp_servers: raw)
+      env = %Environment{env_vars: %{"APP_HOST" => "https://app.example"}}
+
+      {:ok, %Agent{mcp_servers: resolved}} =
+        McpServers.substitute_agent(agent, env, %{"APP_KEY" => "sk-live-abc"})
+
+      %{user: user, agent: agent, resolved: resolved}
+    end
+
+    defp session_servers(ctx, conv, token) do
+      McpServers.for_session(ctx.agent, conv,
+        user_id: ctx.user.id,
+        conversation_id: conv.id,
+        callback_token: token,
+        resolved: ctx.resolved
+      )
+    end
+
+    test "reaches session/new with its substituted URL and headers", ctx do
+      conv = insert_conversation(user_id: ctx.user.id, agent: ctx.agent)
+
+      assert %{name: "my-app", type: "http", url: url, headers: headers} =
+               ctx |> session_servers(conv, "tok") |> Enum.find(&(&1[:name] == "my-app"))
+
+      assert url == "https://app.example/mcp"
+      assert headers == [%{name: "Authorization", value: "Bearer sk-live-abc"}]
+    end
+
+    test "is served again on a later turn on the same conversation", ctx do
+      conv = insert_conversation(user_id: ctx.user.id, agent: ctx.agent)
+
+      first = session_servers(ctx, conv, "tok")
+      # A resumed turn re-reads the agent row and re-resolves; the same
+      # document has to come back rather than a blanked or half-expanded one.
+      second = session_servers(ctx, Fountain.Repo.reload!(conv), "tok-rotated")
+
+      served = Enum.find(first, &(&1[:name] == "my-app"))
+
+      # Guard the guard: two absent servers would compare equal and pass this
+      # vacuously, which is exactly the regression it exists to catch.
+      assert %{name: "my-app", url: "https://app.example/mcp"} = served
+      assert Enum.find(second, &(&1[:name] == "my-app")) == served
+    end
+
+    test "is served with no callback token at all", ctx do
+      # The Fountain-served lists are gated on the conversation credential.
+      # The agent's own servers are not, and must not become so by accident.
+      conv = insert_conversation(user_id: ctx.user.id, agent: ctx.agent)
+
+      assert %{name: "my-app", url: "https://app.example/mcp"} =
+               ctx |> session_servers(conv, nil) |> Enum.find(&(&1[:name] == "my-app"))
+    end
+
+    test "still comes before the team tools it shares a turn with", ctx do
+      conv =
+        insert_conversation(
+          user_id: ctx.user.id,
+          agent: ctx.agent,
+          channel_id: Fountain.Team.channel()
+        )
+
+      names = ctx |> session_servers(conv, "tok") |> Enum.map(&(&1[:name] || &1["name"]))
+
+      assert "my-app" in names
+      assert Fountain.Team.Mcp.mcp_name() in names
+
+      assert Enum.find_index(names, &(&1 == "my-app")) <
+               Enum.find_index(names, &(&1 == Fountain.Team.Mcp.mcp_name()))
+    end
+  end
+
   describe "substitution_vars/2" do
     test "no environment is just the secrets" do
       assert McpServers.substitution_vars(nil, %{"K" => "v"}) == %{"K" => "v"}
@@ -172,17 +262,14 @@ defmodule Fountain.Conversations.McpServersTest do
     end
   end
 
-  # ADR 0057 (#2252). The dialect controllers were the only things that could
-  # hand a parked caller-tool call back to a client, so once they are gone a
-  # persisted `caller_tools` list must stop being advertised in the same
-  # change — otherwise an agent on a legacy row can select one and park a call
-  # nobody can answer. The rest of the bridge goes in the next change; this is
-  # the half that cannot wait for it.
+  # ADR 0057 (#2252). #2279 stopped advertising a legacy row's persisted
+  # caller tools when it removed the only controllers that could answer such a
+  # call; this change removes the bridge itself, and `caller_tools` is no
+  # longer a schema field at all. The guard stays: a row whose stored column
+  # still holds tools must never get a `fountain-caller` server back.
   describe "a legacy row's persisted caller tools are not advertised" do
-    test "a row that still has caller_tools gets no bridge server" do
-      conv = %{id: "c1", caller_tools: [%{"name" => "lookup_order"}]}
-
-      served = McpServers.fountain_served(conv, "tok")
+    test "a conversation map still carrying caller_tools gets no bridge server" do
+      served = McpServers.fountain_served(%{id: "c1", caller_tools: [%{"name" => "x"}]}, "tok")
 
       assert served == []
       refute Enum.any?(served, &(&1[:name] == "fountain-caller"))
@@ -190,7 +277,7 @@ defmodule Fountain.Conversations.McpServersTest do
 
     test "nor does one on the team channel, which does get its team tools" do
       conv = insert_conversation(channel_id: Fountain.Team.channel())
-      legacy = %{conv | caller_tools: [%{"name" => "lookup_order"}]}
+      legacy = %{id: conv.id, caller_tools: [%{"name" => "x"}]}
 
       names = legacy |> McpServers.fountain_served("tok") |> Enum.map(& &1[:name])
 

@@ -286,7 +286,6 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     # and what is in `replay_dedup` was read back from `log_events`, so it has
     # been through `Redaction.redact/2` — unlike `runner_replay`, which is fed
     # raw sandbox bytes and is therefore redacted.
-    :caller_calls,
     :replay_dedup
   ]
 

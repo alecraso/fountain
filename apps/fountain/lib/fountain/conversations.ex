@@ -885,46 +885,6 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  Register the caller-defined tools of the bridge (#1202) on a conversation
-  the caller already owns: the normalised list `Fountain.CallerTools`
-  produced, last write wins. An unchanged list writes and records nothing —
-  a framework loop re-sends the same list on every request.
-
-  Ownership is the caller's job: `conv` must have come from a tenant-scoped
-  fetch. Audited as `conversation.caller_tools_set` with the count and the
-  names, never the schemas.
-  """
-  @spec set_caller_tools(Conversation.t(), [map()], keyword()) ::
-          {:ok, Conversation.t()} | {:error, Ecto.Changeset.t()}
-  def set_caller_tools(%Conversation{} = conv, tools, opts \\ []) when is_list(tools) do
-    if conv.caller_tools == tools do
-      {:ok, conv}
-    else
-      conv
-      |> Conversation.changeset(%{caller_tools: tools})
-      |> Repo.update()
-      |> tap(fn
-        {:ok, updated} ->
-          Audit.record(%{
-            user_id: updated.user_id,
-            action: "conversation.caller_tools_set",
-            resource_type: "conversation",
-            resource_id: updated.id,
-            actor: Keyword.get(opts, :actor, "self"),
-            request_ip: Keyword.get(opts, :request_ip),
-            metadata: %{
-              "tool_count" => length(tools),
-              "tool_names" => Enum.map(tools, & &1["name"])
-            }
-          })
-
-        _ ->
-          :ok
-      end)
-    end
-  end
-
-  @doc """
   Merge `labels` into `conversation_id`'s. **The door every request-shaped
   caller uses** (#1637).
 
