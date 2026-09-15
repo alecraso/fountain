@@ -32,6 +32,10 @@ defmodule Fountain.PrincipalInferenceCredentialRaceTest do
     on_exit(fn ->
       Sandbox.unboxed_run(Repo, fn ->
         ids = [fixtures.grant.claimable.user_id, fixtures.application.id, fixtures.claimer.id]
+        # The audit rows go first: `audit_events.user_id` is ON DELETE SET
+        # NULL, so deleting the users alone leaves them behind, and on a
+        # reused database they accumulate run over run (#2178).
+        Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id in ^ids)
         Repo.delete_all(from u in User, where: u.id in ^ids)
       end)
     end)

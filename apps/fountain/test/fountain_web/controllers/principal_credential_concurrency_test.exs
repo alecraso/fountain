@@ -100,9 +100,14 @@ defmodule FountainWeb.PrincipalCredentialConcurrencyTest do
         after
           Task.shutdown(blocker, :brutal_kill)
 
+          # The audit rows go first: `audit_events.user_id` is ON DELETE SET
+          # NULL, so deleting the user alone leaves them behind, and on a
+          # reused database they accumulate run over run (#2178).
           for user_id <- [grant.user_id, app.id] do
             InferenceCredentials.with_source_lock(user_id, fn ->
-              Repo.query!("DELETE FROM users WHERE id = $1", [Ecto.UUID.dump!(user_id)])
+              id = Ecto.UUID.dump!(user_id)
+              Repo.query!("DELETE FROM audit_events WHERE user_id = $1", [id])
+              Repo.query!("DELETE FROM users WHERE id = $1", [id])
             end)
           end
         end

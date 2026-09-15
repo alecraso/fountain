@@ -28,12 +28,7 @@ defmodule Fountain.PrincipalsClaimReplayTest do
         {application, claimer, grant}
       end)
 
-    on_exit(fn ->
-      Sandbox.unboxed_run(Repo, fn ->
-        ids = [grant.claimable.user_id, application.id, claimer.id]
-        Repo.delete_all(from u in User, where: u.id in ^ids)
-      end)
-    end)
+    on_exit(fn -> delete_accounts([grant.claimable.user_id, application.id, claimer.id]) end)
 
     parent = self()
 
@@ -98,16 +93,16 @@ defmodule Fountain.PrincipalsClaimReplayTest do
     application = Sandbox.unboxed_run(Repo, fn -> insert_verified_user() end)
 
     on_exit(fn ->
-      Sandbox.unboxed_run(Repo, fn ->
-        principal_ids =
+      principal_ids =
+        Sandbox.unboxed_run(Repo, fn ->
           Repo.all(
             from c in ClaimableUser,
               where: c.application_user_id == ^application.id,
               select: c.user_id
           )
+        end)
 
-        Repo.delete_all(from u in User, where: u.id in ^[application.id | principal_ids])
-      end)
+      delete_accounts([application.id | principal_ids])
     end)
 
     stub(Fountain.Audit, :record, fn attrs ->
@@ -156,12 +151,7 @@ defmodule Fountain.PrincipalsClaimReplayTest do
         {application, owner, claimed}
       end)
 
-    on_exit(fn ->
-      Sandbox.unboxed_run(Repo, fn ->
-        ids = [application.id, owner.id, claimed.claimable.user_id]
-        Repo.delete_all(from u in User, where: u.id in ^ids)
-      end)
-    end)
+    on_exit(fn -> delete_accounts([application.id, owner.id, claimed.claimable.user_id]) end)
 
     parent = self()
 
@@ -236,12 +226,7 @@ defmodule Fountain.PrincipalsClaimReplayTest do
         {application, owner, opened, first}
       end)
 
-    on_exit(fn ->
-      Sandbox.unboxed_run(Repo, fn ->
-        ids = [application.id, owner.id, opened.claimable.user_id]
-        Repo.delete_all(from u in User, where: u.id in ^ids)
-      end)
-    end)
+    on_exit(fn -> delete_accounts([application.id, owner.id, opened.claimable.user_id]) end)
 
     parent = self()
 
@@ -324,6 +309,17 @@ defmodule Fountain.PrincipalsClaimReplayTest do
       Task.shutdown(blocker, :brutal_kill)
       Enum.each(replays, &Task.shutdown(&1, :brutal_kill))
     end
+  end
+
+  # Committed fixtures need a committed cleanup. The audit rows go first:
+  # `audit_events.user_id` is ON DELETE SET NULL, so deleting the users alone
+  # leaves them behind, and on a reused database they accumulate run over run
+  # (#2178).
+  defp delete_accounts(ids) do
+    Sandbox.unboxed_run(Repo, fn ->
+      Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id in ^ids)
+      Repo.delete_all(from u in User, where: u.id in ^ids)
+    end)
   end
 
   defp waits_for_lock?(backend, deadline) do
