@@ -14,7 +14,7 @@ FULL_JOBS = {
 }
 SDK_JOBS = {"elixir-sdk", "python-sdk", "typescript-sdk", "swift-sdk"}
 SDK_GATE_JOBS = SDK_JOBS | {"already-tested", "changes"}
-JOBS = FULL_JOBS | {"already-tested", "changes", "workflow-checks", "docs", "docs-prose", "sdk-checks"}
+JOBS = FULL_JOBS | {"already-tested", "changes", "workflow-checks", "docs", "sdk-checks"}
 
 # Which probes are expected to have run, per event. A merge group is the only
 # plan that runs both: the queue classifies the diff like a PR *and* asks
@@ -36,7 +36,7 @@ def _reuse(needs):
 
 def _classification(needs):
     outputs = needs["changes"].get("outputs", {})
-    if any(outputs.get(key) not in {"true", "false"} for key in ("docs_only", "docs_touched", "cli_docs")):
+    if any(outputs.get(key) not in {"true", "false"} for key in ("docs_only", "cli_docs")):
         raise ValueError("change classification is missing or invalid")
     tree = outputs.get("tree")
     if not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree):
@@ -48,7 +48,7 @@ def _classification(needs):
             raise ValueError("SDK classification is missing or invalid")
         if value == "true":
             selected.add(job)
-    return outputs["docs_only"] == "true", outputs["docs_touched"] == "true", selected
+    return outputs["docs_only"] == "true", selected
 
 
 def _expected_plan(event, needs, jobs):
@@ -62,20 +62,20 @@ def _expected_plan(event, needs, jobs):
         expected[probe] = "success"
 
     reuse = _reuse(needs) if "already-tested" in PROBES[event] else False
-    docs_only, docs_touched, sdks = (
-        _classification(needs) if "changes" in PROBES[event] else (False, True, SDK_JOBS)
+    docs_only, sdks = (
+        _classification(needs) if "changes" in PROBES[event] else (False, SDK_JOBS)
     )
-    if event == "workflow_dispatch" and (docs_only or not docs_touched or sdks != SDK_JOBS):
+    if event == "workflow_dispatch" and (docs_only or sdks != SDK_JOBS):
         raise ValueError("manual CI must select the complete plan")
     # SDK docs can select a language even when the server plan is docs-only.
     if not reuse:
         expected.update(dict.fromkeys(sdks, "success"))
 
-    return expected, not reuse and not docs_only, docs_only, docs_touched, reuse
+    return expected, not reuse and not docs_only, docs_only, reuse
 
 
 def validate(event, needs):
-    expected, full, docs_only, docs_touched, reuse = _expected_plan(event, needs, JOBS)
+    expected, full, docs_only, reuse = _expected_plan(event, needs, JOBS)
     expected["workflow-checks"] = "success"
     expected["sdk-checks"] = "success"
     # Docs-only still owes docs. Reused trees skip the workload jobs, while
@@ -84,13 +84,11 @@ def validate(event, needs):
         expected["docs"] = "success"
     if full:
         expected.update(dict.fromkeys(FULL_JOBS - SDK_JOBS, "success"))
-    if full and docs_touched:
-        expected["docs-prose"] = "success"
     _check_results(needs, expected)
 
 
 def validate_sdks(event, needs):
-    expected, _, _, _, _ = _expected_plan(event, needs, SDK_GATE_JOBS)
+    expected, _, _, _ = _expected_plan(event, needs, SDK_GATE_JOBS)
     _check_results(needs, expected)
 
 

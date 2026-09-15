@@ -121,7 +121,7 @@ agent form gives you the same warning before you save the agent.
 
 ## What an environment is not
 
-**Not a deployment tier.** "Environment" in Fountain never means dev, staging <!-- vale disable-line STE.IngForms -->
+**Not a deployment tier.** "Environment" in Fountain never means dev, staging
 or production. You might build those out of Environments and Vaults. Fountain
 does not model them.
 

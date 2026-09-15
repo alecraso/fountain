@@ -146,7 +146,7 @@ result back.
 A Fountain agent ran its own tool, in its own sandbox, and it already has the
 result. To report that as a call would ask the host to execute something
 twice. It would also leave the run to wait for a result that never comes. So Fountain
-reports that activity as reasoning, which no host tries to execute. <!-- vale disable-line STE.IngForms -->
+reports that activity as reasoning, which no host tries to execute.
 
 The host's own tools are the other half, and they do come back as calls. Read
 [Your tools](#your-tools).
@@ -197,11 +197,11 @@ can run for an hour, as long as more events arrive.
 
 To provision a fresh sandbox takes longer than a minute on some providers, and
 a first run would otherwise die mid-provision. Two things keep it alive. The
-lifecycle stages stream as thinking events, and the endpoint writes an SSE <!-- vale disable-line STE.IngForms -->
+lifecycle stages stream as thinking events, and the endpoint writes an SSE
 heartbeat comment every 15 seconds. Both are bytes on the wire, which is what
 the watchdog counts.
 
-Whether a host *renders* a thinking event is its own business. OpenBot's <!-- vale disable-line STE.IngForms -->
+Whether a host *renders* a thinking event is its own business. OpenBot's
 channel view, on CopilotKit 1.67.1, does not show them. So a first run looks
 quiet even while the connection is healthy. A later run on a warm sandbox
 answers in a couple of seconds.

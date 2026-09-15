@@ -61,23 +61,11 @@ of your own can match it or not.
 ## To contribute
 
 Read
-[CONTRIBUTING.md](https://github.com/managoat/fountain/blob/main/CONTRIBUTING.md) <!-- vale disable-line STE.IngForms -->
+[CONTRIBUTING.md](https://github.com/managoat/fountain/blob/main/CONTRIBUTING.md)
 and
 [CLAUDE.md](https://github.com/managoat/fountain/blob/main/CLAUDE.md)
 in the repo. The second file is the contributor guide, and coding agents read
 it too.
 
-Three prose checks run on every change to a page under `docs/`. Read
-[the style sheet](https://github.com/managoat/fountain/blob/main/standards/voice-and-style.md)
-and
-[the English standard](https://github.com/managoat/fountain/blob/main/standards/simplified-technical-english.md)
-before you write a page.
-
-| Check | What it holds you to |
-|---|---|
-| `scripts/docs-style.py` | The house style sheet. |
-| `vale lint docs` | ASD-STE100 Simplified Technical English. |
-| `scripts/destink/destink.mjs` | The tells that make a page read as machine written, via the [`sentences`](https://github.com/lex00/sentences) package (MIT). |
-
-Each check has a backlog file, and each backlog file is empty. A new page
-gets all three checks from its first commit.
+The [manual contribution guide](https://github.com/managoat/fountain/blob/main/contributing/docs.md)
+explains the structural checks and offers optional writing guidance.

@@ -22,7 +22,7 @@ Thirty seconds here saves that.
 
 One thing does carry over. Both products encrypt with an envelope.
 
-HashiCorp goes unseal key, then root key, then keyring, then data. <!-- vale disable-line STE.IngForms -->
+HashiCorp goes unseal key, then root key, then keyring, then data.
 Fountain goes `MASTER_SECRETS_KEY`, then one data encryption key for each
 tenant, then the value. If you understood theirs, you already understand
 [ours](../architecture.md).
@@ -55,7 +55,7 @@ Without vaults, one credential change means an edit to the Environment. The
 whole team shares that Environment. Three results follow, and teams meet all
 three.
 
-To run one Agent against staging and production, you would need two <!-- vale disable-line STE.IngForms -->
+To run one Agent against staging and production, you would need two
 Environments. The two would be the same except for one URL, and they would
 drift apart.
 

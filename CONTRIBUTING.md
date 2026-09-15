@@ -97,8 +97,7 @@ OpenAPI validation, the SDK jobs and the docs gates;
 [`scripts/ci/README.md`](scripts/ci/README.md) lists every job. If you
 touched `docs/` or an extension's manual, read
 [`contributing/docs.md`](contributing/docs.md): the structural checks are in
-the suite and `mix precommit` runs them, and the three advisory prose
-reports are run by hand.
+the suite and `mix precommit` runs them.
 
 ### If a test went red and then green
 

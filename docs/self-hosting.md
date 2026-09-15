@@ -69,7 +69,7 @@ Five have a guide below.
 
 - [Configure email](guides/operate/email.md)
 - [Change sandbox lifetimes](guides/operate/sandbox-lifetime.md)
-- [Start billing](guides/operate/billing.md) <!-- vale disable-line STE.IngForms -->
+- [Start billing](guides/operate/billing.md)
 
 **How to keep it up.**
 

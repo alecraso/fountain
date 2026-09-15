@@ -37,7 +37,7 @@ class DispatchTest(unittest.TestCase):
             self.assertFalse((root / "called").exists())
             values = dict(line.split("=", 1) for line in output.read_text().splitlines())
             self.assertEqual(values, {"diff_base": "", "docs_only": "false",
-                                      "cli_docs": "false", "docs_touched": "true"})
+                                      "cli_docs": "false"})
             sdks = subprocess.check_output([sys.executable, str(ROOT / "scripts/ci/sdk_changes.py"),
                                             values["diff_base"]], cwd=root, text=True)
             self.assertEqual(set(sdks.splitlines()),
@@ -45,7 +45,7 @@ class DispatchTest(unittest.TestCase):
 
     def test_both_gates_reject_partial_manual_plans(self):
         original = plan("workflow_dispatch")
-        mutations = [("docs_only", "true"), ("docs_touched", "false")]
+        mutations = [("docs_only", "true")]
         mutations += [("sdk_" + job.removesuffix("-sdk"), "false") for job in SDK_JOBS]
         for key, value in mutations:
             needs = copy.deepcopy(original)
@@ -54,9 +54,6 @@ class DispatchTest(unittest.TestCase):
                 for job in FULL_JOBS - SDK_JOBS:
                     needs[job]["result"] = "skipped"
                 needs["docs"]["result"] = "success"
-                needs["docs-prose"]["result"] = "skipped"
-            elif key == "docs_touched":
-                needs["docs-prose"]["result"] = "skipped"
             else:
                 needs[key.removeprefix("sdk_") + "-sdk"]["result"] = "skipped"
             with self.subTest(key=key):

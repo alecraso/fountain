@@ -16,7 +16,7 @@ day that changes, and for a fix that has to land in a graduated library.
 | `managoat_oauth` | the OAuth 2.0 code+PKCE and device-grant state machine, a `use` macro over `Managoat.OAuth.Host` | `Fountain.OAuth` is the instance; its host mints the API key |
 | `managoat_acp` | the client-side ACP session (Peer), Protocol, Permissions, Blocks, Usage, Tracer, the ScriptedAgent | `Conversations.Blocks` |
 | `managoat_sandbox` | the sandbox behaviour, the Sprites/E2B/Daytona adapters, Retry, the Fake, the conformance case | `Fountain.SandboxProviders`, the "which providers are enabled" policy |
-| `managoat_docs` | the compile-time embedded manual as a `use` macro, the markdown renderer, `GuardrailCase` | `docs/`, `nav.yml`, `Fountain.Help`, the prose gates, the `/docs` controller |
+| `managoat_docs` | the compile-time embedded manual as a `use` macro, the markdown renderer, `GuardrailCase` | `docs/`, `nav.yml`, `Fountain.Help`, the `/docs` controller |
 | `managoat_broker` | the native egress credential proxy behind `Managoat.Broker.Store` | the store over `broker_sessions`, the listener, the egress log |
 | `managoat_runner` | the self-hosted runner wire protocol, the sandbox adapter over it, the FakeDaemon, behind `Managoat.Runner.Host` | `Fountain.Runners.Host` over Horde; the runners table, placement, presence |
 | `managoat_runtimes` | how claude/codex/gemini/opencode get into a sandbox speaking ACP: the behaviour, the pinned adapter table, Layout, Instructions, Quirks, Model, Skills, the FakeRuntime | the model catalog, the bundled skill content, the ask timeout, `InferenceCredentials` |

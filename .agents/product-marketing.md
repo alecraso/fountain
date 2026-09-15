@@ -5,7 +5,7 @@
 
 This file is the positioning, the ICP and the vocabulary that marketing work in
 this repo starts from. It is drafted from the repo itself: `README.md`,
-`docs/primitives.md`, `docs/tour.md`, `CLAUDE.md`, `standards/voice-and-style.md`,
+`docs/primitives.md`, `docs/tour.md`, `CLAUDE.md`, `contributing/docs.md`,
 and the marketing templates under
 `apps/fountain/lib/fountain_web/controllers/marketing_html/`.
 
@@ -42,9 +42,8 @@ provision, lock down, or pay for while nobody is talking.
 **Product category:** The shelf is "managed sandboxes for coding agents", or
 what the repo calls a managed agent control plane. Buyers arrive from "how do I
 run Claude Code / Codex on a server", not from a category they already have a
-name for. `standards/voice-and-style.md` is explicit that the audience has **no
-prior model for this category**, which is the single most important fact about
-every page.
+name for. Assume readers have **no prior model for this category** and explain the
+product terms when introducing them.
 
 **Product type:** Multi-tenant hosted API plus a self-hostable server. Web UI is
 an operator console, not an application.
@@ -210,17 +209,16 @@ on the repo's own problem statement rather than pretending to quote a user.
 **Words to use:** Agent, Environment, Vault, Conversation, sandbox, runtime,
 template, run, transcript, credit, primitive, cluster, gate, guardrail.
 
-**"Computer" is a marketing word only.** `standards/voice-and-style.md` bans it
-from `docs/` because reference prose needs one name for the machine, and that
-name is "sandbox". `README.md` uses it on purpose because it is the word the
-reader already has for the thing they do not want to run. The homepage instead
+**"Computer" is a marketing word only.** The manual uses "sandbox" for the
+isolated machine so its terminology matches the API and glossary. `README.md`
+uses it on purpose because it is the word the reader already has for the thing
+they do not want to run. The homepage instead
 names coding agents and the work-only meter in its first line. When another
 marketing surface uses "computer", use it once to open, then say "sandbox" or
 "machine" for the rest of the page. Never use it in `docs/`.
 
-**Words to avoid:** "simply", "just", "easy", "obviously", "coming soon" (the docs style
-gate fails on these); "plans", "tiers", "seats", "subscription" (there are none);
-em dashes anywhere in `docs/`.
+**Accuracy:** Do not describe unbuilt behavior as available. Avoid "plans",
+"tiers", "seats" and "subscription" when describing billing; there are none.
 
 **Glossary:**
 
@@ -252,21 +250,10 @@ plural, allowed opinion, signed and dated).
 
 **Personality:** Precise, candid, unshowy, technical, load-bearing.
 
-**The three named rules**, enforced by `python3 scripts/docs-style.py` and
-`vale lint docs`:
-1. No em dashes.
-2. Colons do not introduce lists.
-3. A sentence states a claim and stops.
-
-Plus: concede the failure case in the same breath as the feature; paste real
-output including ids; state defaults with their override in the same place;
-never describe unbuilt behavior as existing.
-
-**Where persuasion is allowed.** `docs/` is held to ASD-STE100 Simplified
-Technical English and the linter wins there. The marketing templates under
-`marketing_html/` are the surface that is allowed rhetoric, and the case study
-is the most rhetorical page in the repo. Copy that reads punchy in a hero would
-fail the gate in a manual, and that is by design.
+**Manual writing:** See the optional guidance in `contributing/docs.md`. State
+accurate defaults, show real commands and output, and explain failure cases.
+The manual has structural checks and no prose linters. Marketing copy lives
+in `managoat/site`.
 
 ## Proof Points
 

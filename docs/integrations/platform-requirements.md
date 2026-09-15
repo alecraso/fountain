@@ -7,7 +7,6 @@
      "scheduling" are Technical Names. STE exempts a Technical Name from Rule
      3.4, and the linter has no vocabulary hook for that rule, so the exemption
      is declared for the page. -->
-<!-- vale STE.IngForms = NO -->
 
 This page is for teams that build sandbox platforms. It defines the ten
 capabilities Fountain needs to run long-lived, interactive agents safely.

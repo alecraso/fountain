@@ -1,9 +1,0 @@
-{
-  "name": "fountain-destink",
-  "private": true,
-  "type": "module",
-  "description": "Docs de-stink gate. Engine is the published lex00/sentences package's lint surface.",
-  "dependencies": {
-    "sentences": "^0.1.1"
-  }
-}

@@ -10,7 +10,7 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   for a stack). The pin is the file's line count on `main` at the last move,
   so a change that makes the file longer fails here and has to say why.
 
-  The shape is the docs-style allowlist that only shrinks (#911): the number
+  The size ceiling only shrinks: the number
   is not a target, it is a record of where the file is, and the only edit it
   accepts is downward. Lower it when you move something out; never raise it.
 

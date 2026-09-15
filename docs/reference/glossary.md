@@ -26,7 +26,7 @@ Three senses. The docs mean the first.
    [About environments](../concepts/environment.md).
 2. **Environment variables.** The values in a process. The docs always write
    "environment variables" in full.
-3. **A deployment tier.** Dev, staging, production. The docs say <!-- vale disable-line STE.IngForms -->
+3. **A deployment tier.** Dev, staging, production. The docs say
    **deployment** for this, and never "environment".
 
 ### Fountain

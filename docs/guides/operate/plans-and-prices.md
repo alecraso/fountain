@@ -2,7 +2,6 @@
 
 <!-- "billing" is a Technical Name here: the product surface, the
      CREDITS_ENABLED flag and the Elixir context all carry it. -->
-<!-- vale STE.IngForms = NO -->
 
 This page explains what a tenant pays and what the variables control. There
 are no plans. Credits are the product.
@@ -112,5 +111,3 @@ provider, and the invoice you record next to the computed figure. See
 
 - [Start billing](billing.md).
 - [Stripe integration guide](../../integrations/stripe.md).
-
-<!-- vale STE.IngForms = YES -->

@@ -4,7 +4,6 @@
      CREDITS_ENABLED flag and the Elixir context all carry it. STE exempts a
      Technical Name from the -ing rule, and the linter has no vocabulary
      hook for that rule, so the exemption is declared for the page. -->
-<!-- vale STE.IngForms = NO -->
 
 This guide shows you how to start billing, and why you probably must not.
 
@@ -67,5 +66,3 @@ The balance falls at the next run of the pricer, at most ten minutes later.
 - [See what sandboxes cost](sandbox-spend.md), for what each account runs and
   which provider you pay for it.
 - [Run a release task](run-a-release-task.md).
-
-<!-- vale STE.IngForms = YES -->

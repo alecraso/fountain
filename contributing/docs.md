@@ -68,59 +68,30 @@ mix test apps/fountain/test/fountain/docs_test.exs
   a dead link. The extension's own suite runs the link checks over the merged
   manual.
 
-## Wording checks, advisory
+## Writing guidance (optional)
 
-Three reports run in CI on every change to a page. They advise; findings do
-not block a merge. Logs show the first 60 lines and the `prose-advice`
-artifact keeps the full output for seven days. Run them locally when you
-touch `docs/` or an extension's manual:
+Write for developers learning Fountain's model. Prefer concrete examples,
+accurate commands, and explanations of defaults and failure cases. Use the
+[glossary](../docs/reference/glossary.md) for product terms: an Agent is stored
+configuration, a Conversation is a run, a runtime is the coding-agent CLI,
+and a sandbox is its isolated machine. Distinguish an Environment from
+process environment variables and deployment tiers. Explain that a Fountain
+Vault supplies overrides that win over an Environment.
+
+Choose punctuation and sentence structure for clarity. There are no prose
+linters or required style reports.
+
+## Public GitHub links (manual)
+
+Run this when checking the manual's external references:
 
 ```bash
-python3 scripts/docs-style.py
-vale lint docs $(ls -d apps/*/docs 2>/dev/null)
-npm ci --prefix scripts/destink && node scripts/destink/destink.mjs
+python3 scripts/ci/check_external_links.py
 ```
 
-`docs-style.py` and `destink.mjs` find `apps/*/docs` themselves; vale selects
-from its path arguments, so those directories are named on the command line.
-Each has an empty-or-shrinking backlog file, and a page not on the backlog is
-checked in full, so every new page is covered by default.
-
-- **`scripts/docs-style.py`** checks the style sheet,
-  [`standards/voice-and-style.md`](../standards/voice-and-style.md): no em
-  dashes, no colon-introduced lists, no "simply", "obviously" or "coming
-  soon". `scripts/docs-style-allow.txt` is the backlog; cleaning a page means
-  deleting its line, and the list only shrinks (#911).
-- **`vale`** checks ASD-STE100 Simplified Technical English, the standard in
-  [`standards/simplified-technical-english.md`](../standards/simplified-technical-english.md).
-  Config is `.vale-ste.yml`; `.valeignore` is the backlog and is empty. The
-  linter is [`stuffbucket/vale`](https://github.com/stuffbucket/vale) (MIT,
-  pure Go): `brew install stuffbucket/tap/vale`. CI uses the pinned `v0.15.0`
-  release binary, checksum-verified, not `go install`, because the jobs pin
-  Go from `cli/go.mod` with `GOTOOLCHAIN=local`. Six rules gate: sentence
-  length (20 procedural / 25 descriptive), contractions, the passive voice,
-  phrasal verbs, one instruction per sentence, and the -ing form.
-  `STE.Vocabulary` advises only; its wordset was built for aircraft
-  maintenance. Read the standard before you fight the linter: it lists the
-  three traps (joined table cells, a code span opening a sentence,
-  `anything` matching the -ing rule) and where a suppression comment is
-  legitimate.
-- **`scripts/destink/destink.mjs`** looks for AI-writing tells. The engine
-  is the published [`sentences`](https://github.com/lex00/sentences) package
-  (MIT), pinned by the range in `scripts/destink/package.json`; bump it and
-  run `npm install --prefix scripts/destink`. `scripts/destink/allow.txt` is
-  the backlog and is empty. Two things to know:
-  - It lints prose, not markdown. The package's `lint/markdown-prose` export
-    blanks code fences, tables, inline code, link targets, HTML blocks and
-    admonition directives so every offset still indexes the real file. If a
-    finding points at something that is not prose, the fix belongs upstream
-    in `lint/markdown-prose`, not in the page.
-  - The rule set is opt-in and each entry carries its count. `ENABLED` and
-    `DISABLED` in `destink.mjs` list all 46 rules with the number each
-    produced over `docs/` and, for the disabled ones, why. A rule added
-    upstream between versions arrives off. The gate refuses to run if an id
-    named there is missing from the package's registry, which is what a
-    rename upstream looks like from here.
+It checks public GitHub links in the manual, extension manuals and CLAUDE.md.
+Network availability and remote link changes do not block merge CI. Internal
+links and anchors remain part of the structural tests above.
 
 ## The changelog is a docs page
 

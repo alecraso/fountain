@@ -30,8 +30,8 @@ adapter over it, the sandbox-name shape and the `FakeDaemon`, behind a
 its nav parser and dialect compiler, the markdown renderer with both its
 paths, and the `docs_test.exs` guardrails as `Managoat.Docs.GuardrailCase`;
 `Fountain.Docs` survives as one `use` line, and `docs/`, `nav.yml`,
-`Fountain.Help`, the prose gates and the `/docs` controller stay in
-`fountain`),
+`Fountain.Help` and the `/docs` controller stay in `fountain`; the prose
+gates also stayed there at extraction and have since been removed),
 `managoat_oauth` (#1343: the authorization code + PKCE and device-grant
 state machine, its two schemas and a migration for a new consumer, as a
 `use` macro over a `Managoat.OAuth.Host` behaviour that mints the token,

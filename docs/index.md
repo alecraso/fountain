@@ -120,7 +120,7 @@ in full.
   symptom
 - [Operations](operations.md), how to run an instance day to day
 - [Services Fountain uses](integrations/index.md), sandboxes, mail, OAuth,
-  billing and errors <!-- vale disable-line STE.IngForms -->
+  billing and errors
 
 ## Look it up
 

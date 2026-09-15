@@ -12,7 +12,7 @@ things. Each of the four changes on its own schedule.
 What the machine holds changes rarely. Python 3.12, a checkout of your repo, a
 setup script. You decide it once for a team, then leave it alone for months.
 
-Which credentials the agent runs with changes constantly. A staging database <!-- vale disable-line STE.IngForms -->
+Which credentials the agent runs with changes constantly. A staging database
 URL today, a customer's API key tomorrow, a rotated token an hour from now.
 
 How the agent behaves changes sometimes. Which model, which runtime,
