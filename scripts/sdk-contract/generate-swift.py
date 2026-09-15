@@ -246,9 +246,17 @@ REQUIRED_BY_CONTRACT = set()
 
 # Properties the last release published that this SDK deliberately stops
 # generating. An entry is a claim that removal was intentional, citing the PR
-# and changelog fragment that made it, and it is pruned once the last release
-# no longer publishes the property — at that point `shipped` no longer carries
-# the key and an unpruned entry has nothing left to name.
+# and changelog fragment that made it.
+#
+# Do not prune an entry in the release that retires the property. It is
+# load-bearing while the release it cites is still the baseline, and inert
+# only once the release that removed the property has itself shipped — at
+# which point `shipped` no longer carries the key and the rule below, which
+# walks `shipped`, can no longer reach the entry. No commit can do it at the
+# release itself: the tag is created from the merged tree, so that tree is
+# checked both before the tag exists and after. Prune in a later PR;
+# contributing/swift-wire-models.md has the lifecycle and
+# test_the_removal_history_has_not_grown holds the ceiling that pays for it.
 REMOVED_PROPERTIES = {
     ("AuthMe", "onboardingState"): (
         "#2269 finished #1393: the server dropped users.onboarding_state in "

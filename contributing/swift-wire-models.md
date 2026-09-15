@@ -132,10 +132,26 @@ own field list, but also a computed property this module adds outside it
 under `Models/` adds to a generated type (`LogEvent.stageData`), since either
 would otherwise read as removed the moment this guard exists. A property that
 fails is a claim nobody meant to make, unless `REMOVED_PROPERTIES` — a table
-beside `REQUIRED_BY_CONTRACT`, pruned once the release it cites is no longer
-the baseline — records the removal as deliberate, citing the PR and changelog
-fragment that made it. Its first entry is `("AuthMe", "onboardingState")`,
-retired in #2269 when `AuthMe` moved to generation. A rename is invisible to
+beside `REQUIRED_BY_CONTRACT` — records the removal as deliberate, citing the
+PR and changelog fragment that made it. Its first entry is
+`("AuthMe", "onboardingState")`, retired in #2269 when `AuthMe` moved to
+generation.
+
+An entry has two lives, and **it must not be pruned in the release that
+retires the property**. While the release it cites is still the baseline the
+entry is load-bearing: the released SDK publishes the property, the presence
+rule fails on it, and the entry is what clears that — delete it early and
+generation raises. Once the release that removed the property has itself
+shipped, the baseline no longer publishes the key, the rule cannot consult
+the entry, and it is inert; pruning it then is safe tidying. Nothing can
+delete it *at* the release, because tagging is a consequence of merging: the
+tree that becomes `vX.Y.Z` is tested before its tag exists and again, as
+`main`, after it does, so the entry has to pass both. That is why
+`test_removed_properties_entries_name_a_real_removal` tolerates an aged-out
+entry and asserts it is inert rather than requiring it to be live, and why
+`test_the_removal_history_has_not_grown` carries a ceiling instead — the
+ceiling is what keeps the table from filling with dead entries. Requiring
+live entries is what turned v0.18.0's own tag into a red run on `main`. A rename is invisible to
 all three rules, since each is keyed by the property name alone — this is
 also why `camel()` learning `ms` → `MS` in #2295 renamed nothing, only because
 nothing generated ended in `Ms` — so a real rename reads here as the old name
