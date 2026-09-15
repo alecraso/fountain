@@ -10,9 +10,11 @@
   404 for every request, and `/api/agui/…` is 404 for an authenticated JSON
   caller, 401 without a key and 406 for the `Accept: text/event-stream` an
   AG-UI client sends, so a caller that only checks for a 404 will read the
-  other two as something else. Port it to conversations
-  (`POST /api/conversations`, then `/prompt`, `/events` and `/stream`) or to an
-  SDK over them; the four integration pages are migration pages at the same
+  other two as something else. Port it to conversations — `POST
+  /api/conversations`, then `POST /api/conversations/{conversation_id}/prompts`,
+  `GET /api/conversations/{conversation_id}/events` and
+  `GET /api/conversations/{conversation_id}/stream` — or to an SDK over them;
+  the four integration pages are migration pages at the same
   URLs and each says what has no replacement:
   [OpenAI-compatible](https://managoat.com/docs/integrations/openai-compatible),
   [OpenBot/AG-UI](https://managoat.com/docs/integrations/openbot),
