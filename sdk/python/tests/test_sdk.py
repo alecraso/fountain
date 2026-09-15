@@ -367,6 +367,41 @@ class TurnTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_run_request_preserves_wire_fields_and_separates_local_options(self):
+        with FakeFountain() as fake:
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            body = {
+                "agent_id": AGENT_ID, "prompt": "find it", "title": "",
+                "vault_id": None, "images": [], "fresh": False, "queue": False,
+                "labels": {"attempt": "0"}, "permission_policy": {"ask_timeout": 0},
+                "sandbox_api_access": "none",
+            }
+            result = client.run_request(body, timeout=1, collect_events=True).result()
+            self.assertEqual(result.text, "Found it.")
+            create = next(r for r in fake.state.requests if r[:2] == ("POST", "/api/conversations"))
+            self.assertEqual(create[3], body)
+            self.assertNotIn("environment_id", create[3])
+            self.assertFalse(any(r[1] == "/api/agents" for r in fake.state.requests))
+
+    def test_run_request_refuses_unsupported_lifecycles_before_http(self):
+        with FakeFountain() as fake:
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            for prompt in (None, "", "  "):
+                with self.assertRaisesRegex(ValueError, "non-empty prompt"):
+                    client.run_request({"agent_id": AGENT_ID, "prompt": prompt})
+            with self.assertRaisesRegex(ValueError, "queued"):
+                client.run_request({"agent_id": AGENT_ID, "prompt": "hi", "queue": True})
+            self.assertEqual(fake.state.requests, [])
+
+    def test_run_request_uses_channel_history_to_select_the_turn(self):
+        with FakeFountain() as fake:
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            with patch.object(client, "_next_turn_number", return_value=1) as history:
+                result = client.run_request({
+                    "agent_id": AGENT_ID, "prompt": "hi", "channel_id": "raw",
+                }).result()
+            history.assert_called_once_with(result.conversation_id)
+
     def test_run_sends_explicit_sandbox_api_access_and_omits_the_default(self):
         for access in (None, "none", "owner"):
             with self.subTest(access=access), FakeFountain() as fake:
