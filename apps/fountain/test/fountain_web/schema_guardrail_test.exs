@@ -37,8 +37,8 @@ defmodule FountainWeb.SchemaGuardrailTest do
   **The exhaustive half** is `renders every property it declares`, which catches
   defect 2. The rendered half cannot: an optional property that is never sent
   still validates. This one drives a real request and compares the keys that
-  came back against the properties the schema declares, for a short list of
-  operations where that is worth pinning.
+  came back against the properties the schema declares, for the operations in
+  `@pins` below where that is worth pinning.
   """
 
   use FountainWeb.ConnCase, async: true
@@ -146,21 +146,73 @@ defmodule FountainWeb.SchemaGuardrailTest do
     # operations where the schema should be exhaustive, drive a real request and
     # compare the keys.
     #
-    # Adding to this list is how a response gets held to its whole schema, not
-    # just to the parts it happens to send.
-    @unrendered %{}
+    # `@pins` is the roster: {operation, schema title, how to find the object
+    # being checked inside the parsed body, a zero-arg function that drives the
+    # request and returns `json_response(conn, <2xx>)`}. Adding an operation is
+    # one more line here; `assert_renders_every_property/3` does the rest.
+    #
+    # `extract` says where the object being compared to the schema's properties
+    # lives in the body a request function returns:
+    #
+    #   :root - the body itself. Only `AuthMeResponse` is shaped this way; every
+    #            other response here is the `%{data: ...}` envelope
+    #            `FountainWeb.SchemaWrappers` builds, and the schema named is the
+    #            *item* schema (`Agent`), never the envelope (`AgentResponse`) —
+    #            the envelope's own properties are just `data`, which always
+    #            renders and would prove nothing.
+    #   :item - `body["data"]`, a `show`-shaped response.
+    #   :list - the first element of `body["data"]`, an `index`-shaped response,
+    #            still checked against the item schema rather than the list
+    #            envelope.
+    #
+    # `Map.has_key?/2` below is a deliberate choice, not an oversight: a
+    # property the controller renders as `null` has the key present and counts
+    # as rendered. Only an omitted key is the defect this file exists to catch —
+    # an endpoint that legitimately sends null for an optional field (`model` on
+    # an acp agent, `sandbox` before one is provisioned) is not required to send
+    # every property's opposite-of-null value too.
+    @unrendered %{
+      # Declared on `Conversation` for `GET /api/conversations/{id}` only — its
+      # own description says so — because a permission request that outlives a
+      # turn is served on show, not on the list (#1635). Both operations render
+      # from the same `Conversation` schema, which has no way to say "declared
+      # here, not there" for one property. Filed rather than fixed here: #2298
+      # is tests-only. See #2305.
+      {"GET /api/conversations", "pending_requests"} => "#2305"
+    }
 
-    test "GET /api/auth/me renders every property AuthMeResponse declares" do
-      user = insert_verified_user()
-      {_record, raw_key} = insert_api_key(user)
+    @pins [
+      {"GET /api/auth/me", "AuthMeResponse", :root, &__MODULE__.request_auth_me/0},
+      {"GET /api/agents", "Agent", :list, &__MODULE__.request_agents_index/0},
+      {"GET /api/agents/:id", "Agent", :item, &__MODULE__.request_agents_show/0},
+      {"GET /api/environments", "Environment", :list, &__MODULE__.request_environments_index/0},
+      {"GET /api/environments/:id", "Environment", :item,
+       &__MODULE__.request_environments_show/0},
+      {"GET /api/vaults", "Vault", :list, &__MODULE__.request_vaults_index/0},
+      {"GET /api/vaults/:id", "Vault", :item, &__MODULE__.request_vaults_show/0},
+      {"GET /api/conversations", "Conversation", :list,
+       &__MODULE__.request_conversations_index/0},
+      {"GET /api/conversations/:id", "Conversation", :item,
+       &__MODULE__.request_conversations_show/0},
+      {"GET /api/team", "Teammate", :list, &__MODULE__.request_team_index/0},
+      {"GET /api/team/:agent_id", "Teammate", :item, &__MODULE__.request_team_show/0}
+    ]
 
-      body =
-        build_conn()
-        |> authed_with_key(raw_key)
-        |> get(~p"/api/auth/me")
-        |> json_response(200)
+    for {operation, title, extract, request} <- @pins do
+      test "#{operation} renders every property #{title} declares" do
+        body = unquote(request).() |> extract_target(unquote(extract))
+        assert_renders_every_property(unquote(operation), unquote(title), body)
+      end
+    end
 
-      assert_renders_every_property("GET /api/auth/me", "AuthMeResponse", body)
+    defp extract_target(body, :root), do: body
+    defp extract_target(body, :item), do: Map.fetch!(body, "data")
+
+    defp extract_target(body, :list) do
+      case Map.fetch!(body, "data") do
+        [first | _] -> first
+        [] -> flunk("the request built for this pin returned an empty list")
+      end
     end
 
     defp assert_renders_every_property(operation, title, body) do
@@ -183,6 +235,142 @@ defmodule FountainWeb.SchemaGuardrailTest do
       drop it from the schema. If the answer is a real API decision, add it to
       @unrendered with the issue number.
       """
+    end
+
+    # ── request builders, one per @pins entry ──────────────────────────────
+
+    def request_auth_me do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get(~p"/api/auth/me")
+      |> json_response(200)
+    end
+
+    def request_agents_index do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      insert_agent(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/agents")
+      |> json_response(200)
+    end
+
+    def request_agents_show do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      agent = insert_agent(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/agents/#{agent.id}")
+      |> json_response(200)
+    end
+
+    def request_environments_index do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      insert_env(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/environments")
+      |> json_response(200)
+    end
+
+    def request_environments_show do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      env = insert_env(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/environments/#{env.id}")
+      |> json_response(200)
+    end
+
+    def request_vaults_index do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      insert_vault(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/vaults")
+      |> json_response(200)
+    end
+
+    def request_vaults_show do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      vault = insert_vault(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/vaults/#{vault.id}")
+      |> json_response(200)
+    end
+
+    def request_conversations_index do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      insert_conversation(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/conversations")
+      |> json_response(200)
+    end
+
+    def request_conversations_show do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      conv = insert_conversation(user_id: user.id)
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/conversations/#{conv.id}")
+      |> json_response(200)
+    end
+
+    def request_team_index do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      agent = insert_agent(user_id: user.id, name: "Ada")
+
+      insert_conversation(
+        user_id: user.id,
+        agent: agent,
+        status: "idle",
+        channel_id: Fountain.Team.channel()
+      )
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/team")
+      |> json_response(200)
+    end
+
+    def request_team_show do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+      agent = insert_agent(user_id: user.id, name: "Ada")
+
+      insert_conversation(
+        user_id: user.id,
+        agent: agent,
+        status: "idle",
+        channel_id: Fountain.Team.channel()
+      )
+
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/team/#{agent.id}")
+      |> json_response(200)
     end
   end
 
