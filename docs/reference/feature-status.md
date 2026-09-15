@@ -37,7 +37,7 @@ then brokered. Read the [configuration reference](../configuration.md).
 - [Plug into Fountain](../integrations/clients.md), for the ways in.
 
 The OpenAI-compatible API was the other feature on this page. It is retired
-([ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md)):
-the endpoints are removed, so there is nothing for `openai_compat` to switch
-on any more and the flag is on its way out too. The
-[page for it](../integrations/openai-compatible.md) says what a call gets now.
+([ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md)),
+and its flag is gone rather than switched off; the
+[page for it](../integrations/openai-compatible.md) says what a call gets
+now.

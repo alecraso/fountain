@@ -1,8 +1,27 @@
 # OpenAI-compatible and AG-UI retirement inventory
 
 Parent: [#2252](https://github.com/managoat/fountain/issues/2252).
-Decision proposal: [ADR 0057](../decisions/0057-retire-public-compatibility-protocols.md).
-This is an implementation plan, not a record of removed or released behavior.
+Decision: [ADR 0057](../decisions/0057-retire-public-compatibility-protocols.md).
+
+**Executed.** This was the implementation plan; the removal has since landed in
+the #2252 stack — the routes, their controllers, the caller MCP adapter and the
+whole public cutover together (#2279), then the request-defined tool bridge's
+internals (#2280), then the `openai_compat` flag (#2282). The file is kept
+as the audit trail behind ADR 0057: what was surveyed, at which commits, and
+which of it was shared rather than exclusive. Read the paths and line counts
+below as a snapshot of `44c70b61`, not as a description of the tree.
+
+Two items it lists are deliberately still open: the physical
+`conversations.caller_tools` column
+([#2273](https://github.com/managoat/fountain/issues/2273)) and the release and
+site coordination ([managoat/site#3](https://github.com/managoat/site/issues/3),
+[#1196](https://github.com/managoat/fountain/issues/1196)). A code merge is not
+a deployment.
+
+Where the plan and the implementation disagree, the implementation is right and
+ADR 0057 records the difference — most notably the retirement response, which is
+a plain 404 only on `/v1`; the `/api` paths keep the shared 401 and 406 that
+authentication and content negotiation produce before dispatch.
 
 ## Evidence and scope
 

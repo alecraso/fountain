@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Retire the OpenAI-compatible and AG-UI public protocols"
-description: "Remove the compatibility endpoints and the request-tool bridge while preserving native conversations and agent-configured application tools. Being built in the #2252 stack; supersedes ADR 0035. Amended 2026-09-15: the retirement answer is not a plain 404 on every path — /api paths keep the shared 401 and 406 that authentication and content negotiation produce before dispatch."
+description: "Remove the compatibility endpoints and the request-tool bridge while preserving native conversations and agent-configured application tools. Built in the #2252 stack; supersedes ADR 0035. Amended 2026-09-15: the retirement answer is not a plain 404 on every path — /api paths keep the shared 401 and 406 that content negotiation and authentication produce before dispatch."
 tags: [api, architecture, integrations]
 status: stable
 adr: "0057"
@@ -11,33 +11,32 @@ date: 2026-09-15
 
 # 0057 — Retire the OpenAI-compatible and AG-UI public protocols
 
-**Status:** Accepted, and being built in the #2252 stack. **This ADR supersedes
+**Status:** Accepted and built, in the #2252 stack. **This ADR supersedes
 [ADR 0035](0035-openai-compatible-endpoint.md)**, which described the
 OpenAI-compatible dialect as shipped behavior.
 
-Built so far, in the change that carries this status line:
+Built, in the order the stack landed it:
 
-- The four OpenAI/AG-UI route declarations and their two exclusive controllers
-  are gone, with their operations and schemas out of the contract and the
-  generated types.
-- The caller MCP adapter and its route, so **all five retired method/path
-  combinations are unrouted**, and the bridge is no longer advertised to a
-  sandbox either. Both had to happen here rather than in the next change. The
-  two controllers were the only things that could hand a parked call back to a
-  client, so still offering those tools would let an agent on a legacy row park
-  a call nobody could answer — and the route itself scoped only to the tenant,
-  never binding a sandbox's callback key to the conversation named in its path,
-  so while it was reachable one sandbox could park calls on another
+- The four OpenAI/AG-UI route declarations and their two exclusive controllers,
+  with their operations and schemas out of the contract and the generated types
+  — **and the caller MCP adapter and its route with them**, so all five retired
+  method/path combinations went unrouted together, along with the bridge's
+  advertisement to a sandbox. Neither could wait for a later change. The two
+  controllers were the only things that could hand a parked call back to a
+  client, so still offering those tools would have let an agent on a legacy row
+  park a call nobody could answer; and the caller route scoped only to the
+  tenant, never binding a sandbox's callback key to the conversation named in
+  its path, so while it was reachable one sandbox could park calls on another
   conversation's turn in the same account.
-- The public cutover: the four integration pages kept as migration pages at
-  their URLs, their cross-links, the three runnable examples deleted, and the
-  operator flag guidance. The approved inventory requires the source-removal
-  change to carry the migration guide, so it is here rather than later.
+- The public cutover in the same change: the four integration pages kept as
+  migration pages at their URLs, their cross-links, the three runnable examples
+  deleted, and the operator flag guidance. The approved inventory requires the
+  source-removal change to carry the migration guide.
 - `Fountain.CallerTools` itself, the registration write, and the parked-call
-  plumbing in `ConversationServer` and `Pending` — all unreachable since the
-  route went, and now gone. Nothing publishes a `caller_tool` stage any more,
-  so the retired event vocabulary is the only trace left of the bridge.
-
+  plumbing in `ConversationServer` and `Pending`, all unreachable by then.
+  Nothing publishes a `caller_tool` stage any more, so the retired event
+  vocabulary is the last trace of the bridge — it stays valid as a filter, and
+  leaves at the rollback floor rather than here.
 - The `openai_compat` flag, which by then gated nothing. `FEATURE_FLAGS_ON`
   itself stays: a deployment drops the `openai_compat` entry and keeps any
   other, because `connections` still decides the Connections creation rollout
@@ -50,8 +49,8 @@ each change of the stack**, so it describes the tree it is merged into.
 Outside the stack entirely, with their own gates: the physical
 `conversations.caller_tools` column, which
 [#2273](https://github.com/managoat/fountain/issues/2273) drops once the
-deployment floor has advanced, and the release — no tag is claimed below, and a
-code merge is not a deployment.
+deployment floor has advanced, and the release itself — no tag is claimed
+below, and a code merge is not a deployment.
 
 ## Context
 
@@ -103,12 +102,12 @@ because a retiring client meets it:
 authenticates. The `/api` paths fall through to the extension-dispatch scope,
 which sits inside the `:api` pipeline: `TenantAPIAuth` answers a keyless call
 401, and `plug :accepts, ["json"]` refuses an event-stream `Accept` with 406 —
-which is exactly what an AG-UI client sends, so for that path it is the common
-case rather than an edge one.
+which is exactly what an AG-UI client sends, so that is the common case for
+that path rather than an edge one.
 
 Both are the *shared* unmatched-`/api` behaviour: a path that never existed
 answers identically, which `protocol_retirement_test.exs` asserts by comparing
-the two rather than by hard-coding a status. So the decision's intent holds —
+the two rather than hard-coding a status. So the decision's intent holds —
 nothing dialect-specific survives — but "ordinary 404" was too simple a
 sentence for what a caller actually sees.
 
@@ -142,9 +141,11 @@ point to retirement; its ACP, Buzz and native/MCP work remains independent.
 
 ## Consequences
 
-- Four exclusive production files contain 2,295 lines at the audited commit.
-  Additional bridge-only state and lifecycle paths can disappear. These are
-  removal candidates, not a claim of a measured final net reduction.
+- Four exclusive production files contained 2,295 lines at the audited commit
+  and are gone, along with the bridge-only server state, its timers and the
+  turn-end drain. `conversation_server.ex` fell from 2,364 to 2,213 lines and
+  its size pin with it. This counts deleted production code, not a net
+  reduction across the repository.
 - Native launch, streaming, permission and MCP code still needs independent
   tests. Shared `Pending` permission logic, `FeatureFlags`, API authentication
   and rate limits remain; their protocol-specific branches can go.
