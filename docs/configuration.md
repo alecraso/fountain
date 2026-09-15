@@ -416,12 +416,14 @@ configure PostHog, the answer from PostHog decides.
 |---|---|---|---|
 | `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user. It wins over PostHog. No shipped feature needs a key here today: `openai_compat` did until the OpenAI-compatible API was retired, and Connections is turned on by `BROKER_LISTEN_PORT`. |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user. It wins over PostHog. `connections` is the one shipped flag: without `POSTHOG_PROJECT_API_KEY` it reads on by itself and needs no entry here, and with PostHog configured you enable it there or force it here. It is one of two gates. The credential broker (`BROKER_LISTEN_PORT`) is the other, and Connections needs both. `openai_compat` needed an entry until the OpenAI-compatible API was retired (ADR 0057). |
 
 For a hosted Connections rollout, leave the global override unset. Enable
 `connections` for the intended test accounts in PostHog, with evaluation
-runtime set to `all`. Enable the credential broker too. The broker is the
-switch that decides which accounts get the feature.
+runtime set to `all`. The credential broker must be on as well: it is
+deployment-wide, and the flag is what decides which accounts get the feature.
+An account with the flag and no broker, or the broker and no flag, cannot
+connect anything.
 
 The flag holds only the doors that add a credential. Those doors connect an
 account, define a provider and attach a secret to a host. An account that loses

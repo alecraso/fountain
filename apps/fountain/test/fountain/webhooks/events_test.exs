@@ -41,14 +41,36 @@ defmodule Fountain.Webhooks.EventsTest do
     Application.app_dir(:fountain) |> Path.join("../../../../apps/fountain") |> Path.expand()
   end
 
-  defp published_pairs do
+  # Every call site, as `{source, stage, status}`, with duplicates kept: the
+  # retired-site pin below counts them.
+  defp published_sites do
     for source <- @sources,
         path = Path.join(app_dir(), source),
         File.exists?(path),
         [_, stage, status] <- Regex.scan(@call_site, File.read!(path)),
-        uniq: true,
-        do: {stage, status}
+        do: {source, stage, status}
   end
+
+  defp published_pairs do
+    published_sites()
+    |> Enum.map(fn {_source, stage, status} -> {stage, status} end)
+    |> Enum.uniq()
+  end
+
+  # The transitional allowance, pinned to the call site (ADR 0057, #2252):
+  # `Pending.park/6` and `Pending.resolve_call/5` still publish `caller_tool`,
+  # and nothing can reach them — the two things that could are gone. These
+  # two, in this file, once each, are the ONLY retired publishes the suite
+  # lets through. A retired type is not in the catalogue, `Webhooks` dispatches
+  # on `Events.matches?/2` without a catalogue check, and grandfathered filters
+  # still name it, so a new emitter — another file, another status, a second
+  # copy — would be a delivery nobody can subscribe to by name. Stage 2 deletes
+  # both sites; when it does, empty this map and the assertion below becomes
+  # "no retired stage is published from anywhere".
+  @retired_call_sites %{
+    {"lib/fountain/conversations/pending.ex", "caller_tool", "started"} => 1,
+    {"lib/fountain/conversations/pending.ex", "caller_tool", "done"} => 1
+  }
 
   test "the source actually reachable from here has publish_stage call sites" do
     # Guard the guard: a broken path or a changed call shape would make every
@@ -56,22 +78,18 @@ defmodule Fountain.Webhooks.EventsTest do
     assert length(published_pairs()) > 20
   end
 
-  # A retired stage keeps its `publish_stage/4` call sites until the code
-  # holding them is deleted, but nothing can reach them — the two exclusive
-  # things that could are already gone. It must be out of the catalogue and out
-  # of the docs by then, so the two assertions below skip it in both
-  # directions, and the test after this one pins that it really is retired
-  # rather than merely missing.
   defp retired_stages, do: MapSet.new(Events.retired(), fn {stage, _statuses} -> stage end)
 
   test "every stage transition in the source is in the catalogue" do
-    retired = retired_stages()
-
+    # Only the pinned retired sites are exempt. A retired stage published from
+    # anywhere else shows up here as missing, which is the right reading: it
+    # is a new emitter of a type nobody can subscribe to.
     missing =
-      published_pairs()
-      |> Enum.reject(fn {stage, _status} -> MapSet.member?(retired, stage) end)
-      |> Enum.map(fn {stage, status} -> Events.type(stage, status) end)
+      published_sites()
+      |> Enum.reject(&Map.has_key?(@retired_call_sites, &1))
+      |> Enum.map(fn {_source, stage, status} -> Events.type(stage, status) end)
       |> Enum.reject(&Events.known?/1)
+      |> Enum.uniq()
       |> Enum.sort()
 
     assert missing == [], """
@@ -83,20 +101,35 @@ defmodule Fountain.Webhooks.EventsTest do
 
     Add them to `Fountain.Webhooks.Events`, and to the table in
     docs/reference/webhooks.md. If the stage is being retired instead, put it
-    in `@retired` and mark it historical on the docs page.
+    in `@retired` and mark it historical on the docs page. A stage that is
+    already retired must not gain a call site: `@retired_call_sites` names the
+    only ones allowed, and it only ever shrinks.
     """
   end
 
-  test "a retired stage is out of the catalogue while its call sites remain" do
-    # The transitional state this suite has to allow, asserted rather than
-    # assumed: `caller_tool` is still published from `Pending` and is already
-    # unreachable, so it must be retired vocabulary and not a catalogue entry.
-    assert Enum.any?(published_pairs(), fn {stage, _} -> stage == "caller_tool" end),
-           "No caller_tool call site left, so this transitional test has done " <>
-             "its job — delete it. Do NOT drop caller_tool from @retired here: " <>
-             "the vocabulary stays valid until the rollback floor (#2273), so " <>
-             "an endpoint still naming it can be edited. The tests above cover " <>
-             "that state."
+  test "the retired stages are published from exactly the pinned sites" do
+    retired = retired_stages()
+
+    found =
+      published_sites()
+      |> Enum.filter(fn {_source, stage, _status} -> MapSet.member?(retired, stage) end)
+      |> Enum.frequencies()
+
+    assert found == @retired_call_sites, """
+    The retired publish_stage/4 call sites do not match the pin.
+
+      pinned: #{inspect(@retired_call_sites, pretty: true)}
+      found:  #{inspect(found, pretty: true)}
+
+    A site that vanished means stage 2 (#2252) has deleted it: remove it from
+    `@retired_call_sites`, and leave the map empty once both are gone — that is
+    the invariant from then on. A site that appeared, or a second copy of one,
+    is a new emitter of a retired type: nothing can subscribe to it by name,
+    and `Webhooks` would still deliver it to a grandfathered filter. Do NOT
+    drop the stage from `@retired` in either case: the vocabulary stays valid
+    until the rollback floor (#2273), so an endpoint still naming it can be
+    edited. The `filters` tests cover that state.
+    """
 
     refute Events.known?("conversation.caller_tool.started")
     refute List.keymember?(Events.catalogue(), "caller_tool", 0)
