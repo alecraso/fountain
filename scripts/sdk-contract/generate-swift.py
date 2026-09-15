@@ -42,11 +42,16 @@ class Generator:
         self.pending = ["Conversation", "Turn", "ConversationCreateRequest", "ImageInput", "TurnUsage", "UsageAccounting"]
         self.done = set()
         self.nested = {}
+        self.dependencies = {}
+        self.encodable = {"ConversationCreateRequest", "ImageInput"}
 
-    def reference(self, ref):
+    def reference(self, owner, ref):
         if ref == "PermissionPolicy":
             return "[String: JSONValue]"
-        if ref not in REUSED and ref != "UsageTotal":
+        if ref == "UsageTotal":
+            ref = "TurnUsage"
+        self.dependencies.setdefault(owner, set()).add(ref)
+        if ref not in REUSED:
             self.pending.append(ref)
         return TYPE_NAMES.get(ref, ref)
 
@@ -54,7 +59,7 @@ class Generator:
         if (owner, key) in ENUM_TYPES:
             return ENUM_TYPES[owner, key]
         if "ref" in node:
-            return self.reference(node["ref"])
+            return self.reference(owner, node["ref"])
         if "allOf" in node and len(node["allOf"]) == 1:
             return self.type(owner, key, node["allOf"][0])
         for composition in ("anyOf", "oneOf"):
@@ -75,8 +80,7 @@ class Generator:
                 return "[String: JSONValue]"
             name = owner + camel(key)[0].upper() + camel(key)[1:]
             self.nested[name] = node
-            self.pending.append(name)
-            return name
+            return self.reference(owner, name)
         if kind == "string":
             return "Date" if node.get("format") == "date-time" else "String"
         if kind in {"boolean", "integer", "number"}:
@@ -85,10 +89,7 @@ class Generator:
             return "JSONValue"
         raise ValueError(f"Unsupported shape at {owner}.{key}: {node}")
 
-    def model(self, owner, node):
-        name = TYPE_NAMES.get(owner, owner)
-        request = owner == "ConversationCreateRequest"
-        encodable = request or owner == "ImageInput"
+    def fields(self, owner, node):
         props = copy.deepcopy(node["properties"])
         if owner == "Conversation":
             # Existing Conversation is also the team-history view. Read that
@@ -100,13 +101,28 @@ class Generator:
         for key, value in sorted(props.items()):
             swift = "permissionPolicyValues" if key == "permission_policy" else camel(key)
             fields.append((key, swift, self.type(owner, key, value), value))
-        conform = "Sendable, Encodable" if encodable else "Sendable, Decodable, Hashable"
-        if not encodable and "id" in props:
+        return fields
+
+    def model(self, owner, fields):
+        name = TYPE_NAMES.get(owner, owner)
+        request = owner == "ConversationCreateRequest"
+        encodable = owner in self.encodable
+        decodable = owner not in {"ConversationCreateRequest", "ImageInput"}
+        nullable = [f for f in fields if f[3].get("nullable")]
+        # Keep Optional source APIs, but retain a separate null state anywhere
+        # a generated input accepts null, including shared response models.
+        input_fields = encodable and (request or bool(nullable))
+        props = {key: value for key, _, _, value in fields}
+        if decodable:
+            conform = "Sendable, Codable, Hashable" if encodable else "Sendable, Decodable, Hashable"
+        else:
+            conform = "Sendable, Encodable"
+        if decodable and "id" in props:
             conform += ", Identifiable"
         lines = [f"public struct {name}: {conform} {{"]
         for key, swift, typ, value in fields:
             optional = not value.get("required", False) or value.get("nullable", False)
-            if request and optional:
+            if input_fields and optional:
                 lines += [f"  private var _{swift}: ConversationInputField<{typ}> = .omitted",
                           f"  public var {swift}: {typ}? {{",
                           f"    get {{ _{swift}.value }}",
@@ -130,7 +146,11 @@ class Generator:
                 params.append(f'    {swift}: {typ}{"? = nil" if optional else ""}')
             lines += [p + ("," if i < len(params)-1 else "") for i, p in enumerate(params)]
             lines += ["  ) {"]
-            for key, swift, typ, value in ordered:
+            # Calling a computed input-property setter uses self. Initialize
+            # every required stored property first, without changing argument order.
+            assignments = sorted(ordered, key=lambda f: input_fields and (
+                not f[3].get("required", False) or f[3].get("nullable", False)))
+            for key, swift, typ, value in assignments:
                 if key == "permission_policy":
                     lines += ["    self.permissionPolicyValues = permissionPolicy?.mapValues(JSONValue.string)"]
                 else:
@@ -139,8 +159,7 @@ class Generator:
         lines += ["", "  enum CodingKeys: String, CodingKey {"]
         lines += [f'    case {swift} = "{key}"' for key, swift, _, _ in fields]
         lines += ["  }"]
-        if request:
-            nullable = [f for f in fields if f[3].get("nullable")]
+        if input_fields:
             lines += ["", "  /// Fields for which the API accepts an explicit JSON null.", "  public enum NullableField: Sendable {"]
             lines += [f"    case {swift}" for _, swift, _, _ in nullable]
             lines += ["  }", "", "  /// Send null. Assigning the property nil again restores omission.", "  public mutating func setNull(_ field: NullableField) {", "    switch field {"]
@@ -152,16 +171,35 @@ class Generator:
                 else:
                     lines += [f"    try container.encode({swift}, forKey: .{swift})"]
             lines += ["  }"]
+            if decodable:
+                lines += ["", "  public init(from decoder: any Decoder) throws {",
+                          "    let container = try decoder.container(keyedBy: CodingKeys.self)"]
+                for _, swift, typ, value in fields:
+                    if not value.get("required", False) or value.get("nullable", False):
+                        lines += [f"    _{swift} = try ConversationInputField.decode(from: container, forKey: .{swift})"]
+                    else:
+                        lines += [f"    {swift} = try container.decode({typ}.self, forKey: .{swift})"]
+                lines += ["  }"]
         return "\n".join(lines + ["}", ""])
 
     def render(self):
-        result = ["// Generated by scripts/sdk-contract/generate-swift.py. Do not edit.", "import Foundation", ""]
+        # Discover the whole graph before emitting models: a response model
+        # visited first can also be used by a later request field.
+        models = {}
         while self.pending:
             owner = self.pending.pop(0)
             if owner in self.done:
                 continue
             self.done.add(owner)
-            result.append(self.model(owner, self.schemas.get(owner, self.nested.get(owner))))
+            models[owner] = self.fields(owner, self.schemas.get(owner, self.nested.get(owner)))
+        pending = list(self.encodable)
+        while pending:
+            owner = pending.pop()
+            for dependency in self.dependencies.get(owner, set()) - self.encodable:
+                self.encodable.add(dependency)
+                pending.append(dependency)
+        result = ["// Generated by scripts/sdk-contract/generate-swift.py. Do not edit.", "import Foundation", ""]
+        result.extend(self.model(owner, fields) for owner, fields in models.items())
         return "\n".join(result)
 
 
