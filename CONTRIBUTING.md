@@ -1,8 +1,14 @@
 # Contributing to Fountain
 
-Start with [`CLAUDE.md`](CLAUDE.md) for the rules, the commands and the map of
-where each longer procedure lives. Architecturally significant choices are
-recorded as ADRs in [`decisions/`](decisions/).
+Use [CLAUDE.md](CLAUDE.md) for the repo map and core rules. For a change:
+
+1. Run the relevant [local checks](#before-you-push).
+2. [Sign off commits](#sign-your-commits-dco) with `git commit -s`.
+3. Open a [PR](#pull-requests), add a changelog fragment if behavior changes,
+   and queue it after approval.
+
+Server implementation details are in [Server conventions](contributing/server.md).
+Read the API, migration and library sections below when the change touches them.
 
 ## Licensing of contributions
 
@@ -126,51 +132,22 @@ the suite, and `bash scripts/test-docs.sh` runs just those.
 
 ### If a test went red and then green
 
-Do not re-run it and move on. Keep the failed run's evidence and compare the
-commits, workflow conditions, runner environment and external dependencies
-before calling it a flake. A green PR does not prove that a failed
-post-merge run was one: the merged tree can include other changes, push-only
-jobs test different behaviour, and the runner or an external service can
-differ. Record an unexplained failure with what you know rather than
-dismissing it because a rerun passed. File confirmed flakes:
+Keep the failed run's assertion, file/line and run URL. Compare the commits,
+workflow conditions, runner environment and external dependencies before
+calling it a flake; a later green run alone does not establish the cause.
+Record an unexplained failure with what is known.
+
+For a confirmed flake, search existing issues first:
 
 ```bash
-gh issue create --label type:flake --label area:testing --title "Flake: <what raced>"
+gh issue list --label type:flake --state all
 ```
 
-Or use the **Flaky test** issue template, which applies the same labels. Every
-flake carries `type:flake`, with `area:testing` and the area the test covers
-alongside, so
-[the open ones](https://github.com/managoat/fountain/issues?q=is%3Aopen+label%3Atype%3Aflake)
-are one query. Search first (`gh issue list --label type:flake --state all`):
-the same flake gets found repeatedly, and a second issue splits the evidence.
-
-File rather than fix in place when you are mid-task on something else, so a
-campaign's diffs stay about the campaign (#1539). Fix it in place when it
-was your own change that flaked.
-
-What the issue needs, because a flake nobody can reproduce is a flake nobody
-can close:
-
-- the failing assertion with its `left:`/`right:`, and the file and line;
-- **how often, out of what**: "one full-suite run in eight", "four
-  first-attempt CI failures this week", with the run URLs;
-- the mechanism if you have it: what the test asserts on versus what it
-  waits on. That difference is the whole bug in most of them.
-
-Two places to look for candidates are failed first attempts followed by
-successful reruns, and failed `push` runs on `main`. A successful later
-attempt alone does not establish why the first failed:
-
-```bash
-gh run list --workflow ci.yml --limit 200 \
-  --json databaseId,attempt,conclusion,headBranch --jq '.[] | select(.attempt > 1)'
-gh api /repos/managoat/fountain/actions/runs/<id>/attempts/1/jobs
-```
-
-Before filing from either source, date the failure against `git log` on the
-file a fix would touch: of four found this way on 2026-09-04, two had already
-been fixed after the failed run.
+Use the **Flaky test** issue template or file with `type:flake`, `area:testing`
+and the affected area. Include the failing assertion, frequency with a
+denominator and run URLs, and the suspected race if known. Check the file's
+recent history so an already-fixed failure does not become a new issue.
+Fix a flake caused by your change in that PR; file unrelated flakes separately.
 
 ## Finding dead code
 
@@ -180,31 +157,16 @@ scripts/dead-code.sh elixir     # public functions no compiled module calls
 scripts/dead-code.sh go         # unreachable functions in the two Go modules
 ```
 
-The Elixir half is `mix_unused`, a compiler tracer `apps/fountain/mix.exs`
-turns on only under `MIX_UNUSED=1`; the Go half is `golang.org/x/tools`'s
-`deadcode`. `.github/workflows/dead-code.yml` runs both on the first of the
-month and keeps the reports as artifacts. Findings do not block a merge.
-An analyzer execution failure fails the report job and marks its summary
-incomplete; it is not a clean scan. Compiler and tool diagnostics stay in
-the job log. Elixir advice to make a live function private is excluded from
-the report and its counts.
+The Elixir report uses `mix_unused`; the Go report uses `deadcode`. The monthly
+workflow keeps advisory artifacts. Findings do not block merges; an analyzer
+failure marks the report incomplete.
 
-Read the Elixir report as a list of candidates, not verdicts. The tracer sees
-only static calls inside `apps/fountain`, so five shapes read as unused when
-they are not: anything reached through `apply/3` or an MFA tuple (Oban
-workers, the runtime table), anything an extension app calls (`fountain_buzz`
-and `fountain_support` depend on core and call it freely), anything only a
-test calls, protocol and callback implementations the ignore list in
-`mix.exs` missed, and a `use` macro's generated functions. Before deleting a
-line's function, grep its bare name across `apps/`, `ee/` and every `test/`
-tree. A function only a test calls is the interesting case: either the test
-observes internal state through it (keep it, it is a seam) or a squash merge
-removed the call site and the test kept the feature green (#869 left several
-of these behind). Decide which, then delete the function with its test or
-restore the caller.
-
-The September 2026 sweep that introduced this (#2162) started from 1,680
-lines and ended with fourteen deletions; expect that ratio.
+Treat findings as candidates. The Elixir tracer misses dynamic calls (including
+MFA callbacks), extension callers, test-only seams, some protocol/callback
+implementations and macro-generated functions. Search the function's bare name
+across `apps/`, `ee/` and their tests before deleting it. A test-only caller may
+be a useful observation seam or evidence of a missing production caller;
+resolve which before removing the function and its tests.
 
 ## Go dependency updates span two modules
 
@@ -262,20 +224,15 @@ missing. The root aliases shell into the app the way `ecto.reset` already did.
 
 ## Adding an umbrella library app
 
-**Library extraction is paused** (ADR 0037, addendum of 2026-09-14): a
-tenth `managoat_*` library is worth its two-PRs-per-change coordination cost
-only when a consumer outside Fountain needs it or it needs a release
-schedule of its own. The recipe for the day that changes, and the table of
-what each existing library owns, are in
-[`contributing/component-libraries.md`](contributing/component-libraries.md).
+Further extraction is paused until an independent consumer or release schedule
+justifies it. See [Component libraries](contributing/component-libraries.md)
+for ownership and the extraction recipe.
 
 ## Graduating a library
 
-Also in [`contributing/component-libraries.md`](contributing/component-libraries.md):
-`scripts/graduate-library.sh` is the executable half, and the Fountain-side
-pin PR is the checklist there. Taking a new release of an already graduated
-library is a pin bump in `apps/fountain/mix.exs`; that PR is the only place
-the new version meets Fountain, so run its gates in full.
+The [library guide](contributing/component-libraries.md#graduating-a-library)
+contains the graduation procedure. Routine library fixes use
+[Updating existing libraries](contributing/component-libraries.md#updating-existing-libraries).
 
 ## Changing the API
 
@@ -386,9 +343,21 @@ Label a PR `release:skip-sdk` where the distinction needs saying out loud.
 ## Pull requests
 
 Every change goes through a PR with an approving review and lands through the
-merge queue: `gh pr merge <N> --squash --auto`, never `--admin`. CLAUDE.md,
-*How a change lands*, has the short rules; `scripts/ci/README.md` has the
-mechanics and ADR 0050 the decision.
+merge queue:
+
+```bash
+gh pr view <N> --json reviewDecision
+gh pr merge <N> --squash --auto
+```
+
+An unreviewed PR never enters the queue. Never manufacture an approval from a
+second account. Do not push directly to `main` or use `--admin`; a genuine
+emergency bypass must be explained in the PR. Queue the PR and move on rather
+than waiting synchronously. A failed merge-group build ejects it for repair.
+
+A PR does not need rebasing just to satisfy the queue. Stacks land from the
+PR based on `main`, then its successor after GitHub retargets it. For queue
+settings and troubleshooting, see [CI maintenance](scripts/ci/README.md#the-merge-queue).
 
 ### Changelog
 
@@ -405,12 +374,5 @@ refresh the index (`scripts/decisions-index.sh`) in the same PR.
 
 ## CI maintenance
 
-`CI required` is the aggregate merge check. It verifies every job expected for
-full CI, a docs-only PR, or main's tested-tree reuse path. `Detect secrets`
-is a separate required check. Configure these after the workflow has landed;
-see `scripts/ci/README.md` for activation and test-timing refresh commands.
-
-The six test jobs export complete module timings alongside their coverage.
-Refresh the manifest when new files accumulate or partitions drift. Partition
-1's allocation includes a reserve for the sibling suites, which run after its
-core tests. Keep that reserve in line with the CI step's observed duration.
+[CI maintenance](scripts/ci/README.md) owns required-check activation, queue
+configuration, coverage, timing refresh and toolchain troubleshooting.

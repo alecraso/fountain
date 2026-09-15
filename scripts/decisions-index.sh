@@ -13,18 +13,16 @@ cd "$(dirname "$0")/../decisions"
 # Decisions
 
 Architecture Decision Records for Fountain, one per file, numbered in the
-order they were opened. Every file carries OKF frontmatter (`type`, `status`,
-`adr_status`, `description`, `verified`, `stale_after`); `okf validate .`
-checks it and `okf backlinks . <id>` shows what depends on a decision.
-`adr_status` is the ADR's own lifecycle (Proposed / Accepted / Partially
-accepted / Superseded by NNNN); `status` is the OKF lifecycle derived from it
-(draft / stable / deprecated). Gaps in the numbering are ADRs still on open
-branches.
+order they were opened. The index lists the decision status and summary;
+read each ADR for its implementation status and rationale. The
+[template](0001-template.md) describes the small required frontmatter.
+`okf validate .` checks the bundle and `okf backlinks . <id>` shows dependencies.
+Gaps in numbering are ADRs still on open branches.
 
 ## ADRs
 
-| # | Title | ADR status | Verified | Stale after | Description |
-|---|-------|------------|----------|-------------|-------------|
+| # | Title | ADR status | Description |
+|---|-------|------------|-------------|
 EOF
   for f in [0-9][0-9][0-9][0-9]-*.md; do
     awk -v file="$f" '
@@ -35,11 +33,9 @@ EOF
       !done && /^title: /       { title = unq(substr($0, 8)) }
       !done && /^adr_status: /  { st = unq(substr($0, 13)) }
       !done && /^description: / { desc = unq(substr($0, 14)) }
-      !done && /^verified: /    { v = "yes" }
-      !done && /^stale_after: / { stale = $2 }
       END {
         gsub(/\|/, "\\|", title); gsub(/\|/, "\\|", desc)
-        printf "| %s | [%s](%s) | %s | %s | %s | %s |\n", adr, title, file, st, (v ? v : "no"), (stale ? stale : ""), desc
+        printf "| %s | [%s](%s) | %s | %s |\n", adr, title, file, st, desc
       }' "$f"
   done
 } > index.md
