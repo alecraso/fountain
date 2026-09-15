@@ -281,8 +281,6 @@ defmodule Fountain.Conversations.Termination do
   stay silent, exactly as before.
   """
   def reap_sandbox(sandbox_id, opts \\ []) do
-    alias Fountain.Conversations.ConversationServer
-
     # ownership: sandbox_id is given by an admin surface behind require_admin
     # (AdminController.reap_sandbox/2, AdminLive.Sandboxes), or by
     # reap_all_for_user/1 below whose own caller (Accounts.suspend_user/1) is
@@ -297,9 +295,9 @@ defmodule Fountain.Conversations.Termination do
 
         sandbox ->
           sandbox = Fountain.Repo.preload(sandbox, :conversations)
-          live = Enum.filter(sandbox.conversations, &ConversationServer.whereis(&1.id))
+          live_ids = Lifecycle.live_conversation_ids(sandbox)
 
-          if live == [] do
+          if live_ids == [] do
             now = DateTime.utc_now() |> DateTime.truncate(:second)
 
             {:ok, _} =
@@ -311,8 +309,8 @@ defmodule Fountain.Conversations.Termination do
             # which is worth a row each — this is the one termination they did
             # not ask for. #551 covers the reaper that calls this.
             Enum.each(
-              live,
-              &terminate_conversation(&1.id, actor: "system:sandbox_reaper")
+              live_ids,
+              &terminate_conversation(&1, actor: "system:sandbox_reaper")
             )
 
             {:ok, :terminated}

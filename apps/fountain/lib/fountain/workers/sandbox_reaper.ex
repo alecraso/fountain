@@ -52,7 +52,7 @@ defmodule Fountain.Workers.SandboxReaper do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{ConversationServer, Lifecycle, Sandbox, Turn}
+  alias Fountain.Conversations.{Lifecycle, Sandbox, Turn}
   alias Fountain.Repo
 
   # Long enough to clear the slowest legitimate provision: package installs get
@@ -126,15 +126,17 @@ defmodule Fountain.Workers.SandboxReaper do
     )
     |> Repo.all()
     |> Repo.preload(:conversations)
-    |> Enum.reject(&server_alive?/1)
+    |> Enum.reject(&Lifecycle.any_server_alive?/1)
     |> Enum.map(fn sandbox ->
       was = sandbox.status
 
       {:ok, _} =
-        Conversations.update_sandbox(sandbox, %{
-          status: "failed",
-          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
+        Conversations.with_sandbox_lock(sandbox.id, fn ->
+          Conversations.update_sandbox(sandbox, %{
+            status: "failed",
+            terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          })
+        end)
 
       Logger.info(
         "reaper: released stuck sandbox #{sandbox.id} (#{sandbox.machine_name}) " <>
@@ -153,7 +155,8 @@ defmodule Fountain.Workers.SandboxReaper do
 
   # A live ConversationServer means provisioning is still in flight somewhere in
   # the cluster, however long it has taken. Horde's registry is cluster-wide, so
-  # this is not just a local check.
+  # this is not just a local check — `Lifecycle.any_server_alive?/1` is the one
+  # scan for it (#2255 decision 2).
   # A sandbox the tenant did not stop, ending for a reason only the reaper
   # knows. Attributed to the worker so "my agent's sandbox vanished" has an
   # answer in the tenant's own trail rather than only in the server log —
@@ -171,10 +174,6 @@ defmodule Fountain.Workers.SandboxReaper do
         |> Map.put("sprite_name", sandbox.machine_name)
         |> Map.put("provider", sandbox.provider)
     })
-  end
-
-  defp server_alive?(%Sandbox{conversations: conversations}) do
-    Enum.any?(conversations, fn conv -> ConversationServer.whereis(conv.id) != nil end)
   end
 
   # ── pass 1b: ready sandboxes nobody is holding ────────────────────────────
@@ -229,7 +228,7 @@ defmodule Fountain.Workers.SandboxReaper do
         )
         |> Repo.all()
         |> Repo.preload(:conversations)
-        |> Enum.reject(&server_alive?/1)
+        |> Enum.reject(&Lifecycle.any_server_alive?/1)
         |> Enum.map(&{&1, check_bounds(&1, now)})
 
       {parked, expired} =
@@ -310,7 +309,11 @@ defmodule Fountain.Workers.SandboxReaper do
     # A home is checkpointed at its quietest moment, where the provider can
     # (ADR 0023, #1073); ephemeral sandboxes and failures skip straight on.
     Fountain.Conversations.HomeCheckpoint.on_park(sandbox)
-    {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+
+    {:ok, _} =
+      Conversations.with_sandbox_lock(sandbox.id, fn ->
+        Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      end)
 
     Logger.info(
       "reaper: parked idle sandbox #{sandbox.id} (#{sandbox.machine_name}) — " <>
@@ -324,10 +327,12 @@ defmodule Fountain.Workers.SandboxReaper do
 
   defp expire(sandbox, reason) do
     {:ok, _} =
-      Conversations.update_sandbox(sandbox, %{
-        status: "terminated",
-        terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-      })
+      Conversations.with_sandbox_lock(sandbox.id, fn ->
+        Conversations.update_sandbox(sandbox, %{
+          status: "terminated",
+          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+      end)
 
     Logger.info(
       "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.machine_name}) — " <>
