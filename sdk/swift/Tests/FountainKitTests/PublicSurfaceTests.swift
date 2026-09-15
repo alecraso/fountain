@@ -35,6 +35,24 @@ struct PublicSurfaceTests {
     let agent: String? = event.agentID
     let blocks: [Block]? = event.blocks
     #expect(id == nil && duration == nil && blocks == nil)
+
+    // PageMeta moved into generation in #2300 and kept its three cursor
+    // members Optional; `offset` moved to the search page's own meta.
+    let cursor = try JSONDecoder().decode(
+      PageMeta.self, from: Data(#"{"has_more":true,"limit":1000,"next_cursor":42}"#.utf8))
+    let hasMore: Bool? = cursor.hasMore
+    let limit: Int? = cursor.limit
+    let nextCursor: Int? = cursor.nextCursor
+    #expect(hasMore == true && limit == 1000 && nextCursor == 42)
+    let searchMeta = try JSONDecoder().decode(
+      SearchResponse.Meta.self, from: Data(#"{"has_more":false,"limit":20,"offset":40}"#.utf8))
+    let offset: Int = searchMeta.offset
+    #expect(offset == 40 && searchMeta.hasMore == false)
+    // `Page` has no public initializer, so a consumer only ever reads one; the
+    // two-parameter spelling is what `events`, `audit.list` and `search` return.
+    let next: (Page<[LogEvent], PageMeta>) -> Int? = { $0.meta?.nextCursor }
+    let offsetOf: (Page<[SearchHit], SearchResponse.Meta>) -> Int? = { $0.meta?.offset }
+    #expect(type(of: next) != type(of: offsetOf))
     #expect(conversation == "c1" && agent == "a1" && event.kind == EventKind.output)
     #expect(event.stream == LogStream.stdout && event.stageData == nil)
 

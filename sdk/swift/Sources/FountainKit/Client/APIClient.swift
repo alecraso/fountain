@@ -213,29 +213,19 @@ public struct APIClient: Sendable {
   }
 }
 
-/// The `{ "data": … }` wrapper most endpoints use. `meta` carries pagination.
+/// The `{ "data": … }` wrapper most endpoints use. A paginated list has its
+/// own generated response type (`AuditEventListResponse`, `LogEventListResponse`,
+/// `SearchResponse`) whose `meta` is typed from the contract.
 struct Envelope<T: Decodable & Sendable>: Decodable, Sendable {
   var data: T
-  var meta: PageMeta?
-}
-
-/// Pagination metadata as returned in list envelopes.
-public struct PageMeta: Sendable, Decodable, Equatable {
-  public var hasMore: Bool?
-  public var nextCursor: Int?
-  public var limit: Int?
-  public var offset: Int?
-
-  enum CodingKeys: String, CodingKey {
-    case hasMore = "has_more"
-    case nextCursor = "next_cursor"
-    case limit
-    case offset
-  }
 }
 
 /// Wrapper for calls that need the pagination meta alongside the data.
-public struct Page<T: Sendable>: Sendable {
-  public var items: T
-  public var meta: PageMeta?
+///
+/// `Meta` is the endpoint's own envelope: the generated `PageMeta` (`has_more`,
+/// `limit`, `next_cursor`) for the cursor-paged lists, and `SearchResponse.Meta`
+/// (`has_more`, `limit`, `offset`) for `/api/search`, which pages by offset.
+public struct Page<Items: Sendable, Meta: Sendable>: Sendable {
+  public var items: Items
+  public var meta: Meta?
 }

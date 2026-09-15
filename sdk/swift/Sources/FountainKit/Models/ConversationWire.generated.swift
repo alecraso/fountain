@@ -1469,6 +1469,36 @@ public struct LogEvent: Sendable, Decodable, Hashable, Identifiable {
   }
 }
 
+public struct AuditEventListResponse: Sendable, Decodable, Hashable {
+  public var data: [AuditEvent]
+  public var meta: PageMeta
+
+  enum CodingKeys: String, CodingKey {
+    case data = "data"
+    case meta = "meta"
+  }
+}
+
+public struct LogEventListResponse: Sendable, Decodable, Hashable {
+  public var data: [LogEvent]
+  public var meta: PageMeta
+
+  enum CodingKeys: String, CodingKey {
+    case data = "data"
+    case meta = "meta"
+  }
+}
+
+public struct SearchResponse: Sendable, Decodable, Hashable {
+  public var data: [SearchHit]
+  public var meta: SearchResponse.Meta
+
+  enum CodingKeys: String, CodingKey {
+    case data = "data"
+    case meta = "meta"
+  }
+}
+
 public struct PendingPermissionRequest: Sendable, Decodable, Hashable {
   public var askedAt: Date?
   public var deadline: Date?
@@ -1729,6 +1759,32 @@ extension AdminUserListResponse {
       case page = "page"
       case perPage = "per_page"
       case total = "total"
+    }
+  }
+}
+
+public struct PageMeta: Sendable, Decodable, Hashable {
+  public var hasMore: Bool?
+  public var limit: Int?
+  public var nextCursor: Int?
+
+  enum CodingKeys: String, CodingKey {
+    case hasMore = "has_more"
+    case limit = "limit"
+    case nextCursor = "next_cursor"
+  }
+}
+
+extension SearchResponse {
+  public struct Meta: Sendable, Decodable, Hashable {
+    public var hasMore: Bool
+    public var limit: Int
+    public var offset: Int
+
+    enum CodingKeys: String, CodingKey {
+      case hasMore = "has_more"
+      case limit = "limit"
+      case offset = "offset"
     }
   }
 }
