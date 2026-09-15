@@ -4,7 +4,6 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
 
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{ConversationServer, ExecutionAllowance}
-  alias FountainWeb.{AguiController, OpenAIController}
   alias Fountain.Conversations.Launch
 
   setup do
@@ -32,10 +31,9 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     %{user: user, agent: agent, raw: raw}
   end
 
-  for api <- [:native, :openai, :agui], malformed <- [false, true] do
-    test "#{api} refuses malformed=#{malformed} policy before changing caller tools", ctx do
-      api = unquote(api)
-      channel = channel(api)
+  for malformed <- [false, true] do
+    test "native refuses malformed=#{malformed} policy before changing caller tools", ctx do
+      channel = channel(:native)
       conv = bound(ctx, channel)
       {:ok, conv} = Conversations.set_caller_tools(conv, [tool("original")])
       allowance = save(conv, %{max_model_turns: 2})
@@ -61,7 +59,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
       end)
 
       before = Repo.reload!(conv)
-      conn = request(ctx, api, channel)
+      conn = request(ctx, :native, channel)
       assert Repo.reload!(conv) == before
       refute_received :prompt_attempted
       refute_received :queued
@@ -74,12 +72,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
           do: "execution_limits_invalid",
           else: "execution_limits_unsupported"
 
-      if unquote(api == :openai) do
-        assert body["error"]["code"] == code
-        assert body["error"]["type"] == "invalid_request_error"
-      else
-        assert body["error"] == code
-      end
+      assert body["error"] == code
 
       refute Jason.encode!(body) =~ "private-field"
       refute Jason.encode!(body) =~ "do not echo"
@@ -203,34 +196,10 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     }
 
   defp channel(:native), do: "native-thread"
-  defp channel(:openai), do: OpenAIController.channel_id("thread")
-  defp channel(:agui), do: AguiController.channel_id("thread")
 
   defp request(ctx, :native, channel),
     do:
       ctx.conn
       |> authed_with_key(ctx.raw)
       |> post_json("/api/conversations", Map.delete(attrs(ctx, channel), "user_id"))
-
-  defp request(ctx, :openai, _channel) do
-    ctx.conn
-    |> authed_with_key(ctx.raw)
-    |> put_req_header("x-fountain-thread", "thread")
-    |> post_json("/v1/chat/completions", %{
-      "model" => ctx.agent.id,
-      "messages" => [%{"role" => "user", "content" => "continue"}],
-      "tools" => [%{"type" => "function", "function" => tool("replacement")}]
-    })
-  end
-
-  defp request(ctx, :agui, _channel) do
-    ctx.conn
-    |> authed_with_key(ctx.raw)
-    |> post_json("/api/agui/#{ctx.agent.id}", %{
-      "threadId" => "thread",
-      "runId" => "run",
-      "messages" => [%{"role" => "user", "content" => "continue"}],
-      "tools" => [tool("replacement")]
-    })
-  end
 end

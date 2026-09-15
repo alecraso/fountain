@@ -22,9 +22,11 @@ defmodule Fountain.Agents do
   Get agent scoped to user. A foreign, missing or malformed id reads as nil.
 
   Malformed is part of that promise for the same reason it is on
-  `Fountain.Conversations.get_conversation/2` (#1679): `/api/agui/:agent_id`
-  hands this function a raw path segment, so an id that is not a uuid would
-  raise out of the query instead of producing the 404 that route declares.
+  `Fountain.Conversations.get_conversation/2` (#1679): a route that hands this
+  function a raw path segment would otherwise raise out of the query on an id
+  that is not a uuid, instead of producing the 404 the route declares. The
+  route that first needed it was `/api/agui/:agent_id`, retired by ADR 0057;
+  the promise stays because it belongs to every such caller, not to that one.
   """
   def get_agent(id, user_id) when is_binary(user_id) do
     with {:ok, _} <- Ecto.UUID.dump(id),

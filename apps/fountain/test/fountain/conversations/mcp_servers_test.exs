@@ -150,10 +150,8 @@ defmodule Fountain.Conversations.McpServersTest do
   describe "the Fountain-served lists without a callback token" do
     test "are empty, whatever the conversation" do
       conv = insert_conversation(channel_id: Fountain.Team.channel())
-      conv = %{conv | caller_tools: [%{"name" => "x"}]}
 
       assert McpServers.team(conv.id, nil) == []
-      assert McpServers.caller(conv, nil) == []
       assert McpServers.fountain_served(conv, nil) == []
     end
   end
@@ -174,28 +172,44 @@ defmodule Fountain.Conversations.McpServersTest do
     end
   end
 
-  describe "caller/2" do
-    test "serves the caller bridge when the row has tools registered" do
-      conv = %{id: "c1", caller_tools: [%{"name" => "x"}]}
+  # ADR 0057 (#2252). The dialect controllers were the only things that could
+  # hand a parked caller-tool call back to a client, so once they are gone a
+  # persisted `caller_tools` list must stop being advertised in the same
+  # change — otherwise an agent on a legacy row can select one and park a call
+  # nobody can answer. The rest of the bridge goes in the next change; this is
+  # the half that cannot wait for it.
+  describe "a legacy row's persisted caller tools are not advertised" do
+    test "a row that still has caller_tools gets no bridge server" do
+      conv = %{id: "c1", caller_tools: [%{"name" => "lookup_order"}]}
 
-      assert [%{name: "fountain-caller", type: "http", url: url}] =
-               McpServers.caller(conv, "tok")
+      served = McpServers.fountain_served(conv, "tok")
 
-      assert String.ends_with?(url, "/api/mcp/caller/c1")
-      assert McpServers.caller(%{id: "c1", caller_tools: []}, "tok") == []
+      assert served == []
+      refute Enum.any?(served, &(&1[:name] == "fountain-caller"))
+    end
+
+    test "nor does one on the team channel, which does get its team tools" do
+      conv = insert_conversation(channel_id: Fountain.Team.channel())
+      legacy = %{conv | caller_tools: [%{"name" => "lookup_order"}]}
+
+      names = legacy |> McpServers.fountain_served("tok") |> Enum.map(& &1[:name])
+
+      # Guard the guard: the team list still arrives, so this is not an empty
+      # result standing in for a correct one.
+      assert Fountain.Team.Mcp.mcp_name() in names
+      refute "fountain-caller" in names
     end
   end
 
   describe "fountain_served/2" do
-    test "is extensions, buzz, team, caller, in that order" do
-      # No Buzz identity on this row, so that list is empty; the order of the ones that remain is the order the server
-      # appended them before #1371, with installed extensions prepended by
-      # #1505.
+    test "is extensions, buzz, team, in that order" do
+      # No Buzz identity on this row, so that list is empty; the order of the
+      # ones that remain is the order the server appended them before #1371,
+      # with installed extensions prepended by #1505. The retired caller-tool
+      # bridge was a fourth entry here until ADR 0057 (#2252).
       conv = insert_conversation(channel_id: Fountain.Team.channel())
-      conv = %{conv | caller_tools: [%{"name" => "x"}]}
 
-      assert [%{name: team_name}, %{name: "fountain-caller"}] =
-               McpServers.fountain_served(conv, "tok")
+      assert [%{name: team_name}] = McpServers.fountain_served(conv, "tok")
 
       assert team_name == Fountain.Team.Mcp.mcp_name()
     end
@@ -212,25 +226,19 @@ defmodule Fountain.Conversations.McpServersTest do
       # The fixture claims one fixed conversation id, so this is the only test
       # in the suite that sees its contribution — every other conversation is a
       # fresh UUID and gets nothing.
-      conv = %{
-        id: ExtensionFixtures.Enabled.claimed_conversation_id(),
-        caller_tools: [%{"name" => "x"}]
-      }
+      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id()}
 
-      assert [%{"name" => "fixture"}, %{name: "fountain-caller"}] =
-               McpServers.fountain_served(conv, "tok")
+      assert [%{"name" => "fixture"}] = McpServers.fountain_served(conv, "tok")
     end
 
     test "an extension contributes nothing to a conversation it does not claim" do
-      conv = %{id: Ecto.UUID.generate(), caller_tools: [%{"name" => "x"}]}
-
-      assert [%{name: "fountain-caller"}] = McpServers.fountain_served(conv, "tok")
+      assert McpServers.fountain_served(%{id: Ecto.UUID.generate()}, "tok") == []
     end
 
     test "a disabled extension contributes nothing even to the claimed conversation" do
       # ExtensionFixtures.Disabled returns a server unconditionally and is in
       # :extensions. If installed/0 stopped filtering, it would appear here.
-      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id(), caller_tools: []}
+      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id()}
 
       names = conv |> McpServers.fountain_served("tok") |> Enum.map(& &1["name"])
       refute "disabled-should-never-appear" in names
@@ -239,7 +247,7 @@ defmodule Fountain.Conversations.McpServersTest do
     test "extensions are not consulted without a callback token" do
       # The whole list is gated on the conversation-scoped credential: an
       # extension's servers are authenticated with it or they are not served.
-      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id(), caller_tools: []}
+      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id()}
 
       assert McpServers.fountain_served(conv, nil) == []
     end

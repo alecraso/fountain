@@ -69,7 +69,6 @@ counter uses the same pair as its tags.
 | `reattach` | `started` `done` `failed` `interrupted` | The server reconnects to a sandbox after a restart. |
 | `turn` | `started` `done` `failed` `interrupted` | One prompt and its reply. |
 | `request` | `started` `done` | The agent asked permission for a tool. It got an answer, or the request expired. |
-| `caller_tool` | `started` `done` | The agent called a tool that the client defined on its request. The client answered, or the call expired. |
 | `model` | `done`, `failed` | The runtime confirmed the selected model, or selection or provider access failed. |
 | `session` | `done` | The runtime reported a session id for the conversation. |
 | `sandbox` | `done` | Fountain reclaimed the sandbox. The conversation stays resumable. |
@@ -84,6 +83,28 @@ An endpoint filter accepts three shapes.
 
 Fountain rejects a typo in an exact type when you save the endpoint. A mistake
 never leaves you with an endpoint that gets nothing.
+
+### Retired events
+
+`conversation.caller_tool.started` and `conversation.caller_tool.done` fired
+when an agent called a tool the client had defined on its request. That tool
+bridge is retired with the OpenAI-compatible and AG-UI APIs
+([ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md)),
+and Fountain never sends either event now.
+
+If an endpoint of yours already names one, nothing breaks and nothing
+arrives. Fountain keeps that value on the row on purpose: an endpoint saved
+before the retirement stays editable, so changing its URL is not refused over
+a subscription that a removal on our side made obsolete. That is the whole
+allowance, and it covers only a value already stored on an existing endpoint.
+A new endpoint cannot subscribe to `conversation.caller_tool.started`,
+`conversation.caller_tool.done` or `conversation.caller_tool.*`, and an
+existing one cannot add one: the save fails with `unknown event`, as it does
+for a typo. Drop them from `event_types` whenever it suits you.
+
+Tools you configure **on an agent** are a different mechanism and are not
+retired. They run as MCP servers, and their activity appears in the `turn`
+and `request` events above.
 
 ### Output does not come this way
 

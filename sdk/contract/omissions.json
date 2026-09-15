@@ -54,14 +54,6 @@
       "reason": "The Buzz gateway's own provisioning surface (ADR 0020). Buzz calls it; no general client does."
     },
     {
-      "operations": ["POST /api/agui/{agent_id}"],
-      "reason": "The AG-UI event stream. A second wire dialect for the same turn, consumed by AG-UI clients that already have their own protocol library; the SDKs follow /events and /stream instead."
-    },
-    {
-      "operations": ["POST /v1/chat/completions", "GET /v1/models", "GET /v1/models/{model}"],
-      "reason": "The OpenAI-compatible gateway. Its clients are OpenAI SDKs by definition — that is the whole point of the shape."
-    },
-    {
       "operations": ["GET /api/support/reports", "GET /api/support/reports/{id}", "POST /api/support/reports"],
       "reason": "The support inbox and report submission. No SDK models this console surface; FountainKit models the tenant's audit trail separately."
     },

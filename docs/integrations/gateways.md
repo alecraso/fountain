@@ -1,115 +1,44 @@
-# Put Fountain behind an AI gateway
+# AI gateways (retired)
 
-An AI gateway can treat Fountain as another OpenAI-compatible upstream. The
-gateway routes a model such as `fountain/pr-reviewer` to Fountain's
-`pr-reviewer` agent, and the agent runs in its usual sandbox.
+Fountain used to sit behind an AI gateway — [LiteLLM](https://github.com/BerriAI/litellm),
+Portkey, Kong AI Gateway, Cloudflare AI Gateway — as just another
+OpenAI-compatible upstream: point the gateway's `api_base` at
+`https://your-fountain/v1`, name a Fountain agent as the model, and every
+client already behind that gateway could reach it. **The endpoints that made
+that work are gone**, removed in the release that carries
+[ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md).
+The `examples/litellm-gateway` example went with them.
 
-```text
-OpenAI client ──▶ gateway                 ──▶ Fountain /v1       ──▶ sandbox
- model: fountain/pr-reviewer  fountain/* → openai/*  pr-reviewer       agent
- X-Fountain-Thread: chat-42   forward header          openai:chat-42
-```
+This page stays because the URL is in other people's notes.
 
-This uses the alpha [OpenAI-compatible API](openai-compatible.md), behind the
-`openai_compat` feature flag. The gateway needs no Fountain plugin.
+## What a gateway sees now
 
-## Configure LiteLLM
+A `404` from `https://your-fountain/v1/chat/completions`, with the ordinary
+body `{"errors": {"detail": "Not Found"}}` — not a gateway-shaped error, and
+not a model that has stopped responding. A gateway configured this way will
+report the upstream as failing; remove the Fountain entry from its config.
 
-Create a Fountain API key for the gateway.
+## What has no replacement
 
-```bash
-fountain keys create litellm
-```
+Putting Fountain behind a gateway **with no code**. Gateways speak the OpenAI
+dialect by definition, Fountain no longer does, and the native conversation
+API is not a chat-completions endpoint — a conversation is created, prompted
+and followed over several calls rather than answered in one. No gateway can
+be configured into that shape.
 
-Set Fountain's `/v1` URL and API key. Set the timeout to 30 minutes. Disable
-gateway retries. Forward client headers.
+If the gateway was giving you key management, spend tracking or rate limiting
+across teams, Fountain has its own: [API keys](../api.md),
+[credits and billing](../guides/operate/billing.md) and per-key rate limits.
 
-```yaml
-model_list:
-  - model_name: "fountain/*"
-    litellm_params:
-      model: "openai/*"
-      api_base: "os.environ/FOUNTAIN_URL"
-      api_key: "os.environ/FOUNTAIN_API_KEY"
-      timeout: 1800
-      stream_timeout: 1800
-      num_retries: 0
+## What you can still do
 
-general_settings:
-  master_key: "os.environ/LITELLM_MASTER_KEY"
-  forward_client_headers_to_llm_api: true
+Call the [conversation API](../api.md) from your own code, or through the
+[TypeScript](../sdk.md), [Python](../python-sdk.md), [Elixir](../elixir-sdk.md)
+or [Swift](../swift-sdk.md) SDK. Read [Plug into Fountain](clients.md) for the
+routes in.
 
-litellm_settings:
-  check_provider_endpoint: true
-  drop_params: true
-```
-
-`FOUNTAIN_URL` includes `/v1`, for example `https://managoat.com/v1`. The
-wildcard maps every `fountain/<agent>` model to the Fountain agent with the
-same name.
-`check_provider_endpoint` lets LiteLLM populate its model list from Fountain's
-`GET /v1/models` response.
-
-The complete, runnable configuration is in
-[`examples/litellm-gateway`](https://github.com/managoat/fountain/tree/main/examples/litellm-gateway).
-
-## Preserve the thread
-
-One Fountain thread key maps to one conversation and one sandbox. Fountain
-reads it from three locations in this order.
-
-1. `X-Fountain-Thread`
-2. `user`
-3. `safety_identifier`
-
-Configure the gateway to forward custom request headers. In LiteLLM,
-`forward_client_headers_to_llm_api: true` carries `X-Fountain-Thread` to
-Fountain. This is the best key for a client that has a distinct chat or thread
-identifier.
-
-The body fields cover clients that cannot set headers. `user` remains for
-older clients. OpenAI added `safety_identifier` as one successor to the
-deprecated `user` field. LiteLLM recognizes it. Both commonly identify a
-person rather than a chat. Either field can give that person one long-lived
-sandbox for each agent.
-
-The LiteLLM smoke performed on 2026-08-26 found that its then-current OpenAI
-parameter filter dropped `user` and forwarded `safety_identifier`. Fountain
-therefore accepts both. Fountain rejects a request with none of the three. It
-does not open a sandbox for every message.
-
-To check a gateway, send two requests with the same thread header and then
-query Fountain directly:
-
-```bash
-curl -H "Authorization: Bearer ftn_..." \
-  "https://managoat.com/api/conversations?channel_id=openai:chat-42"
-```
-
-There should be one conversation for the channel. A text response does not by
-itself prove that the gateway preserved the thread.
-
-## Timeouts and retries
-
-A turn may run for minutes, and the first turn may also provision a sandbox.
-Use a long upstream timeout. A streamed response keeps the connection active
-while Fountain sends output and lifecycle details.
-
-Fountain returns `409` with `Retry-After` when a thread already has an active
-turn. Disable gateway retries for this upstream so the client receives that
-response and decides when to retry.
-
-## Response details
-
-- `usage` contains zero token counts because Fountain meters turns, not
-  tokens.
-- `reasoning_content` carries the agent's thought, tool activity, and sandbox
-  setup stages.
-- `fountain` is a non-standard response object. A gateway may discard it. Use
-  Fountain's API to find the conversation id.
-- Only caller-defined tools return as `tool_calls`. Tools the agent runs in
-  its sandbox have already completed and appear in the agent's answer.
-
-The gateway in front of Fountain is not the gateway the agent uses for
-inference. Each user brings their own provider credentials. Read
-[the service you do not configure](index.md#the-service-you-do-not-configure).
+Gateways in the *other* direction are unaffected: Fountain still runs agents
+against OpenAI, Anthropic and the rest, and a deployment can still put its own
+egress through a proxy. That is the egress credential broker
+([secrets](../concepts/secrets.md)), and it shares nothing with the retired
+inbound dialect.

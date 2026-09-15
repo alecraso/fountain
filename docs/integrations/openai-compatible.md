@@ -1,311 +1,151 @@
-# OpenAI-compatible API
+# OpenAI-compatible API (retired)
 
-Fountain answers `POST /v1/chat/completions`, the request shape that every AI
-gateway and every chat client with a base-URL field already speaks. The
-`model` is a Fountain agent. Point LiteLLM, Portkey, Kong AI Gateway,
-Cloudflare AI Gateway, Open WebUI, LibreChat, the `openai` SDK in any
-language, or `curl` at `https://your-fountain/v1` with an API key. The client
-sees a model that answers in text. Behind it, an agent runs for as long as it
-needs to in a sandbox of its own.
+Fountain used to answer `POST /v1/chat/completions`, `GET /v1/models` and
+`GET /v1/models/{model}`, so that any client or gateway with a base-URL field
+could point at `https://your-fountain/v1` and treat a Fountain agent as a
+model. **Those endpoints are gone.** They were removed in the release that
+carries [ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md),
+having been alpha and off by default behind a feature flag for their whole
+life.
 
+This page stays because the URL is in other people's notes and bookmarks. It
+is not a page about a feature you can turn on.
+
+## What a call gets now
+
+`/v1` matches no route, so every request answers `404` with the ordinary body:
+
+```json
+{"errors": {"detail": "Not Found"}}
 ```
-  Open WebUI / LiteLLM / openai SDK  ──HTTPS──▶  Fountain                  ──▶  sandbox: the Fountain agent
-    base URL = https://your-fountain/v1          POST /v1/chat/completions     (its environment, vault, runtime)
-    model    = pr-reviewer                       GET  /v1/models
-    ◀── chat.completion, or chat.completion.chunk as SSE
-```
 
-There is no plugin and no code on the client. The base URL, a key, and one
-header are the whole integration.
+That is the same for `GET` and `POST`, with or without an API key, and
+whether the client asks for JSON or `text/event-stream`. There is no legacy
+envelope, no `openai_compat_not_enabled` code, and no redirect.
 
-## Summary
+## Continuing a thread you already have
 
-| | |
-|---|---|
-| Direction | Inbound. The client or gateway drives Fountain. |
-| Talks over | OpenAI chat completions, at `POST /v1/chat/completions` and `GET /v1/models`. |
-| Configured on | The client or the gateway. |
-| Plugin | None. A URL is the whole integration. |
-| Credential | A Fountain API key, as the bearer token. |
-| Scope | One thread key is one conversation is one sandbox. |
-| Status | Alpha. Behind the `openai_compat` flag, off by default on the hosted platform. Read [Feature status](../reference/feature-status.md). |
+**Do this before creating anything.** A conversation your old integration
+opened is still there, with its sandbox and everything the agent worked out in
+it. Creating a new one instead gets you a fresh sandbox and loses that.
 
-!!! note "Alpha"
-    On the hosted platform the flag is off by default.
-    [Ask us](../api.md#support) to turn it on for your account. Fountain
-    answers `404` with code `openai_compat_not_enabled` while it is off. The
-    thread-key rule, `reasoning_content` and the error codes can change
-    between releases.
-
-## Set it up
-
-Make an API key.
+The thread key you were sending — `X-Fountain-Thread`, else `user`, else
+`safety_identifier` — was stored as the conversation's `channel_id`, prefixed
+`openai:`. Find it, **check it is the one you mean**, then prompt it by id.
 
 ```bash
-fountain keys create open-webui
+# 1. Find candidates. Filter by the agent too: a thread key is only unique
+#    within the agent it was used against, and `--data-urlencode` keeps a key
+#    containing /, ?, & or a space from breaking the query.
+curl -G -H "Authorization: Bearer ftn_..." \
+  --data-urlencode "channel_id=openai:<your-thread-key>" \
+  --data-urlencode "agent_id=<agent-uuid>" \
+  --data-urlencode "status=idle,running,pending" \
+  "https://your-fountain/api/conversations"
 ```
 
-Then give the client three things.
-
-| Field | Value |
-|---|---|
-| Base URL | `https://your-fountain/v1` |
-| API key | `ftn_...` |
-| Model | The agent's name, as `GET /v1/models` lists it. |
-
-Most clients fetch `GET /v1/models` on save and fill their model picker with
-your agents. If a client asks for a model name by hand, use the agent's name.
-The agent's id works too.
-
-From the `openai` Python SDK:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="https://your-fountain/v1", api_key="ftn_...")
-
-reply = client.chat.completions.create(
-    model="pr-reviewer",
-    messages=[{"role": "user", "content": "Review the open PRs on fountain."}],
-    extra_headers={"X-Fountain-Thread": "prs-2026-08-25"},
-    stream=True,
-)
-for chunk in reply:
-    print(chunk.choices[0].delta.content or "", end="")
-```
-
-From `curl`:
+**This is a list, not an answer.** It is ordered by `updated_at`, and without
+the `status` filter it also returns `failed` and `terminated` conversations,
+which cannot take a prompt.
 
 ```bash
-curl https://your-fountain/v1/chat/completions \
-  -H "Authorization: Bearer ftn_..." \
-  -H "X-Fountain-Thread: prs-2026-08-25" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "pr-reviewer", "stream": true,
-       "messages": [{"role": "user", "content": "Review the open PRs on fountain."}]}'
-```
-
-A complete terminal chat on the `openai` package, with the model picker and
-the thread header in place, is in the repository at
-[`examples/openai-chat`](https://github.com/managoat/fountain/tree/main/examples/openai-chat).
-For LangChain and Deep Agents, where a Fountain agent is a subagent, read
-[LangChain and Deep Agents](langchain.md). To expose Fountain through LiteLLM
-or another gateway, read [Put Fountain behind an AI gateway](gateways.md).
-
-## One thread is one conversation is one sandbox
-
-Understand this part. Chat completions are stateless. The client sends the
-whole history on every call and expects the server to keep nothing. A Fountain
-conversation is the opposite. The sandbox holds the context, which is the
-agent's files, its shell history, and what it worked out last turn. Replay
-the transcript into it on each call, and you feed the agent its own words
-back.
-
-So Fountain **maps** each chat to a conversation, and does not replay it. It
-sends only the newest `user` message of each request as the prompt. The first
-request on a thread opens a conversation. Each later request prompts the
-conversation already bound to it.
-
-The request has no standard thread field. Fountain reads the key from one of
-three places, in this order.
-
-1. The `X-Fountain-Thread` header. Set it to a stable id for the chat, such as
-   the chat's own id in your client. Any gateway that forwards headers
-   forwards this one.
-2. The `user` field of the request, when the header is absent. Every SDK
-   exposes it, and Open WebUI and LibreChat set it to the person's id. A
-   client that cannot set headers gets one sandbox for each person and agent,
-   which that person talks to for as long as they like. That is the same
-   model as the [team page](../concepts/teammates.md).
-3. The `safety_identifier` field, when the first two are absent. OpenAI added
-   it as one successor to the deprecated `user` field, and LiteLLM recognizes
-   it. Like `user`, it commonly identifies a person rather than an individual
-   chat.
-
-Fountain refuses a request with none of the three, with a 400 that names the
-header. It does not fall back to one conversation for each message. That would
-spawn a sandbox for each line of a chat, and it is the failure mode this
-endpoint exists to avoid.
-
-The key binds as channel `openai:<key>`, scoped to your account. Two accounts
-whose clients mint the same key share nothing. The conversations appear in
-Fountain like any others, and the API filters on the channel.
-
-```bash
+# 2. For each candidate, fetch it by id. Only the show route loads the
+#    sandbox — the list above renders `sandbox: null` for every row, so it
+#    cannot tell you whether the machine is still there.
 curl -H "Authorization: Bearer ftn_..." \
-  "https://your-fountain/api/conversations?channel_id=openai:prs-2026-08-25"
+  "https://your-fountain/api/conversations/<id>"
 ```
 
-### The system prompt
+The show route reads what Fountain last recorded. It does not contact the
+sandbox provider, so `data.sandbox` says what the machine was, not whether it
+is still there. Rule a candidate out when either of these holds:
 
-A client sends its system prompt on every call. Fountain delivers `system`
-and `developer` messages **once**, with the first prompt of a new
-conversation. After that the agent has it, and to repeat it each turn is
-noise in the transcript and tokens on the bill.
+- `data.sandbox` is null, or its `status` is `terminated` or `failed`. The
+  machine is gone, and a prompt provisions a fresh one.
+- `data.agent_id`, `data.environment_id` or `data.vault_id` is not the
+  identity the work was done under. That is a different configuration, not
+  your thread.
 
-That choice has a cost. Edit the system prompt in your client and it reaches
-a new thread. It does not reach a sandbox that already booted with the old
-one. Start a new thread to apply a system prompt you rewrote.
+If several candidates come back, the thread key was reused across
+configurations — pick by that identity, not by recency, and expect some of them
+to have terminal sandboxes. If none survives, there is nothing to continue and
+a fresh conversation is the right answer.
 
-An agent's own system prompt still applies. It is the better place for
-whatever must hold on each surface.
+What the row cannot rule out is a `ready` or `suspended` sandbox the provider
+has since lost. Fountain checks that when you prompt: the prompt probes the
+provider first, and if the machine is gone it provisions a fresh one rather
+than failing. The conversation keeps its id, title and transcript. The disk
+and the runtime session on it go with the machine, so the agent starts that
+turn with no memory of the work. How much you can know beforehand depends on
+`data.sandbox.status`:
 
-### Images
+- `ready`: one read-only call proves the machine answers.
+  `GET /api/sandboxes/<sandbox_id>/git-status`, with `data.sandbox_id`, runs
+  on the machine without changing it. `200` means it is there.
+  `503 sandbox_unreachable` means it did not answer, and a prompt now either
+  reprovisions or fails retryably. `/files` and `/diff` on the same prefix
+  serve as well; the [API reference](../api.md) lists them.
+- `suspended`: no read-only check exists. A parked machine is not woken for a
+  read (`409 sandbox_not_ready`), and the wake a prompt performs is the probe.
 
-An `image_url` part on the newest user message becomes a prompt image, the
-same as `images` on the real API. The URL must be a `data:` URL. Fountain does
-not fetch a remote image on the client's behalf. Every chat client that
-attaches a file inlines it as a data URL.
+So the prompt below continues the thread on a best-effort basis. Afterwards,
+two things say whether it kept the machine: `data.sandbox_id` on the show
+route is unchanged, and the event feed, `GET /api/conversations/<id>/events`,
+has no `session` stage event whose `data.reason` is `fresh_sandbox`. If either
+says the machine was replaced, treat the thread as new from that turn on.
 
-## What comes back
+```bash
+# 3. Prompt it by id. Same conversation, and the same machine while the
+#    provider still has it — see above for how to tell.
+curl -X POST -H "Authorization: Bearer ftn_..." -H "Content-Type: application/json" \
+  -d '{"prompt":"..."}' \
+  "https://your-fountain/api/conversations/<id>/prompts"
+```
 
-| Fountain | Chat completions |
+**Do not replay your transcript.** The sandbox is the memory. Send only the new
+message; replaying the history feeds the agent its own words back.
+
+If you resume by `channel_id` instead of prompting an id, send the same
+`agent_id`, `environment_id` and `vault_id` — an incomplete identity resolves
+to a different machine, which is the same lost-sandbox outcome by another
+route.
+
+Existing `openai:` bindings are left intact by the retirement — nothing was
+renamed or migrated.
+
+## What to use instead
+
+The native conversation API. It is not a drop-in for a chat-completions
+client — that is the point of the shape that went away — so this is a
+rewrite, not a base-URL change:
+
+| You had | You want |
 |---|---|
-| `text` blocks | `content` |
-| `thinking` blocks | `reasoning_content` |
-| `tool_use` and `tool_result` | `reasoning_content`, one line for each call, such as `→ Bash` and `← ok`. |
-| The `provision` and `setup` stages | `reasoning_content`, such as `provision: started`. |
-| A call to one of your `tools` | `tool_calls`, then `finish_reason: "tool_calls"`. Read [Your tools](#your-tools). |
-| `turn`/`done` | `finish_reason: "stop"` |
-| `turn`/`failed` | An `error` object that carries the reason. |
+| `POST /v1/chat/completions` with `messages` | [`POST /api/conversations`](../api.md), then prompt the conversation |
+| `stream: true` and SSE chunks | [`GET /api/conversations/:id/stream`](../api.md) |
+| A thread key in a header | A conversation id, which Fountain returns when you create one |
+| `model: "<agent>"` | `agent_id` on the conversation |
+| `GET /v1/models` | [`GET /api/agents`](../api.md) |
 
-With `stream: true`, the reply is SSE. Each event is a `chat.completion.chunk`
-and the stream ends with `data: [DONE]`, as OpenAI sends it. With
-`stream: false`, the request blocks until the turn ends and answers with one
-`chat.completion`. A turn can take minutes, so set the client's timeout with
-that in mind, or stream.
+The [TypeScript](../sdk.md), [Python](../python-sdk.md),
+[Elixir](../elixir-sdk.md) and [Swift](../swift-sdk.md) SDKs wrap all of it, and
+[Plug into Fountain](clients.md) is the shortest route in.
 
-`reasoning_content` is the field that Open WebUI, LibreChat and LiteLLM show
-as the model's thoughts. A client that does not know the field ignores it.
-Either way the bytes keep the client's stall watchdog fed while a fresh
-sandbox provisions, which takes longer than a minute on some providers.
+## What is not affected
 
-Two fields carry no information here, on purpose.
+**OpenAI and Codex as inference.** Fountain still runs agents on OpenAI
+models, still stores OpenAI credentials, and still supports the Codex
+runtime. Those share the vendor's name with the retired gateway and nothing
+else — no provider-side `/v1` path was touched.
 
-- `usage` is always zeros. Fountain bills a turn in seconds, not tokens, and
-  an invented token count is a number that a gateway would then add up.
-- `finish_reason` is `stop`, or `tool_calls` when the agent waits on one of
-  your tools. It is never `length`.
+**Tools your agent calls on your application.** Configure them on the agent
+as MCP servers, with `${VAR}` references resolved from the environment and
+the vault. That path is unchanged and is not the retired request-defined
+tool bridge. Read [Plug into Fountain](clients.md).
 
-**The sandbox's own tools never come back as tool calls.** On this protocol
-a tool call means *client, run this and send me the result*. A Fountain agent
-ran its own tool, in its own sandbox, and the result is already in the text.
-The client sees what the agent said, not what it did. The tools that *you*
-define on the request are the exception, and the next section is about them.
+## What has no replacement
 
-The reply also carries a `fountain` object with the `conversation_id`, the
-`turn_id` and the `thread`. Use them to reach the same conversation over the
-[real API](../api.md#conversations).
-
-## Your tools
-
-Send `tools` on the request, in OpenAI's function shape, and the agent gets
-them beside its own. The agent does not know that they are remote. When it
-calls one, the completion ends with the call and `finish_reason:
-"tool_calls"`, and the turn waits. Run the tool, then send the next request
-on the same thread with a `role: "tool"` message for each call. The turn
-continues, and the completion ends with `stop` or with the next call. Every
-agent framework already runs this loop. So a Fountain agent can be the model
-inside `create_agent`, the `openai` SDK's tool runner, or Open WebUI's tool
-servers.
-
-```
-  1. POST /v1/chat/completions   tools: [lookup_order]      ──▶  the agent calls lookup_order
-     ◀── finish_reason: "tool_calls", tool_calls: [{id: "call_1", function: {name, arguments}}]
-  2. POST /v1/chat/completions   messages: [..., {role: "tool", tool_call_id: "call_1", content: "..."}]
-     ◀── the rest of the turn, finish_reason: "stop"
-```
-
-From the `openai` Python SDK, the two requests are what
-`client.chat.completions.create` returns and what you send back:
-
-```python
-tools = [{"type": "function", "function": {
-    "name": "lookup_order",
-    "description": "Find an order by id",
-    "parameters": {"type": "object", "properties": {"id": {"type": "string"}}},
-}}]
-headers = {"X-Fountain-Thread": "orders-1"}
-messages = [{"role": "user", "content": "Where is order A-17?"}]
-
-reply = client.chat.completions.create(model="support", messages=messages,
-                                       tools=tools, extra_headers=headers)
-call = reply.choices[0].message.tool_calls[0]
-messages += [reply.choices[0].message,
-             {"role": "tool", "tool_call_id": call.id, "content": lookup_order(**json.loads(call.function.arguments))}]
-reply = client.chat.completions.create(model="support", messages=messages,
-                                       tools=tools, extra_headers=headers)
-print(reply.choices[0].message.content)
-```
-
-Some rules.
-
-- Fountain stores the tool names, descriptions and schemas on the
-  conversation. Send the same `tools` on each request. A changed list
-  replaces the old one at the next turn.
-- A call has a deadline, the same one as a permission prompt (five minutes by
-  default). If you do not answer in time, the agent gets an error result that
-  says so, and the turn continues without it.
-- Fountain refuses a `user` message while a call waits, with `409` and code
-  `tool_calls_pending`. Answer the call first.
-- Fountain refuses a `role: "tool"` message when nothing waits, with `400`
-  and code `no_pending_tool_calls`. The turn may have ended, or the call may
-  have expired.
-- `tool_choice: "none"` sends no tools for that request. Fountain refuses
-  `required` and a named tool with `400`, because it cannot force an agent's
-  next action.
-- The agent can make more than one call at once. Fountain returns them one
-  at a time. Answer each one, and the next comes back at once.
-- `reasoning_content` carries a line for each call, such as
-  `→ lookup_order (waiting for the caller)`, so a client that ignores
-  `tool_calls` can see why the reply stopped.
-
-The agent reaches your tools through one more Fountain-served MCP server in
-its sandbox. A parked call blocks the agent's tool call for up to a minute,
-then returns `pending` with a `call_id`, and the agent calls
-`wait_for_caller_result` until you answer. Fountain reserves that name.
-
-## Errors
-
-Errors that arrive before the reply use OpenAI's envelope, with the status
-that a client acts on.
-
-| Status | `code` | When |
-|---|---|---|
-| 400 | | No thread key, no user message, or a remote `image_url`. |
-| 401 | | No key, or a bad one. |
-| 402 | `insufficient_credits` | No credit on the account. |
-| 404 | `model_not_found` | No agent has that name or id in your account. |
-| 409 | `thread_busy` | The thread runs a turn now. `Retry-After` says when to send again. |
-| 409 | `tool_calls_pending` | The thread waits on your tool results. Answer them with `role: "tool"` messages. |
-| 400 | `no_pending_tool_calls` | The newest messages are tool results, but nothing waits for them. |
-| 429 | `sandbox_quota_exceeded` | Your concurrency cap. Terminate a conversation, or wait for one to idle out. |
-
-Fountain refuses a second request on a thread that is mid-turn, and does not
-queue it. Chat clients retry, and `Retry-After` tells them when.
-
-A turn that fails after the reply started is an `error` event on the stream,
-followed by `[DONE]`. With `stream: false` it is a 500 with `code`
-`turn_failed`.
-
-## Model credentials
-
-The agent needs a model credential here, as it does on each other surface. Add
-one at `/account/inference-credentials`. Without one the sandbox spawns, the
-session initialises, and the turn fails with `Authentication required`, which
-reaches the client as an error that names it. Fountain has no platform-level
-model key, on purpose
-([ADR 0008](https://github.com/managoat/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
-
-## What it does not do
-
-- Structured outputs, logprobs, `n > 1`, `tool_choice: "required"`, or
-  other features that assume the thing behind the URL is a model.
-- The Anthropic Messages shape. One dialect, and the OpenAI one is what
-  gateways and clients speak.
-- A model-provider abstraction for the sandbox side. To point the *runtime*
-  at a gateway is an environment variable on the agent's environment.
-
-The decision to carry a second public dialect on the server, and what it
-constrains, is
-[ADR 0035](https://github.com/managoat/fountain/blob/main/decisions/0035-openai-compatible-endpoint.md).
+Pointing a stock OpenAI client or an AI gateway at Fountain with **no code**.
+That was the whole value of the dialect, and retiring it removes it; nothing
+in the native API gives it back. If that is what you needed, the honest
+answer is that Fountain no longer offers it.

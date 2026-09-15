@@ -106,7 +106,7 @@ defmodule FountainWeb.LlmsController do
      [
        {"build", "Build a chat app", "the shape everyone clones, and why"},
        {"integrations/clients", "Plug into Fountain",
-        "editors over ACP, AG-UI, plugin hosts, relays, or your own code"},
+        "editors over ACP, plugin hosts, relays, or your own code"},
        {"llm-integration", "this file, `/llms-full.txt`, and `/skill`, explained"}
      ]},
     {"Reference",

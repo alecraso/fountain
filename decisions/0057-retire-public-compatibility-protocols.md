@@ -1,21 +1,51 @@
 ---
 type: ADR
 title: "Retire the OpenAI-compatible and AG-UI public protocols"
-description: "Propose removing the compatibility endpoints and request-tool bridge while preserving native conversations and agent-configured application tools. Implementation is not yet built."
+description: "Remove the compatibility endpoints and the request-tool bridge while preserving native conversations and agent-configured application tools. Being built in the #2252 stack; supersedes ADR 0035. Amended 2026-09-15: the retirement answer is not a plain 404 on every path — /api paths keep the shared 401 and 406 that authentication and content negotiation produce before dispatch."
 tags: [api, architecture, integrations]
-status: draft
+status: stable
 adr: "0057"
-adr_status: "Proposed"
+adr_status: "Accepted"
 date: 2026-09-15
 ---
 
 # 0057 — Retire the OpenAI-compatible and AG-UI public protocols
 
-**Status:** Proposed. This PR records the inventory and cutover proposal.
-No endpoint, application callback, source implementation or database column is
-removed here. [#2252](https://github.com/managoat/fountain/issues/2252) owns the
-implementation and release. ADR 0035 remains the description of shipped behavior
-until the implementation PR explicitly supersedes it.
+**Status:** Accepted, and being built in the #2252 stack. **This ADR supersedes
+[ADR 0035](0035-openai-compatible-endpoint.md)**, which described the
+OpenAI-compatible dialect as shipped behavior.
+
+Built so far, in the change that carries this status line:
+
+- The four OpenAI/AG-UI route declarations and their two exclusive controllers
+  are gone, with their operations and schemas out of the contract and the
+  generated types.
+- The caller MCP adapter and its route, so **all five retired method/path
+  combinations are unrouted**, and the bridge is no longer advertised to a
+  sandbox either. Both had to happen here rather than in the next change. The
+  two controllers were the only things that could hand a parked call back to a
+  client, so still offering those tools would let an agent on a legacy row park
+  a call nobody could answer — and the route itself scoped only to the tenant,
+  never binding a sandbox's callback key to the conversation named in its path,
+  so while it was reachable one sandbox could park calls on another
+  conversation's turn in the same account.
+- The public cutover: the four integration pages kept as migration pages at
+  their URLs, their cross-links, the three runnable examples deleted, and the
+  operator flag guidance. The approved inventory requires the source-removal
+  change to carry the migration guide, so it is here rather than later.
+
+Not yet built, each in a later change of the same stack: deleting
+`Fountain.CallerTools` itself, the registration write and the parked-call
+plumbing in `ConversationServer` and `Pending`, all of which are now
+unreachable; and removing the `openai_compat` flag, which still exists here and
+gates nothing. **This section is updated by each of those**, so it always
+describes the tree it is merged into.
+
+Outside the stack entirely, with their own gates: the physical
+`conversations.caller_tools` column, which
+[#2273](https://github.com/managoat/fountain/issues/2273) drops once the
+deployment floor has advanced, and the release — no tag is claimed below, and a
+code merge is not a deployment.
 
 ## Context
 
@@ -39,8 +69,8 @@ does not make an OpenAI or AG-UI host work by changing its base URL alone.
 
 ## Decision
 
-Propose retiring these five method/path combinations in the next explicitly
-announced breaking server release:
+Retire these five method/path combinations, in an explicitly announced
+breaking server release:
 
 - `POST /v1/chat/completions`
 - `GET /v1/models`
@@ -49,10 +79,33 @@ announced breaking server release:
 - `POST /api/mcp/caller/:conversation_id`
 
 Remove their route declarations and exclusive controllers, translations and
-request-tool bridge. Requests then receive the ordinary unmatched-route HTTP
-404; preserve no dialect-specific response envelope, redirect or dormant
-feature-flag implementation. Record the actual release tag when scheduled;
-this ADR does not assign one or claim retirement shipped in v0.17.1.
+request-tool bridge. Preserve no dialect-specific response envelope, redirect
+or dormant feature-flag implementation. Record the actual release tag when
+scheduled; this ADR does not assign one or claim retirement shipped in v0.17.1.
+
+**Amended 2026-09-15, on implementing it.** This decision originally said
+requests "then receive the ordinary unmatched-route HTTP 404". That is true of
+`/v1` and not of the `/api` paths, and the difference is worth writing down
+because a retiring client meets it:
+
+| Path | JSON client | No API key | `Accept: text/event-stream` |
+|---|---|---|---|
+| `/v1/*` | 404 | 404 | 404 |
+| `/api/agui/*`, `/api/mcp/caller/*` | 404 | **401** | **406** |
+
+`/v1` matches no route at all, so `NoRouteError` renders 404 before anything
+authenticates. The `/api` paths fall through to the extension-dispatch scope,
+which sits inside the `:api` pipeline: `TenantAPIAuth` answers a keyless call
+401, and `plug :accepts, ["json"]` refuses an event-stream `Accept` with 406 —
+which is exactly what an AG-UI client sends, so for that path it is the common
+case rather than an edge one.
+
+Both are the *shared* unmatched-`/api` behaviour: a path that never existed
+answers identically, which `protocol_retirement_test.exs` asserts by comparing
+the two rather than by hard-coding a status. So the decision's intent holds —
+nothing dialect-specific survives — but "ordinary 404" was too simple a
+sentence for what a caller actually sees.
+
 
 Preserve agent-configured MCP servers and application tool callbacks, including
 credential substitution, connection-backed tools, callback-key scope/rotation,

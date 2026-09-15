@@ -527,11 +527,6 @@ defmodule FountainWeb.Router do
     # they are the `fountain_google` extension's now (ADR 0043, #2152), mounted
     # by `ExtensionDispatch` at the same path.
 
-    # The tools a chat-completions / AG-UI client defined on its request,
-    # served back to that conversation's sandbox (#1202). A call parks until
-    # the client answers it with a `role: "tool"` message.
-    post "/mcp/caller/:conversation_id", CallerMcpController, :handle
-
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end
@@ -650,25 +645,6 @@ defmodule FountainWeb.Router do
 
     get "/conversations/:conversation_id/stream", ConversationController, :stream,
       as: :conversation_stream
-
-    # AG-UI. Here rather than in the JSON scope for the same reason:
-    # the request body is JSON but the *response* is an event stream, and an
-    # AG-UI client sends `Accept: text/event-stream`, which `:accepts_json`
-    # would refuse with 406 before the action ran.
-    post "/agui/:agent_id", AguiController, :run, as: :agui_run
-  end
-
-  # OpenAI-compatible (ADR 0035). At `/v1`, not `/api/v1`, because every
-  # base-URL client and gateway appends `/chat/completions` and `/models` to
-  # whatever it is given, and `https://host/v1` is the shape they all expect.
-  # Same auth chain as `/api`, no content negotiation for the same reason as
-  # the stream above: `stream: true` answers as an event stream.
-  scope "/v1", FountainWeb do
-    pipe_through :api
-
-    post "/chat/completions", OpenAIController, :create_chat_completion
-    get "/models", OpenAIController, :list_models
-    get "/models/:model", OpenAIController, :show_model
   end
 
   # Operator surface (#527). Three gates in order: :api authenticates the key,

@@ -96,9 +96,9 @@ func TestExamplesParse(t *testing.T) {
 // somebody named differently, which is the same shape of hole as the one that
 // hid this test's failure for a day (#1542). Anything new under examples/ is
 // checked until a person adds it here with a reason.
-var notOurs = map[string]bool{
-	// LiteLLM's own proxy config, read by the litellm container (#1479).
-	"../../../examples/litellm-gateway/config.yaml": true,
-	// Compose file that stands the example's two containers up (#1479).
-	"../../../examples/litellm-gateway/docker-compose.yml": true,
-}
+// Empty since ADR 0057 (#2252): its only two entries were the LiteLLM
+// example's own proxy config and compose file (#1479), and that example went
+// with the OpenAI-compatible API it demonstrated. The check below that fails
+// on a stale entry is what caught them, which is the behaviour this list is
+// documented to have.
+var notOurs = map[string]bool{}

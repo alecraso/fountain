@@ -383,8 +383,8 @@ defmodule Fountain.ExtensionsTest do
     end
 
     test "but NOT on a deeper mount beside a core one (/mcp/buzz beside /api/mcp/team)" do
-      # The case the Buzz move needs: /api/mcp/team/:id and /api/mcp/caller/:id
-      # are core routes, and /api/mcp/buzz overlaps neither.
+      # The case the Buzz move needs: /api/mcp/team/:id is a core route, and
+      # /api/mcp/buzz overlaps it nowhere.
       defmodule McpSibling do
         use Fountain.Extension, id: :mcp_sibling
         @impl true

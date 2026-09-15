@@ -1,15 +1,14 @@
 # Feature status
 
-Most of Fountain is on for every account. Two features are not. This page
-lists them. Each row says who has the feature on the hosted platform, and
-how to turn it on.
+Most of Fountain is on for every account. One feature is not. This page
+lists it. The row says who has the feature on the hosted platform, and how to
+turn it on.
 
 A note with the same title as the row sits at the top of each page that
 describes one of these features.
 
 | Feature | Status | On the hosted platform | On your own instance |
 |---|---|---|---|
-| [OpenAI-compatible API](../integrations/openai-compatible.md) | Alpha | Off by default. Behind the `openai_compat` flag. [Ask us](../api.md#support) to turn it on for your account. | Add `openai_compat` to `FEATURE_FLAGS_ON`. Read the [configuration reference](../configuration.md). |
 | [Connections](../catalog/connections/index.md) | Alpha | Off by default. Behind the `connections` flag, separately from the credential broker. [Ask us](../api.md#support) to turn it on for your account. | Configure the credential broker and your provider apps, then add `connections` to `FEATURE_FLAGS_ON`. This also enables the credential bindings page. |
 
 ## What each status means
@@ -35,5 +34,10 @@ then brokered. Read the [configuration reference](../configuration.md).
 
 - [Where a secret comes from](../concepts/secrets.md), for what the broker
   changes.
-- [OpenAI-compatible API](../integrations/openai-compatible.md), for the
-  chat-completions endpoint where the model is an agent.
+- [Plug into Fountain](../integrations/clients.md), for the ways in.
+
+The OpenAI-compatible API was the other feature on this page. It is retired
+([ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md)):
+the endpoints are removed, so there is nothing for `openai_compat` to switch
+on any more and the flag is on its way out too. The
+[page for it](../integrations/openai-compatible.md) says what a call gets now.

@@ -29,7 +29,6 @@ Fountain. Each client's own page carries its failure modes.
   surfaces spawn.
 - [Editors](../integrations/editors.md).
 - [OpenClaw](../integrations/openclaw.md).
-- [OpenBot](../integrations/openbot.md).
 - Buzz.
 
 ## A workstation that will not start

@@ -15,9 +15,8 @@ defmodule FountainGoogle.Router do
   core route, which is the URL `FountainGoogle.conversation_mcp_servers/2`
   hands a sandbox at every turn.
 
-  The host's own `/api/mcp/team/:id`, `/api/mcp/team-comms/:id` and
-  `/api/mcp/caller/:id` are core routes declared before the extension
-  dispatch, so they win; `Fountain.Extensions.validate!/0` refuses a mount that
+  The host's own `/api/mcp/team/:id` and `/api/mcp/team-comms/:id` are core
+  routes declared before the extension dispatch, so they win; `Fountain.Extensions.validate!/0` refuses a mount that
   overlaps any of them, and `/mcp/gmail` overlaps none.
   """
   use Phoenix.Router

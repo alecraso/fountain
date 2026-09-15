@@ -9,9 +9,8 @@ defmodule FountainBuzz.McpRouter do
   `api_mounts/0`: `/api/mcp/buzz` is not under `/api/buzz`, and one prefix could
   not express both (#1507).
 
-  The host's own `/api/mcp/team/:id`, `/api/mcp/caller/:id` and
-  `/api/mcp/gmail/...` are core routes declared before the extension dispatch,
-  so they win; `Fountain.Extensions.validate!/0` refuses a mount that overlaps
+  The host's own `/api/mcp/team/:id` and `/api/mcp/gmail/...` are core routes
+  declared before the extension dispatch, so they win; `Fountain.Extensions.validate!/0` refuses a mount that overlaps
   any of them, and `/mcp/buzz` overlaps none.
   """
   use Phoenix.Router

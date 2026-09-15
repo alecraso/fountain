@@ -19,10 +19,10 @@ mail, OAuth, billing and error reports, read
 | [Editors](editors.md) | [`fountain acp`](acp.md) | The developer's machine. |
 | [OpenClaw](openclaw.md) | [`fountain acp`](acp.md) | The OpenClaw host. |
 | [Hermes Agent](hermes.md) | The HTTP API, through a plugin. | The Hermes host. |
-| [OpenBot](openbot.md) | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) over HTTP. | The OpenBot host. |
-| [OpenAI-compatible API](openai-compatible.md) (alpha) | OpenAI chat completions over HTTP. | The client or the gateway. |
-| [LangChain and Deep Agents](langchain.md) (alpha) | The OpenAI-compatible API, from one Python file. | Your LangChain code. |
-| [AI gateways](gateways.md) (alpha) | The OpenAI-compatible API, with Fountain as a gateway upstream. | The gateway. |
+| [OpenBot / AG-UI](openbot.md) | **Retired** (ADR 0057). | — |
+| [OpenAI-compatible API](openai-compatible.md) | **Retired** (ADR 0057). | — |
+| [LangChain and Deep Agents](langchain.md) | **Retired** (ADR 0057), with the API under it. | — |
+| [AI gateways](gateways.md) | **Retired** (ADR 0057), with the API under it. | — |
 | Buzz | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
 | [Agentic IDEs](../llm-integration.md) | `/skill` and the discovery endpoints. | The IDE. |
 | Your own code | The [HTTP API](../api.md), the [TypeScript](../sdk.md), [Python](../python-sdk.md), [Elixir](../elixir-sdk.md) or [Swift](../swift-sdk.md) SDK, the [CLI](../cli.md). | Wherever you want. |
@@ -50,29 +50,23 @@ as Telegram, Discord or Slack. Register Fountain as a custom ACP agent in its
 model then delegates a task to a named Fountain agent and reads the answer
 back. The plugin authenticates with an API key, or with the CLI's saved login.
 
-[**OpenBot**](openbot.md) needs no plugin at all, and only a URL. Fountain
-answers [AG-UI](https://github.com/ag-ui-protocol/ag-ui) at
-`POST /api/agui/:agent_id`. CopilotKit's OpenBot, or any other AG-UI host,
-registers a Fountain agent as a coworker with a channel of its own. One
-channel binds to one conversation, so the sandbox is the memory, and not a
-transcript that somebody replays. The coworker holds an API key.
+## Retired: the compatibility dialects
 
-[**Any OpenAI-compatible client or gateway**](openai-compatible.md) needs
-only a base URL too. This one is alpha, behind the `openai_compat` flag. Fountain answers `POST /v1/chat/completions` and
-`GET /v1/models`, where the model is one of your agents. Open WebUI,
-LibreChat, LiteLLM and the `openai` SDK all speak that shape. A header, the
-request's `user` field, or `safety_identifier` binds each chat to one
-conversation, so the sandbox is the memory here as well.
+Fountain used to speak two wire protocols it did not design, so that a client
+which already spoke one needed no code at all: [AG-UI](openbot.md) for
+coworker platforms, and the [OpenAI-compatible API](openai-compatible.md) for
+anything with a base-URL field — which is what [AI gateways](gateways.md) and
+the [LangChain integration](langchain.md) rode on.
 
-[**An AI gateway**](gateways.md), such as LiteLLM, can put that same endpoint
-behind a shared model route. The included LiteLLM example maps
-`fountain/<agent>` to any agent on the account and checks that the gateway
-preserves the conversation's thread key.
+All of it is retired ([ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md)),
+along with the tool bridge that let a *request* define tools for the agent to
+call back on. Each page above says what a call gets now and what to use
+instead. The thing with no replacement is the no-code integration itself: a
+client that speaks somebody else's protocol now needs an adapter, because
+Fountain speaks only its own.
 
-[**LangChain and Deep Agents**](langchain.md) ride on that endpoint. A
-Fountain agent becomes a Deep Agents subagent, or a LangChain tool, from one
-Python file that the example ships. The orchestrator plans, and the Fountain
-agent does the work in its own sandbox and reports back once.
+Tools an **agent** is configured to call on your application are a different
+mechanism and are fully supported — see below.
 
 Everything that plugin does is available to you directly. Read the
 [API reference](../api.md), the [TypeScript](../sdk.md),

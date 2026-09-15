@@ -6,10 +6,9 @@ defmodule Fountain.Conversations.McpServers do
   resolved against the environment and the secrets (`substitute_agent/3`),
   and the ones Fountain serves back to the sandbox itself, authenticated with
   the conversation's callback token (`Fountain.Conversations.CallbackKey`):
-  installed extensions' tools, the team tools and
-  the caller-tool bridge. Each of those decides for itself whether this
-  conversation gets it; `fountain_served/2` only asks, in the order the
-  server has always appended them.
+  installed extensions' tools and the team tools. Each of those decides for
+  itself whether this conversation gets it; `fountain_served/2` only asks, in
+  the order the server has always appended them.
 
   Functions over rows and values, not over server state: `ConversationServer`
   unpacks what it holds and passes it in (#1369). Nothing here touches the
@@ -110,7 +109,7 @@ defmodule Fountain.Conversations.McpServers do
 
   @doc """
   The Fountain-served servers for a turn, in the order the server has always
-  appended them after the agent's own: extensions, team, caller.
+  appended them after the agent's own: extensions, then team.
 
   Installed extensions come first (ADR 0043, #1505), in configured order, ahead
   of everything the host serves itself. That ordering is a host decision, not a
@@ -119,10 +118,8 @@ defmodule Fountain.Conversations.McpServers do
   `buzz/2` clause that used to sit here went with them.
   """
   @spec fountain_served(map(), String.t() | nil) :: [map()]
-  def fountain_served(%{id: conv_id} = conv, token) do
-    extensions(conv_id, token) ++
-      team(conv_id, token) ++
-      caller(conv, token)
+  def fountain_served(%{id: conv_id}, token) do
+    extensions(conv_id, token) ++ team(conv_id, token)
   end
 
   # Every installed extension's contribution. `Fountain.Extensions` contains a
@@ -140,13 +137,14 @@ defmodule Fountain.Conversations.McpServers do
 
   def team(_conv_id, _token), do: []
 
-  # The caller-tool bridge (#1202): the tools a chat-completions or AG-UI
-  # client defined, served back to the sandbox as one more MCP server. Read
-  # off the conversation row at every turn kick, so a list registered by the
-  # request that opened this turn is on it.
-  @spec caller(map(), String.t() | nil) :: [map()]
-  def caller(conv, token) when is_binary(token),
-    do: Fountain.CallerTools.conversation_mcp_servers(conv, token)
-
-  def caller(_conv, _token), do: []
+  # The caller-tool bridge (#1202) appended a third list here, built from the
+  # conversation row's `caller_tools`. The append goes with the routes in this
+  # change rather than with the rest of the bridge in the next one, and that
+  # ordering is the whole point: the two dialect controllers were the only
+  # things that could ever hand a parked call back to the client. Keep
+  # advertising those tools after the controllers are gone and an agent on a
+  # legacy `openai:`/`agui:` row — which ADR 0057 promises stays usable
+  # natively — can still pick one, park a call nobody can answer, and cycle
+  # 60-second waits until the permission deadline fails it. Not advertised is
+  # not selectable. `Fountain.CallerTools` itself goes in the next change.
 end
