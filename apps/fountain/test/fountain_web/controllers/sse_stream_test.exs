@@ -471,6 +471,21 @@ defmodule FountainWeb.SseStreamTest do
       assert conn.status == 200
       assert conn.resp_body =~ ~s("stage":"server")
       assert conn.resp_body =~ ~s("state":"failed")
+
+      # #2297: this synthetic frame is the one write_event/2 never builds —
+      # it must still match the schema the operation declares. `stream` is
+      # `""` here, not null: StreamLogEvent has no `nullable: true` on it,
+      # matching every persisted event (the domain schema defaults an empty
+      # stream to `""`, never nil).
+      [payload] =
+        Regex.run(~r/data: (\{[^\n]*"stage":"server"[^\n]*\})/, conn.resp_body,
+          capture: :all_but_first
+        )
+
+      decoded = Jason.decode!(payload)
+
+      assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded) ==
+               :ok
     end
 
     test "a clean shutdown reads as the server stage reaching done", %{

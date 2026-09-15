@@ -4713,6 +4713,8 @@ export interface components {
          * @description One frame of the conversation, events or team SSE log stream (#2297). Same fields as `LogEvent` minus `id` — the frame's id travels in the SSE `id:` line, never the JSON body — plus `conversation_id` and `agent_id`, which the REST log feed never sends because its URL or list item already names the conversation.
          *
          *     Not every stream sends every optional field here; see each property's own description for which of `GET /api/conversations/:id/stream`, `GET /api/events` and `GET /api/team/stream` include it.
+         *
+         *     The events and team streams also send `conversations`, `team` and `schedule` change-signal frames — not log events at all, and not this schema. Their body is only `{"reason": "changed"}`; see each operation's own description.
          */
         StreamLogEvent: {
             /**

@@ -1212,7 +1212,7 @@ defmodule FountainWeb.ConversationController do
     payload =
       Jason.encode!(%{
         kind: "stage",
-        stream: nil,
+        stream: "",
         data:
           Jason.encode!(%{
             reason: inspect(reason),

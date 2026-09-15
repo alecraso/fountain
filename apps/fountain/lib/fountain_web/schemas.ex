@@ -2038,7 +2038,11 @@ defmodule FountainWeb.Schemas do
           "conversation.\n\n" <>
           "Not every stream sends every optional field here; see each property's own " <>
           "description for which of `GET /api/conversations/:id/stream`, " <>
-          "`GET /api/events` and `GET /api/team/stream` include it.",
+          "`GET /api/events` and `GET /api/team/stream` include it.\n\n" <>
+          "The events and team streams also send `conversations`, `team` and " <>
+          "`schedule` change-signal frames — not log events at all, and not this " <>
+          "schema. Their body is only `{\"reason\": \"changed\"}`; see each operation's " <>
+          "own description.",
       type: :object,
       properties:
         LogEvent.schema().properties
