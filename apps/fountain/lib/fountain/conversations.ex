@@ -29,7 +29,6 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.Launch
-  alias Fountain.Conversations.MachineEvents
   alias Fountain.InferenceCredentials
   alias Fountain.InferenceCredentials.Source
   alias Fountain.Conversations.InferenceBinding
@@ -4068,7 +4067,11 @@ defmodule Fountain.Conversations do
 
   # A nested transaction does not commit: workers and provider calls must not
   # escape a caller's transaction that can still roll back the accepted rows.
-  defp require_provider_commit_boundary do
+  # Public (door for `Fountain.Conversations.Wake`, #2211): `start_conversation/2`
+  # and `attach_conversation/3` below call it locally; `Wake.wake_conversation_for/3`
+  # calls it as a remote door since that function moved out of this module.
+  @doc false
+  def require_provider_commit_boundary do
     if Repo.in_transaction?(), do: {:error, :provider_transaction_open}, else: :ok
   end
 
@@ -4255,13 +4258,17 @@ defmodule Fountain.Conversations do
   # unique index makes that "cannot" rather than "will not". A name that
   # already carries the prefix — one an earlier launch handed back — is taken
   # as it stands.
-  defp mint_machine_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
+  # Public (door for `Fountain.Conversations.Wake`, #2211):
+  # `create_fresh_sandbox_and_start/4` moved there and calls this remotely;
+  # `start_conversation/2` below still calls it locally.
+  @doc false
+  def mint_machine_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
 
-  defp mint_machine_name(_provider, user_id, nil),
+  def mint_machine_name(_provider, user_id, nil),
     do: {:ok, machine_name_prefix(user_id) <> short_id()}
 
   # An empty override is no override, the way an empty sandbox_mode is.
-  defp mint_machine_name(provider, user_id, ""), do: mint_machine_name(provider, user_id, nil)
+  def mint_machine_name(provider, user_id, ""), do: mint_machine_name(provider, user_id, nil)
 
   # On the runner provider the name *is* the placement (ADR 0022): the runner
   # id rides in it, because `Managoat.Sandbox` hands an adapter nothing else,
@@ -4277,10 +4284,10 @@ defmodule Fountain.Conversations do
   # Account-scoped names already break that route (the prefixed name no longer
   # parses), but they break it into a 201 over a row nothing can place; this
   # clause is what makes it a plain refusal instead.
-  defp mint_machine_name(:runner, _user_id, name) when is_binary(name),
+  def mint_machine_name(:runner, _user_id, name) when is_binary(name),
     do: {:error, :sprite_name_not_supported}
 
-  defp mint_machine_name(_provider, user_id, name) when is_binary(name) do
+  def mint_machine_name(_provider, user_id, name) when is_binary(name) do
     prefix = machine_name_prefix(user_id)
     suffix = String.replace_prefix(name, prefix, "")
 
@@ -4384,7 +4391,12 @@ defmodule Fountain.Conversations do
     InferenceBinding.reserve(conv, Source.load(conv.inference_source))
   end
 
-  defp check_saved_inference(conv, agent) do
+  # Public (door for `Fountain.Conversations.Wake`, #2211): both callers
+  # (`wake_conversation_for/3`, `create_fresh_sandbox_and_start/4`) moved
+  # there and call this remotely; `resolve_saved_inference/2` below stays
+  # private, since `resume_channel/4` still calls it locally.
+  @doc false
+  def check_saved_inference(conv, agent) do
     with {:ok, _source} <- resolve_saved_inference(conv, agent), do: :ok
   end
 
@@ -4868,116 +4880,12 @@ defmodule Fountain.Conversations do
     end
   end
 
-  @doc """
-  Resume a conversation whose ConversationServer is gone (e.g. after a
-  BEAM restart, or in the gap between Rehydrator runs).
-
-  Strategy:
-  1. If the existing sandbox is `ready` and the sprite is still alive at
-     sprites.dev, start a fresh `ConversationServer` pointing at it. The
-     server will go through reattach mode and pick up any running
-     detachable session.
-  2. Otherwise, provision a fresh sprite, mark the old sandbox
-     terminated, and start the server pointing at the new sandbox. The
-     runtime session does not follow — it lived on the old disk — so the
-     server clears `runtime_session_id` once the fresh sprite is up and the
-     next turn starts a new one (#778). The Fountain conversation, its
-     transcript and its title carry over; the agent's in-context memory
-     does not.
-
-  Returns `{:error, :gone}` if the conversation is in a terminal status
-  (`terminated`, `failed`) — those don't auto-resume.
-  """
-  def wake_conversation(conv_id, initial_prompt \\ nil) do
-    wake_conversation_for(conv_id, initial_prompt, :work)
-  end
-
-  defp wake_conversation_for(conv_id, initial_prompt, purpose) do
-    # Ownership is established by callers before reaching this internal wake
-    # path. The agent fetched below is the conversation's own agent_id,
-    # same tenant by construction.
-    with :ok <- require_provider_commit_boundary(),
-         %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
-         :ok <- assert_resumable(conv),
-         # Preflight only: no database lock spans provider I/O. Turn admission
-         # checks again under its transaction. Cancellation must remain reachable.
-         :ok <-
-           if(purpose == :interrupt,
-             do: :ok,
-             else: _unsafe_check_saved_execution_allowance(conv.id)
-           ),
-         # Ownership: conv.agent_id belongs to this established-owner conversation.
-         %Agents.Agent{} = agent <-
-           (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
-         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
-      case Wake.maybe_reuse_sandbox(conv) do
-        {:reuse, sandbox_id} ->
-          # Reuse provisions nothing, so the fresh-path gates below never ran
-          # here — a canceled or suspended user could restart a server against
-          # a live sprite and keep prompting (#313). Same checks. Reusing a
-          # `ready` sandbox adds no concurrency, so no quota; waking a
-          # `suspended` one re-adds compute, so wake_suspended_sandbox re-runs
-          # the quota gate. The per-turn gate in ConversationServer is the
-          # backstop; this one makes the refusal synchronous at the API door.
-          with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-               :ok <- Fountain.Billing.check_spend(conv.user_id),
-               :ok <- check_saved_inference(conv, agent),
-               {:ok, _} <- Wake.wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            case Wake.start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
-              {:error, {:already_started, winner_pid}} ->
-                # Lost a concurrent wake of the same conversation to another
-                # caller reusing the same sandbox. Mirrors the handoff in
-                # create_fresh_sandbox_and_start/4 (#330), but reuse provisions
-                # no row of its own, so there is nothing here to clean up —
-                # just hand the prompt to the winner, which drops it if a turn
-                # is already running.
-                if is_binary(initial_prompt) and initial_prompt != "" do
-                  ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
-                end
-
-                {:ok, _unsafe_get_conversation!(conv.id)}
-
-              other ->
-                other
-            end
-          end
-
-        {:provisioning, sandbox_id} ->
-          # The row says a server is (or was) provisioning this sandbox. The
-          # registry may simply not have caught up with a server started on
-          # another node — `session/new` and the first prompt arrive ~30 ms
-          # apart and can land on different pods — so wait for it before
-          # concluding it is dead. If it turns up, hand it the prompt exactly
-          # as the `already_started` branches do; if it does not, the
-          # provision died with its BEAM and a fresh one is right (#800).
-          case ConversationServer.await_registered(conv.id) do
-            {:ok, pid} ->
-              Logger.info(
-                "conv #{conv.id}: server for pending sandbox #{sandbox_id} " <>
-                  "appeared during the registry settle window; handing off the prompt"
-              )
-
-              if is_binary(initial_prompt) and initial_prompt != "" do
-                ConversationServer.queue_initial_prompt(pid, initial_prompt)
-              end
-
-              {:ok, _unsafe_get_conversation!(conv.id)}
-
-            :timeout ->
-              create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
-          end
-
-        :create_new ->
-          create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
-
-        {:error, _} = err ->
-          err
-      end
-    else
-      nil -> {:error, :not_found}
-      {:error, _} = err -> err
-    end
-  end
+  # `Wake.wake_conversation/2` holds the docstring, the strategy notes and
+  # the `{:error, :gone}` contract (#2211); this stays the public name every
+  # caller (conversation_server.ex `send_prompt/4` and `interrupt_dead/1`, and
+  # the Mimic stub in audit_guardrail_test.exs) keeps calling.
+  def wake_conversation(conv_id, initial_prompt \\ nil),
+    do: Wake.wake_conversation(conv_id, initial_prompt)
 
   @doc """
   Reach a conversation whose `ConversationServer` is gone, so a caller can
@@ -5005,7 +4913,7 @@ defmodule Fountain.Conversations do
         {:error, :not_found}
 
       %Conversation{status: "running"} ->
-        with {:ok, conv} <- wake_conversation_for(conv_id, nil, :interrupt),
+        with {:ok, conv} <- Wake.wake_conversation_for(conv_id, nil, :interrupt),
              pid when is_pid(pid) <- ConversationServer.whereis(conv.id) do
           {:ok, pid}
         else
@@ -5041,237 +4949,6 @@ defmodule Fountain.Conversations do
       {:ok, provider}
     else
       {:error, {:sandbox_provider_disabled, provider}}
-    end
-  end
-
-  defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do
-    # The sandbox being replaced is excluded: it is retired immediately below,
-    # so counting it would block a wake that leaves concurrency unchanged.
-    # Waking a dormant conversation provisions a fresh sprite, so it is subject
-    # to the same gate as creating one. Without this, prompting an existing
-    # conversation was an unmetered way past billing entirely.
-    # The replacement keeps the mode of the machine it replaces: a home whose
-    # sprite is gone is re-provisioned as the home, and every conversation on
-    # it follows (move_cotenants/3). The old row is retired *first* for a
-    # home — the partial unique index allows one live home per identity, and
-    # the probe has already said this sprite is gone (ADR 0023 gate 6).
-    old = if conv.sandbox_id, do: _unsafe_get_sandbox(conv.sandbox_id)
-    mode = (old && old.mode) || "ephemeral"
-    if mode == "persistent", do: _ = mark_old_sandbox_terminated(conv.sandbox_id)
-
-    with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-         :ok <- Fountain.Billing.check_spend(conv.user_id),
-         :ok <- check_saved_inference(conv, agent),
-         # A fresh sandbox is a fresh placement decision — re-resolve from
-         # the agent, so a conversation whose old sandbox died can migrate
-         # providers naturally.
-         {:ok, provider} <- resolve_sandbox_provider(agent),
-         {:ok, machine_name} <- mint_machine_name(provider, conv.user_id, nil),
-         # Same reservation as start_conversation/1 — see the note there (#330).
-         {:ok, new_sandbox} <-
-           Fountain.Quotas.with_sandbox_reservation(
-             conv.user_id,
-             [exclude: conv.sandbox_id],
-             fn ->
-               create_sandbox(%{
-                 environment_id: conv.environment_id || agent.environment_id,
-                 agent_id: conv.agent_id,
-                 vault_id: conv.vault_id,
-                 mode: mode,
-                 machine_name: machine_name,
-                 status: "pending",
-                 provider: Atom.to_string(provider),
-                 user_id: conv.user_id
-               })
-             end
-           ) do
-      # The row is repointed *after* the server starts, not before (#717).
-      #
-      # The old order repointed first, so a wake that then lost the start race
-      # left the conversation pointing at the sandbox it had just terminated,
-      # while the winner ran on a different one — a conversation that reads as
-      # terminated in the API and the UI while it is happily serving turns, and
-      # an orphan `ready` row nothing references. `fountain acp` reproduced it
-      # on every session, because `session/new` and the first prompt arrive a
-      # second apart and the prompt takes this path before the registry has the
-      # new server.
-      #
-      # Deferring leaves a much smaller window — between the server starting
-      # and the row being updated — in which the row still names the old
-      # sandbox. That one is transient and self-correcting; the old one was
-      # permanent.
-      #
-      # #800 closed the other half: a prompt that finds a `pending` row now
-      # waits for the registry (`ConversationServer.await_registered/2`)
-      # before coming here, so the first server — often on another pod, and
-      # so invisible to this node's registry for a beat — is found and
-      # handed the prompt instead of being raced by a second provision.
-      case Wake.start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
-        {:ok, _} ->
-          old_sandbox_id = conv.sandbox_id
-          _ = mark_old_sandbox_terminated(old_sandbox_id)
-
-          {:ok, conv} =
-            update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"})
-
-          # The machine was gone for everyone on it, not just the conversation
-          # that noticed (ADR 0023 gate 5).
-          move_cotenants(old_sandbox_id, new_sandbox, conv.id)
-
-          {:ok, _unsafe_get_conversation!(conv.id)}
-
-        {:error, {:already_started, winner_pid}} ->
-          # Lost a concurrent wake of the same conversation. The winner's
-          # server is running against its own sandbox; this one's just-created
-          # row would otherwise sit pending — holding a quota slot — until the
-          # reaper's pass an hour later, so a user at their cap could lock
-          # themselves out by double-clicking (#330). Clean up our own row and
-          # hand the prompt to the winner, which drops it if a turn is already
-          # running — exactly right for a double-click.
-          #
-          # The conversation is left alone: the winner owns it, and it is the
-          # winner's sandbox the row should name.
-          _ = mark_old_sandbox_terminated(new_sandbox.id)
-
-          if is_binary(initial_prompt) and initial_prompt != "" do
-            ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
-          end
-
-          {:ok, _unsafe_get_conversation!(conv.id)}
-
-        {:error, _} = err ->
-          # Nothing ever ran on this sandbox. Retiring it keeps a failed wake
-          # from holding a quota slot until the reaper's next pass — the same
-          # reasoning as the branch above.
-          _ = mark_old_sandbox_terminated(new_sandbox.id)
-          err
-      end
-    end
-  end
-
-  defp assert_resumable(%Conversation{status: s}) when s in ~w(terminated failed) do
-    {:error, :gone}
-  end
-
-  defp assert_resumable(_), do: :ok
-
-  # A wake that found the sprite gone re-provisioned a machine for the
-  # conversation that woke. Every other live conversation on the old row was
-  # on the same dead disk, so it follows onto the new one (ADR 0023 gate 5) —
-  # the alternative leaves each co-tenant pointing at a `terminated` row and
-  # provisioning yet another machine on its own next prompt, and the shared
-  # disk they were sharing ends up as N disks.
-  #
-  # `old_sandbox_id` is the row the waking conversation *used* to name; by the
-  # time this runs the waking conversation itself already names the new one,
-  # so it is not among the co-tenants.
-  #
-  # It follows only if it declared the same identity. The replacement was
-  # built from the *waking* conversation's environment and vault, so handing
-  # it to a co-tenant that names a different pair would run that conversation
-  # on another binding's environment files and vault material, and would make
-  # the machine depend on which conversation happened to wake first
-  # (#1636). One that declared something else keeps pointing at the retired
-  # row instead, which its own next wake reads as `:create_new` and builds
-  # from its own identity.
-  #
-  # Either way the disk is gone for all of them, so all of them are told. A
-  # co-tenant whose server is somehow alive holds a handle to the dead sprite;
-  # it is told the machine is gone, cuts any turn, and stops, so its next
-  # prompt takes the wake path. `runtime_session_id` is cleared for each: a
-  # fresh disk has no session to resume (#778).
-  defp move_cotenants(nil, _new_sandbox, _conv_id), do: :ok
-
-  defp move_cotenants(old_sandbox_id, %Sandbox{} = new_sandbox, conv_id)
-       when is_binary(old_sandbox_id) do
-    case _unsafe_list_cotenants_with_identity(old_sandbox_id, conv_id) do
-      [] ->
-        :ok
-
-      cotenants ->
-        identity = {new_sandbox.environment_id, new_sandbox.vault_id}
-
-        {following, on_their_own} =
-          Enum.split_with(cotenants, fn {_id, env_id, vault_id} ->
-            {env_id, vault_id} == identity
-          end)
-
-        follow_cotenants(Enum.map(following, &elem(&1, 0)), old_sandbox_id, new_sandbox.id)
-        strand_cotenants(Enum.map(on_their_own, &elem(&1, 0)), old_sandbox_id)
-        :ok
-    end
-  end
-
-  defp follow_cotenants([], _old_sandbox_id, _new_sandbox_id), do: :ok
-
-  defp follow_cotenants(ids, old_sandbox_id, new_sandbox_id) do
-    message =
-      "The sandbox this conversation was on is gone; it moved to a fresh one together " <>
-        "with the conversations that shared it. The transcript is kept, but the agent " <>
-        "starts a new session and will not remember the earlier turns."
-
-    MachineEvents.tell_cotenants(ids, old_sandbox_id, "replaced", "sprite_gone", message)
-
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    Repo.update_all(from(c in Conversation, where: c.id in ^ids),
-      set: [sandbox_id: new_sandbox_id, runtime_session_id: nil, updated_at: now]
-    )
-
-    Enum.each(ids, fn id ->
-      publish_stage(id, "sandbox", "done", %{
-        event: "replaced",
-        reason: "sprite_gone",
-        sandbox_id: new_sandbox_id,
-        message: message
-      })
-    end)
-  end
-
-  defp strand_cotenants([], _old_sandbox_id), do: :ok
-
-  defp strand_cotenants(ids, old_sandbox_id) do
-    message =
-      "The sandbox this conversation was on is gone. It named a different environment " <>
-        "or vault from the conversation that replaced the machine, so it did not follow " <>
-        "onto that one; its next prompt builds a machine from what it declares. The " <>
-        "transcript is kept, and the agent starts a new session."
-
-    MachineEvents.tell_cotenants(ids, old_sandbox_id, "reset", "sprite_gone", message)
-
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    # `sandbox_id` is left naming the retired row on purpose: `wake_conversation/2`
-    # reads a terminated row as `:create_new` and provisions from this
-    # conversation's own environment and vault.
-    Repo.update_all(from(c in Conversation, where: c.id in ^ids),
-      set: [runtime_session_id: nil, updated_at: now]
-    )
-
-    Enum.each(ids, fn id ->
-      publish_stage(id, "sandbox", "done", %{
-        event: "reset",
-        reason: "sprite_gone",
-        message: message
-      })
-    end)
-  end
-
-  defp mark_old_sandbox_terminated(nil), do: :ok
-
-  defp mark_old_sandbox_terminated(sandbox_id) do
-    case _unsafe_get_sandbox(sandbox_id) do
-      nil ->
-        :ok
-
-      sb when sb.status in ["terminated", "failed"] ->
-        :ok
-
-      sb ->
-        update_sandbox(sb, %{
-          status: "terminated",
-          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
     end
   end
 end
