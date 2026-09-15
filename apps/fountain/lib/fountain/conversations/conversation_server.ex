@@ -24,7 +24,8 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.Conversations.{Conversation, DetachedRequest, Egress}
   alias Fountain.Conversations.{Lifecycle, MachineEvents, McpServers, Output}
   alias Fountain.Conversations.{Pending, Provisioning, ProvisionWatchdog, Reapply}
-  alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnLaunch, TurnMachine}
+  alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, Termination, TurnLaunch}
+  alias Fountain.Conversations.TurnMachine
 
   # ── public api ────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # Size and image count, never the text. A prompt is the tenant's content —
     # frequently the most sensitive thing in the system — and #545 is explicit
     # that the trail records that a prompt happened, not what it said.
-    audit_lifecycle(conv_id, "conversation.prompted", result, opts, %{
+    Termination.audit_lifecycle(conv_id, "conversation.prompted", result, opts, %{
       "prompt_bytes" => byte_size(prompt),
       "image_count" => length(images)
     })
@@ -132,7 +133,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # turning prompt/interrupt/terminate into 500s and making
   # delete_conversation/1 return before its Repo.delete. :noproc and
   # shutdown-shaped exits are the server dying between whereis and call.
-  defp call_server(pid, msg) do
+  @doc false
+  def call_server(pid, msg) do
     GenServer.call(
       pid,
       msg,
@@ -195,7 +197,7 @@ defmodule Fountain.Conversations.ConversationServer do
           error
       end
 
-    audit_lifecycle(conv_id, "conversation.interrupted", result, opts)
+    Termination.audit_lifecycle(conv_id, "conversation.interrupted", result, opts)
     result
   end
 
@@ -292,91 +294,17 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @doc """
-  Terminate the conversation. If the GenServer is alive, it tears down the
-  sprite. If not, just mark the DB rows terminated so the user can still
-  clean up dead conversations after a server restart.
-
-  An enclosing database transaction is refused before contacting the actor or
-  updating rows, so teardown cannot escape a caller's rollback.
-
-  Named `terminate_conversation` rather than `terminate`: taking `opts` for
-  audit attribution (#545) would have made this `terminate/2`, which is the
-  OTP callback below. Two different meanings under one name in one module was
-  already a readability trap — `ConversationServer.terminate/1` (stop this
-  tenant's conversation) and `terminate/2` (OTP teardown) are unrelated — so
-  the client half gets the unambiguous name.
+  Terminate the conversation; see `Fountain.Conversations.Termination.terminate_conversation/2`.
+  The client half lives there since #2209; this delegate keeps every caller
+  and Mimic pin on `ConversationServer` valid.
   """
-  def terminate_conversation(conv_id, opts \\ []) do
-    if Fountain.Repo.in_transaction?() do
-      {:error, :provider_transaction_open}
-    else
-      # ownership: callers established this conversation's tenant. Cleanup must
-      # survive a blocked actor, failed provider teardown, or subsequent deletion.
-      case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv_id) do
-        {:ok, _} -> terminate_after_retirement(conv_id, opts)
-        {:error, :not_found} -> {:error, :not_running}
-        {:error, _} = error -> error
-      end
-    end
-  end
-
-  defp terminate_after_retirement(conv_id, opts) do
-    result =
-      case whereis(conv_id) do
-        nil ->
-          case Conversations._unsafe_get_conversation(conv_id) do
-            nil ->
-              {:error, :not_running}
-
-            conv ->
-              with {:ok, terminated} <-
-                     Conversations.update_conversation(conv, %{status: "terminated"}) do
-                Lifecycle.retire_terminated_sandbox(terminated, opts)
-              end
-          end
-
-        pid ->
-          call_server(pid, {:terminate_conv, Keyword.take(opts, [:actor, :request_ip])})
-      end
-
-    audit_lifecycle(conv_id, "conversation.terminated", result, opts)
-    result
-  end
+  defdelegate terminate_conversation(conv_id, opts \\ []), to: Termination
 
   @doc """
-  End the conversation but keep its computer: the conversation goes
-  `terminated` (past resuming, its transcript intact), the sandbox row and
-  the sprite behind it are left exactly as they are, and this server stops
-  holding them. The callback key this server minted is revoked on the way
-  out (`terminate/2`), so nothing on the sandbox can act as the retired
-  conversation.
-
-  This is how a teammate starts a fresh conversation on the same computer
-  (`Fountain.Team.open_fresh_conversation/3`): the successor conversation
-  takes the `sandbox_id`, and its first prompt reattaches through the
-  ordinary wake path — a new runtime session on the same disk.
-
-  `{:error, :busy}` while a turn runs on a **live** server; nothing is
-  interrupted. With no server alive that row is as likely an orphan (see
-  `Conversations.wake_for_interrupt/1`), so release proceeds. Unresolved
-  bounded execution answers `{:error, :execution_fenced}` either way: a
-  durable fact rather than an inference, and bounded (ADR 0046).
-
-  Audited as `conversation.released` unless `audit: false`.
+  End the conversation but keep its computer; see
+  `Fountain.Conversations.Termination.release_conversation/2`.
   """
-  def release_conversation(conv_id, opts \\ []) do
-    result =
-      case whereis(conv_id) do
-        nil ->
-          Conversations._unsafe_release_conversation(conv_id, actor_alive?: false)
-
-        pid ->
-          call_server(pid, :release_conv)
-      end
-
-    audit_lifecycle(conv_id, "conversation.released", result, opts)
-    result
-  end
+  defdelegate release_conversation(conv_id, opts \\ []), to: Termination
 
   @doc """
   Apply the conversation's current selection to the machine it is running on.
@@ -408,43 +336,6 @@ defmodule Fountain.Conversations.ConversationServer do
       nil -> {:ok, :no_server}
       pid -> call_server(pid, {:refresh_configuration, revision})
     end
-  end
-
-  # Records a lifecycle action against the conversation's owner.
-  #
-  # Only on success: an attempt against a conversation that is not running
-  # changed nothing, and a trail that logged it would show terminations that
-  # never happened.
-  #
-  # `audit: false` suppresses the row where a caller's own higher-level event
-  # already describes the action — `delete_conversation/2` and account
-  # deletion both cascade through `terminate/2`, and neither is a second thing
-  # the user asked for.
-  #
-  # The `_unsafe_` read is legitimate here under the rule in CLAUDE.md: these
-  # are GenServer client functions, reached only after a tenant-scoped fetch
-  # established ownership at the controller or LiveView, and the read exists
-  # solely to attribute the event to that same owner.
-  defp audit_lifecycle(conv_id, action, result, opts, metadata \\ %{}) do
-    if Keyword.get(opts, :audit, true) and result == :ok do
-      case Conversations._unsafe_get_conversation(conv_id) do
-        nil ->
-          :ok
-
-        conv ->
-          Fountain.Audit.record(%{
-            user_id: conv.user_id,
-            action: action,
-            resource_type: "conversation",
-            resource_id: conv_id,
-            actor: Keyword.get(opts, :actor, "self"),
-            request_ip: Keyword.get(opts, :request_ip),
-            metadata: metadata
-          })
-      end
-    end
-
-    :ok
   end
 
   # ── GenServer ─────────────────────────────────────────────────────────────
