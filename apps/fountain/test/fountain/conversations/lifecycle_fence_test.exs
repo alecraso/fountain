@@ -132,11 +132,11 @@ defmodule Fountain.Conversations.LifecycleFenceTest do
   end
 
   test "a refusal after adapter shutdown keeps the fenced machine for retry", ctx do
-    expect(Conversations, :_unsafe_fence_sandbox_for_teardown, fn sandbox, opts ->
-      Mimic.call_original(Conversations, :_unsafe_fence_sandbox_for_teardown, [sandbox, opts])
+    expect(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
+      Mimic.call_original(Lifecycle, :fence_sandbox_for_teardown, [sandbox, opts])
     end)
 
-    expect(Conversations, :_unsafe_fence_sandbox_for_teardown, fn _, _ -> {:error, :not_found} end)
+    expect(Lifecycle, :fence_sandbox_for_teardown, fn _, _ -> {:error, :not_found} end)
 
     expect(Managoat.Sandbox, :close_stdin, fn :adapter -> :ok end)
     expect(Managoat.Sandbox, :stop_command, fn :adapter -> :ok end)

@@ -32,7 +32,7 @@ defmodule Fountain.Conversations.Termination do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Conversation, Sandbox}
+  alias Fountain.Conversations.{Conversation, Lifecycle, Sandbox}
   alias Fountain.Repo
 
   @doc """
@@ -146,7 +146,7 @@ defmodule Fountain.Conversations.Termination do
 
       sandbox ->
         # ownership: the authorized conversation supplies this sandbox; the fence rechecks binding.
-        case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+        case Lifecycle.fence_sandbox_for_teardown(sandbox, opts) do
           {:ok, %{status: status}} when status in ["terminated", "failed"] ->
             :ok
 
@@ -212,7 +212,7 @@ defmodule Fountain.Conversations.Termination do
       # ownership: this sandbox belongs to the agent whose deletion is in
       # progress — established by destroy_homes_for_agent/2's own scoped
       # query above, or by a test's scoped fetch before calling here directly.
-      with {:ok, fenced} <- Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+      with {:ok, fenced} <- Lifecycle.fence_sandbox_for_teardown(sandbox, opts) do
         fenced = Fountain.Repo.preload(fenced, :conversations)
 
         # A remote self-call (not a bare local call): Mimic's copy renames the

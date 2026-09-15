@@ -6,6 +6,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
   alias Fountain.{Audit, Conversations, Principals}
   import Ecto.Query, only: [where: 3]
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.Termination
 
   setup do
@@ -87,7 +88,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
     # sandbox whose account survives is invisible to every SandboxReaper pass
     # and keeps burning a quota slot forever. ADR 0009 decision 2 keeps sprite
     # teardown best-effort for exactly this reason.
-    stub(Conversations, :_unsafe_fence_sandbox_for_teardown, fn _, _ ->
+    stub(Lifecycle, :fence_sandbox_for_teardown, fn _, _ ->
       {:error, :fixture_refusal}
     end)
 
@@ -158,9 +159,9 @@ defmodule Fountain.Accounts.DeletionFenceTest do
       :ok
     end)
 
-    stub(Conversations, :_unsafe_fence_sandbox_for_teardown, fn sandbox, opts ->
+    stub(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
       if sandbox.id == ctx.sandbox.id do
-        Mimic.call_original(Conversations, :_unsafe_fence_sandbox_for_teardown, [sandbox, opts])
+        Mimic.call_original(Lifecycle, :fence_sandbox_for_teardown, [sandbox, opts])
       else
         {:error, :late_fence_refused}
       end

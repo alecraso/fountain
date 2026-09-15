@@ -8,6 +8,7 @@ defmodule Fountain.Agents do
   alias Fountain.Agents.AgentVersion
   alias Fountain.Audit
   alias Fountain.Conversations.Conversation
+  alias Fountain.Conversations.Termination
   alias Fountain.Environments
   alias Fountain.Repo
 
@@ -311,7 +312,7 @@ defmodule Fountain.Agents do
     # names it — deletion would nilify the pointer and orphan the sprite.
     # Ownership: `agent` came from the caller's scoped fetch.
     with count when is_integer(count) <-
-           Fountain.Conversations._unsafe_destroy_homes_for_agent(agent.id, opts) do
+           Termination.destroy_homes_for_agent(agent.id, opts) do
       delete_agent_row(agent, opts)
     end
   end

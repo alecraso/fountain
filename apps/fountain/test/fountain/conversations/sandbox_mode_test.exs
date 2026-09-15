@@ -10,6 +10,7 @@ defmodule Fountain.Conversations.SandboxModeTest do
   alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
   alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.Wake
 
   setup do
@@ -126,12 +127,16 @@ defmodule Fountain.Conversations.SandboxModeTest do
   end
 
   test "terminating a conversation keeps the home", ctx do
+    # `_unsafe_sandbox_kept_on_terminate?/2` (dead code, no production caller,
+    # deleted with the retarget in #2259) wrapped two predicates: a persistent
+    # home is always kept, and anything else is kept only if another live
+    # conversation still holds it. Assert each half directly.
     {:ok, conv} = launch(ctx)
-    assert Conversations._unsafe_sandbox_kept_on_terminate?(conv.sandbox_id, conv.id)
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).mode == "persistent"
 
     ephemeral = insert_sandbox(user_id: ctx.user.id, status: "ready", mode: "ephemeral")
     alone = insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: ephemeral)
-    refute Conversations._unsafe_sandbox_kept_on_terminate?(ephemeral.id, alone.id)
+    refute Lifecycle._unsafe_sandbox_held_by_other?(ephemeral.id, alone.id)
   end
 
   test "a wake onto a fresh sandbox keeps the home a home", ctx do

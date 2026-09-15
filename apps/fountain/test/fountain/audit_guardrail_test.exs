@@ -39,6 +39,7 @@ defmodule Fountain.AuditGuardrailTest do
   alias Fountain.Conversations.ConversationServer
   alias Fountain.Conversations.Interruption
   alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.Reapply
   alias Fountain.Conversations.Termination
   alias Fountain.Conversations.Wake
@@ -264,7 +265,7 @@ defmodule Fountain.AuditGuardrailTest do
           {Vaults, :delete_vault, 2},
           {InferenceCredentials, :put_credential, 5},
           {Launch, :start_conversation, 2},
-          {Conversations, :_unsafe_fence_sandbox_for_teardown, 2},
+          {Lifecycle, :fence_sandbox_for_teardown, 2},
           {Fountain.Accounts.Deletion, :destroy_sprites, 2},
           {Conversations, :delete_conversation, 2},
           {Webhooks, :create_endpoint, 3},
@@ -626,7 +627,7 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_teardown_fence(user) do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
-    {:ok, _} = Conversations._unsafe_fence_sandbox_for_teardown(sandbox)
+    {:ok, _} = Lifecycle.fence_sandbox_for_teardown(sandbox)
   end
 
   def do_sandbox_reset(user) do

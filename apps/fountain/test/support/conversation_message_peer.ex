@@ -3,7 +3,7 @@ defmodule Fountain.Test.ConversationMessagePeer do
   use GenServer
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{ConversationServer, ExecutionGuard, Termination}
+  alias Fountain.Conversations.{ConversationServer, ExecutionGuard, Lifecycle, Termination}
 
   # Runs only in disposable peer VMs. The real client and receiver communicate
   # over distribution; the database fence is the observation point, so this
@@ -43,10 +43,10 @@ defmodule Fountain.Test.ConversationMessagePeer do
   end
 
   def init(state) do
-    start_mimic([Conversations])
+    start_mimic([Conversations, Lifecycle])
     Mimic.stub(Conversations, :_unsafe_get_sandbox, fn id -> %{id: id} end)
 
-    Mimic.stub(Conversations, :_unsafe_fence_sandbox_for_teardown, fn sandbox, opts ->
+    Mimic.stub(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
       :persistent_term.put({__MODULE__, :fence}, {sandbox.id, opts})
       {:error, :sandbox_unavailable}
     end)

@@ -5,6 +5,7 @@ defmodule Fountain.Conversations.TerminationFallbackTest do
   alias Fountain.{Audit, Conversations}
   alias Fountain.Conversations.ConversationServer
   alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.Termination
 
   setup do
@@ -35,10 +36,10 @@ defmodule Fountain.Conversations.TerminationFallbackTest do
   end
 
   test "an attachment that wins before the fence keeps the sandbox", ctx do
-    expect(Conversations, :_unsafe_fence_sandbox_for_teardown, fn sandbox, opts ->
+    expect(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
       assert {:ok, successor} = attach(ctx)
       assert successor.sandbox_id == sandbox.id
-      Mimic.call_original(Conversations, :_unsafe_fence_sandbox_for_teardown, [sandbox, opts])
+      Mimic.call_original(Lifecycle, :fence_sandbox_for_teardown, [sandbox, opts])
     end)
 
     assert :ok = terminate(ctx)
@@ -49,7 +50,7 @@ defmodule Fountain.Conversations.TerminationFallbackTest do
   end
 
   test "a fence refusal leaves the machine available and records no completed termination", ctx do
-    expect(Conversations, :_unsafe_fence_sandbox_for_teardown, fn _, _ ->
+    expect(Lifecycle, :fence_sandbox_for_teardown, fn _, _ ->
       {:error, :sandbox_unavailable}
     end)
 

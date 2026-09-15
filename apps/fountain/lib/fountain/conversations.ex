@@ -90,12 +90,6 @@ defmodule Fountain.Conversations do
   def _unsafe_get_sandbox(id), do: Repo.get(Sandbox, id)
   def _unsafe_get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
-  # The predicate moved to `Fountain.Conversations.Lifecycle` with the
-  # teardown fence it decides for (#2258; ADR 0023's "is anyone else on this
-  # machine" rule has one home); this keeps the name every other caller
-  # (`reapply.ex`, `conversation_server.ex`, the tests) calls.
-  defdelegate _unsafe_sandbox_held_by_other?(sandbox_id, conv_id), to: Lifecycle
-
   @doc """
   Load any tenant's conversation for the admin support view (#446).
 
@@ -145,22 +139,6 @@ defmodule Fountain.Conversations do
         }
     )
   end
-
-  @doc """
-  Support teardown of any tenant's sandbox, from the admin panel. Moved to
-  `Fountain.Conversations.Termination.reap_sandbox/1` in #2257 (#2255,
-  tranche 2); kept here under the old name so every existing caller works
-  unchanged.
-  """
-  defdelegate _unsafe_reap_sandbox(sandbox_id), to: Termination, as: :reap_sandbox
-
-  @doc """
-  Reap every active sandbox belonging to `user_id`. Moved to
-  `Fountain.Conversations.Termination.reap_all_for_user/1` in #2257 (#2255,
-  tranche 2); kept here under the old name so every existing caller works
-  unchanged.
-  """
-  defdelegate _unsafe_reap_all_for_user(user_id), to: Termination, as: :reap_all_for_user
 
   def create_sandbox(attrs) do
     %Sandbox{}
@@ -1137,16 +1115,6 @@ defmodule Fountain.Conversations do
     |> notify_parent_change()
   end
 
-  # Row write moved to `Fountain.Conversations.Termination` in #2268 (one
-  # owner per lifecycle verb, #2175), alongside `_unsafe_finish_conversation_termination/2`
-  # below; this keeps the name `ConversationServer` and the release fence
-  # tests call. `defdelegate` cannot carry the default `opts` value, so this
-  # is a one-line wrapper instead.
-  # ownership: unchanged from the caller's own ownership requirement on this
-  # function; the wrapper only renames the target module.
-  def _unsafe_release_conversation(conversation_id, opts \\ []),
-    do: Termination._unsafe_release_conversation(conversation_id, opts)
-
   defp write_turn_parent(turn, mode, attrs) do
     # ownership: the calling actor/recovery path already owns this exact turn.
     result =
@@ -1165,13 +1133,6 @@ defmodule Fountain.Conversations do
 
     result
   end
-
-  # Row write moved to `Fountain.Conversations.Termination` in #2268 (one
-  # owner per lifecycle verb, #2175); this keeps the name
-  # `ConversationServer.finish_termination/2` and the binding isolation test
-  # call.
-  defdelegate _unsafe_finish_conversation_termination(conversation_id, sandbox_id),
-    to: Termination
 
   # The lock turn admission takes, so a reapply and a turn start cannot
   # interleave on one machine. `nil` is a conversation whose machine has not
@@ -2727,20 +2688,6 @@ defmodule Fountain.Conversations do
   defp where_sandbox_environment(query, id), do: from(s in query, where: s.environment_id == ^id)
 
   @doc """
-  Whether terminating `conv_id` leaves its sandbox standing: a home is never
-  torn down by one conversation ending (ADR 0023 step 5), and neither is a
-  machine another live conversation still holds. Both `ConversationServer`
-  terminate paths ask this. `_unsafe_`: the caller owns `conv_id`.
-  """
-  def _unsafe_sandbox_kept_on_terminate?(sandbox_id, conv_id)
-      when is_binary(sandbox_id) and is_binary(conv_id) do
-    case _unsafe_get_sandbox(sandbox_id) do
-      %Sandbox{mode: "persistent"} -> true
-      _ -> _unsafe_sandbox_held_by_other?(sandbox_id, conv_id)
-    end
-  end
-
-  @doc """
   Every live home built on `environment_id`, across the agents that name it.
   `_unsafe_`: the caller owns the environment, and a home carries the same
   `user_id` as the environment its identity names.
@@ -2824,30 +2771,6 @@ defmodule Fountain.Conversations do
       end
     end)
   end
-
-  @doc """
-  Delegates to `Termination.destroy_homes_for_agent/2`, moved there in #2256.
-  """
-  defdelegate _unsafe_destroy_homes_for_agent(agent_id, opts \\ []),
-    to: Termination,
-    as: :destroy_homes_for_agent
-
-  @doc """
-  Delegates to `Termination.destroy_home/2`, moved there in #2256.
-  """
-  defdelegate _unsafe_destroy_home(sandbox, opts \\ []),
-    to: Termination,
-    as: :destroy_home
-
-  # The fence and its helpers moved to `Fountain.Conversations.Lifecycle`
-  # (#2258): the machine-policy module that already owns idle/lifetime
-  # policy, park and destroy is the fence's home too, and one of its own
-  # callers. This keeps the name every other caller
-  # (`Termination.retire_terminated_sandbox/2`, `Accounts.Deletion`,
-  # `conversation_server.ex`, the tests) calls.
-  defdelegate _unsafe_fence_sandbox_for_teardown(sandbox, opts \\ []),
-    to: Lifecycle,
-    as: :fence_sandbox_for_teardown
 
   @doc """
   Reset a home: destroy the agent's machine so the next launch on its

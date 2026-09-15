@@ -33,7 +33,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
     turn = insert_turn(c.conv, status: "running")
 
     assert {:error, :busy} =
-             Conversations._unsafe_release_conversation(c.conv.id, actor_alive?: true)
+             Termination._unsafe_release_conversation(c.conv.id, actor_alive?: true)
 
     assert Conversations._unsafe_get_conversation!(c.conv.id).status == "idle"
     assert Repo.reload!(turn).status == "running"
@@ -46,10 +46,10 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
     # so it refuses either way — and it is bounded, because the coordinator
     # writes an obligation off once nothing can resolve it.
     assert {:error, :execution_fenced} =
-             Conversations._unsafe_release_conversation(c.conv.id, actor_alive?: false)
+             Termination._unsafe_release_conversation(c.conv.id, actor_alive?: false)
 
     assert {:error, :execution_fenced} =
-             Conversations._unsafe_release_conversation(c.conv.id, actor_alive?: true)
+             Termination._unsafe_release_conversation(c.conv.id, actor_alive?: true)
 
     assert Repo.get!(TurnExecution, execution.id).state == "ready"
     assert Conversations._unsafe_get_conversation!(c.conv.id).status == "idle"

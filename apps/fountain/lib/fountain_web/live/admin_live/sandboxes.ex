@@ -22,6 +22,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
 
   alias Fountain.{Accounts, Billing, Conversations}
   alias Fountain.Billing.SandboxUsage
+  alias Fountain.Conversations.Termination
 
   @impl true
   def mount(_params, _session, socket) do
@@ -42,7 +43,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
 
   @impl true
   def handle_event("reap_sandbox", %{"id" => id}, socket) do
-    case Conversations._unsafe_reap_sandbox(id) do
+    case Termination.reap_sandbox(id) do
       {:ok, outcome} ->
         Fountain.Audit.record_admin(%{
           actor_user_id: socket.assigns.current_user.id,

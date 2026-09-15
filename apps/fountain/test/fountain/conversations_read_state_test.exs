@@ -3,6 +3,7 @@ defmodule Fountain.ConversationsReadStateTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Termination
   alias Fountain.Conversations.Wake
 
   # mark_read/2 and the last_active_at / unread reporting it feeds.
@@ -119,12 +120,12 @@ defmodule Fountain.ConversationsReadStateTest do
     end
   end
 
-  describe "_unsafe_reap_sandbox/1" do
+  describe "Termination.reap_sandbox/1" do
     test "marks a ready sandbox with no live server terminated; conversations untouched" do
       sandbox = insert_sandbox(status: "ready")
       conv = insert_conversation(sandbox: sandbox, user_id: sandbox.user_id)
 
-      assert {:ok, :released} = Conversations._unsafe_reap_sandbox(sandbox.id)
+      assert {:ok, :released} = Termination.reap_sandbox(sandbox.id)
 
       reloaded = Conversations._unsafe_get_sandbox!(sandbox.id)
       assert reloaded.status == "terminated"
@@ -134,11 +135,11 @@ defmodule Fountain.ConversationsReadStateTest do
 
     test "is a no-op on an already-terminal sandbox" do
       sandbox = insert_sandbox(status: "terminated")
-      assert {:ok, :already_terminal} = Conversations._unsafe_reap_sandbox(sandbox.id)
+      assert {:ok, :already_terminal} = Termination.reap_sandbox(sandbox.id)
     end
 
     test "returns not_found for an unknown id" do
-      assert {:error, :not_found} = Conversations._unsafe_reap_sandbox(Ecto.UUID.generate())
+      assert {:error, :not_found} = Termination.reap_sandbox(Ecto.UUID.generate())
     end
   end
 

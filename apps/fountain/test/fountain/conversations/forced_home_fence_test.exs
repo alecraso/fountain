@@ -51,7 +51,7 @@ defmodule Fountain.Conversations.ForcedHomeFenceTest do
     end)
 
     expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
-    assert :ok = Conversations._unsafe_destroy_home(ctx.home)
+    assert :ok = Termination.destroy_home(ctx.home)
     assert Repo.reload!(ctx.conv).status == "terminated"
   end
 
@@ -64,7 +64,7 @@ defmodule Fountain.Conversations.ForcedHomeFenceTest do
                Repo.transaction(fn ->
                  case unquote(operation) do
                    :agent -> Agents.delete_agent(ctx.agent)
-                   :home -> Conversations._unsafe_destroy_home(ctx.home)
+                   :home -> Termination.destroy_home(ctx.home)
                  end
                end)
 

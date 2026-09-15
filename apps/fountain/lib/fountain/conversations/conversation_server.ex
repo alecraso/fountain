@@ -1222,7 +1222,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:release_conv, _from, state) do
-    case Conversations._unsafe_release_conversation(state.conversation_id) do
+    case Termination._unsafe_release_conversation(state.conversation_id) do
       :ok ->
         state = drop_connection(state, "released")
         Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
@@ -1727,7 +1727,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
       sandbox ->
         # ownership: the conditional fence rechecks this actor's parent and owner.
-        Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts)
+        Lifecycle.fence_sandbox_for_teardown(sandbox, opts)
     end
   end
 
@@ -1765,7 +1765,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp finish_termination(state, metadata) do
     # Ownership: this actor's IDs came from init; the write rechecks its binding.
     result =
-      case Conversations._unsafe_finish_conversation_termination(
+      case Termination._unsafe_finish_conversation_termination(
              state.conversation_id,
              state.sandbox_id
            ) do

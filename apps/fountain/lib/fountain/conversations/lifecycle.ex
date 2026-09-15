@@ -463,15 +463,13 @@ defmodule Fountain.Conversations.Lifecycle do
 
       true ->
         with %Conversations.Sandbox{} = sandbox <- Conversations._unsafe_get_sandbox(sandbox_id),
-             # `lifecycle_fence_test.exs` pins this fence through `Conversations`
+             # `lifecycle_fence_test.exs` pins this fence through `Lifecycle`
              # with Mimic, to simulate a race on the second (recheck) call from
-             # `destroy/4` below. Stage 4 (#2259) retargets that test and this
-             # call together; once it does, this must become a self-call
-             # written `__MODULE__.fence_sandbox_for_teardown(...)` so a Mimic
-             # stub on `Lifecycle` still intercepts it, as
+             # `destroy/4` below. A self-call written `__MODULE__.fence_sandbox_for_teardown(...)`
+             # keeps that stub able to intercept it, as
              # `Interruption.interrupt_dead/1` does for `wake_for_interrupt/1`.
              {:ok, _} <-
-               Conversations._unsafe_fence_sandbox_for_teardown(sandbox,
+               __MODULE__.fence_sandbox_for_teardown(sandbox,
                  actor: "system:conversation_server",
                  reason: to_string(reason)
                ) do
