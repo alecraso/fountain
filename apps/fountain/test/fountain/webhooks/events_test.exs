@@ -61,13 +61,55 @@ defmodule Fountain.Webhooks.EventsTest do
     Regex.scan(regex, content) |> Enum.map(fn [_, stage | _] -> stage end)
   end
 
-  # {source, stage} pairs among @sources where the stage-only count exceeds
-  # the literal-pair count for that same stage in that same file — i.e. a
-  # call site in `source` publishes `stage` with a status @call_site cannot
-  # read. Kept alongside the file's content, because resolving *which*
-  # statuses that computed branch can produce means reading the file, not
-  # just knowing the stage.
-  defp computed_status_sites do
+  # Every call site whose status is not a literal string, named one at a
+  # time: `{source, stage, regex}`. Each regex reads the actual
+  # status-producing expression at that site, not just "the file mentions
+  # this word somewhere" — a same-file substring check accepted
+  # `row.status == "completed"` (turn_machine.ex) and `mode: "persistent"`
+  # (home_checkpoint.ex) as if they were statuses, because both strings sit
+  # in files that also have a computed `turn`/`checkpoint` call site. Every
+  # entry here is checked against its file for real by
+  # "every @computed_sites entry's regex resolves at least one status"
+  # below, and "every computed call site is covered by @computed_sites"
+  # proves the table has no fourth, unlisted entry to fall out of date.
+  @computed_sites [
+    # `publish(sandbox, "done", meta)` / `publish(sandbox, "failed", meta)` —
+    # the private helper `HomeCheckpoint.publish/3` that every
+    # `publish_stage(_, "checkpoint", state, _)` call site routes through.
+    {"lib/fountain/conversations/home_checkpoint.ex", "checkpoint",
+     ~r/publish\(\w+,\s*"([a-z_]+)"/},
+    # `"turn",\n  # comment\n  if(row.status == "completed", do: "done", else: "failed")`.
+    # Only the `do:`/`else:` branch values are captured; the `"completed"`
+    # compared against is not one of them.
+    {"lib/fountain/conversations/turn_machine.ex", "turn",
+     ~r/"turn",\s*(?:#[^\n]*\n\s*)?if\(row\.status == "completed", do: "([a-z_]+)", else: "([a-z_]+)"\)/},
+    # `status = if updated_turn.status == "failed", do: "failed", else: "interrupted"`,
+    # bound just above `publish_stage(turn.conversation_id, "turn", status, metadata)`.
+    {"lib/fountain/conversations.ex", "turn",
+     ~r/status = if updated_turn\.status == "failed", do: "([a-z_]+)", else: "([a-z_]+)"/}
+  ]
+
+  # Every {stage, status} a @computed_sites entry's regex actually resolves,
+  # by reading its file and taking every capture group of every match.
+  defp computed_pairs do
+    for {source, stage, regex} <- @computed_sites,
+        path = Path.join(app_dir(), source),
+        File.exists?(path),
+        content = File.read!(path),
+        match <- Regex.scan(regex, content),
+        status <- Enum.drop(match, 1),
+        do: {stage, status}
+  end
+
+  # {source, stage} pairs among @sources with a call site whose status
+  # @call_site could not read literally, and no @computed_sites entry for
+  # that exact file and stage. Non-empty means the table has fallen behind
+  # the source: a new (or moved) computed-status call site would otherwise
+  # widen nothing, silently — the pair it introduces just fails the stale
+  # check below, same as any other unresolved status.
+  defp uncovered_computed_call_sites do
+    covered = MapSet.new(@computed_sites, fn {source, stage, _regex} -> {source, stage} end)
+
     for source <- @sources,
         path = Path.join(app_dir(), source),
         File.exists?(path),
@@ -76,49 +118,22 @@ defmodule Fountain.Webhooks.EventsTest do
         all = Enum.frequencies(stage_matches(@stage_only, content)),
         {stage, count} <- all,
         count > Map.get(literal, stage, 0),
-        do: {source, stage, content}
-  end
-
-  # A catalogue (stage, status) pair may be producible without a literal
-  # (stage, status) pair in `published_pairs/0`, but only when the SAME file
-  # that has a computed-status call site for `stage` also spells `status`
-  # out as a literal string somewhere in it. This is deliberately scoped to
-  # one (stage, status) pair at a time, not the whole stage: a status the
-  # catalogue names that no computed branch anywhere ever writes still
-  # fails, even when that stage has some other computed call site.
-  #
-  # What resolves each computed site on main, as of this writing:
-  #   - home_checkpoint.ex's `publish(sandbox, "done"/"failed", meta)`
-  #     resolves conversation.checkpoint.done and .failed
-  #   - turn_machine.ex's
-  #     `if(row.status == "completed", do: "done", else: "failed")`
-  #     resolves conversation.turn.done and .failed
-  #   - conversations.ex's
-  #     `status = if updated_turn.status == "failed", do: "failed", else:
-  #     "interrupted"` resolves conversation.turn.failed and .interrupted
-  # `turn.done` and `turn.failed` are also literally published elsewhere
-  # (conversation_server.ex, turn_machine.ex), so this is redundant for
-  # `turn` today; it is load-bearing for `checkpoint`, which has no other
-  # call site.
-  defp resolvable_by_computed_status?(stage, status) do
-    literal = ~s("#{status}")
-
-    Enum.any?(computed_status_sites(), fn {_source, s, content} ->
-      s == stage and String.contains?(content, literal)
-    end)
+        not MapSet.member?(covered, {source, stage}),
+        do: {source, stage}
   end
 
   # The stale-entry check as a pure function of the catalogue and the pairs
   # `published_pairs/0` found, so a test can hand it a deliberately mutated
-  # catalogue without touching `Events` itself.
+  # catalogue without touching `Events` itself. No fallback: a catalogue
+  # type must be an exact literal pair, or an exact pair resolved from
+  # `@computed_sites`.
   defp stale_catalogue_entries(catalogue, published) do
-    produced = MapSet.new(published, fn {s, st} -> Events.type(s, st) end)
+    produced = MapSet.new(published ++ computed_pairs(), fn {s, st} -> Events.type(s, st) end)
 
     for {stage, statuses} <- catalogue,
         status <- statuses,
         type = Events.type(stage, status),
         not MapSet.member?(produced, type),
-        not resolvable_by_computed_status?(stage, status),
         do: type
   end
 
@@ -230,9 +245,44 @@ defmodule Fountain.Webhooks.EventsTest do
            "these catalogue entries match no publish_stage call site: #{inspect(stale)}"
   end
 
-  # Three ways `stale_catalogue_entries/2` must not be fooled, run against
-  # the real `published_pairs()` but a deliberately mutated catalogue, so
-  # none of them touch `Fountain.Webhooks.Events` itself.
+  test "every computed-status call site is covered by a @computed_sites entry" do
+    # Guards the table itself: a fourth computed-status call site (a new
+    # file, or an existing one gaining a second) that nobody added an entry
+    # for would otherwise just fail the stale check silently on whatever
+    # status it happens to produce, indistinguishable from a real typo.
+    uncovered = uncovered_computed_call_sites()
+
+    assert uncovered == [], """
+    These files have a publish_stage/4 call site whose status is not a
+    literal, and no @computed_sites entry for that file and stage:
+
+      #{Enum.map_join(uncovered, "\n  ", &inspect/1)}
+
+    Add an entry to @computed_sites in this file whose regex captures every
+    status that call site can actually produce.
+    """
+  end
+
+  test "every @computed_sites entry's regex resolves at least one status" do
+    # The other half: an entry whose regex stopped matching (the source
+    # moved, a rename, reformatted code) would silently resolve nothing,
+    # which is indistinguishable from the entry not existing — except that
+    # `uncovered_computed_call_sites/0` above would no longer catch it,
+    # since the {source, stage} pair still looks "covered".
+    dead =
+      for {source, stage, regex} <- @computed_sites,
+          path = Path.join(app_dir(), source),
+          content = File.exists?(path) && File.read!(path),
+          matches = if(content, do: Regex.scan(regex, content), else: []),
+          matches == [],
+          do: {source, stage}
+
+    assert dead == [], "these @computed_sites entries resolved no status: #{inspect(dead)}"
+  end
+
+  # Ways `stale_catalogue_entries/2` must not be fooled, run against the
+  # real `published_pairs()` but a deliberately mutated catalogue, so none
+  # of them touch `Fountain.Webhooks.Events` itself.
   describe "the stale-entry check does not over-forgive a computed status" do
     defp with_extra_status(stage, status) do
       Enum.map(Events.catalogue(), fn
@@ -266,6 +316,27 @@ defmodule Fountain.Webhooks.EventsTest do
 
       assert stale_catalogue_entries(catalogue, published_pairs()) == [
                "conversation.totally_bogus_stage_2294.done"
+             ]
+    end
+
+    test "turn.completed still fails, even though the literal string sits in the emitter file" do
+      # `row.status == "completed"` is the comparison, never the value
+      # `publish_stage/4` is called with — the SAME-file substring check
+      # this replaced would have let it through.
+      catalogue = with_extra_status("turn", "completed")
+
+      assert stale_catalogue_entries(catalogue, published_pairs()) == [
+               "conversation.turn.completed"
+             ]
+    end
+
+    test "checkpoint.persistent still fails, even though the literal string sits in the emitter file" do
+      # `mode: "persistent"` is a sandbox mode guard in `on_park/1`, never a
+      # status `publish_stage/4` is called with.
+      catalogue = with_extra_status("checkpoint", "persistent")
+
+      assert stale_catalogue_entries(catalogue, published_pairs()) == [
+               "conversation.checkpoint.persistent"
              ]
     end
   end
