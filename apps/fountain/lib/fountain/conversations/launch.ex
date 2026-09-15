@@ -91,14 +91,14 @@ defmodule Fountain.Conversations.Launch do
              user_id,
              agent
            ),
-         {:ok, mode} <- Conversations.resolve_sandbox_mode(attrs["sandbox_mode"], agent),
+         {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
          {:ok, api_access} <-
-           Conversations.resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
-         :ok <- Conversations.check_sandbox_api_name(api_access, attrs["sprite_name"]),
+           resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
+         :ok <- check_sandbox_api_name(api_access, attrs["sprite_name"]),
          {:ok, perm_policy} <-
            Conversations.resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <-
-           Conversations.resolve_parent_id(attrs["parent_conversation_id"], user_id),
+           resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
          {:ok, inference_source} <-
@@ -195,8 +195,8 @@ defmodule Fountain.Conversations.Launch do
           result = Conversations._unsafe_get_conversation!(conv.id)
 
           if result.parent_conversation_id do
-            root_id = Conversations.get_root_conversation_id(result.id)
-            Conversations.broadcast_graph_update(root_id)
+            root_id = get_root_conversation_id(result.id)
+            broadcast_graph_update(root_id)
           end
 
           Conversations.broadcast_sidebar_update(user_id)
@@ -262,6 +262,88 @@ defmodule Fountain.Conversations.Launch do
     end
   end
 
+  defp resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
+    do: {:ok, "owner"}
+
+  defp resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
+  defp resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
+
+  # ADR 0045's machine isolation is a claim about a machine, not about a row:
+  # a `none` conversation must be alone on a fresh one. `Launch.check_sandbox_api_attach/2`
+  # answers that by asking which conversations point at `sandbox.id`, so it can
+  # only see machines Fountain knows it is sharing. A caller-supplied name can
+  # name a machine that already exists — the provider adopts it rather than
+  # failing — so the two cannot be asked for together (#1632).
+  defp check_sandbox_api_name("none", name) when is_binary(name) and name != "",
+    do: {:error, :invalid_sandbox_api_access}
+
+  defp check_sandbox_api_name(_access, _name), do: :ok
+
+  # The launch's sandbox mode: the agent's default unless the launch names
+  # one (ADR 0023). Not an allowlisted override like `environment_id` — the
+  # mode is not a security boundary; the tenant scope on the sandbox is.
+  defp resolve_sandbox_mode(mode, %Agents.Agent{sandbox_mode: default}) when mode in [nil, ""],
+    do: {:ok, default || "ephemeral"}
+
+  defp resolve_sandbox_mode(mode, _agent) when is_binary(mode) do
+    if mode in Sandbox.modes(), do: {:ok, mode}, else: {:error, :invalid_sandbox_mode}
+  end
+
+  defp resolve_sandbox_mode(_mode, _agent), do: {:error, :invalid_sandbox_mode}
+
+  # `parent_conversation_id` arrives from a client-supplied header
+  # (X-Fountain-Parent-Conversation-Id). The changeset only enforced an FK, so
+  # any conversation id in the system was accepted — including another tenant's,
+  # which grafted this conversation onto their spawn tree and theirs onto ours.
+  #
+  # A legitimate spawn comes from inside a sprite holding that tenant's own
+  # token, so ownership always matches; a mismatch is a bug or an attack.
+  defp resolve_parent_id(nil, _user_id), do: {:ok, nil}
+  defp resolve_parent_id("", _user_id), do: {:ok, nil}
+
+  defp resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
+    # A header that is not a uuid is not a conversation anyone owns.
+    # `get_conversation/2` reads it as nil rather than raising (#1679), so this
+    # stays the plain lookup it was.
+    case Conversations.get_conversation(id, user_id) do
+      nil -> {:error, :parent_not_found}
+      conv -> {:ok, conv.id}
+    end
+  end
+
+  # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
+  # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
+  defp get_root_conversation_id(conversation_id) do
+    sql = """
+    WITH RECURSIVE ancestors(id, parent_conversation_id) AS (
+      SELECT id, parent_conversation_id FROM conversations WHERE id = $1
+      UNION ALL
+      SELECT c.id, c.parent_conversation_id FROM conversations c
+      INNER JOIN ancestors a ON c.id = a.parent_conversation_id
+    )
+    SELECT id FROM ancestors WHERE parent_conversation_id IS NULL LIMIT 1
+    """
+
+    {:ok, uuid} = Ecto.UUID.dump(conversation_id)
+
+    case Repo.query!(sql, [uuid]) do
+      %{rows: [[root_id]]} ->
+        {:ok, str_id} = Ecto.UUID.load(root_id)
+        str_id
+
+      _ ->
+        conversation_id
+    end
+  end
+
+  defp broadcast_graph_update(root_id) do
+    Phoenix.PubSub.broadcast(
+      Fountain.PubSub,
+      "conversations:graph:#{root_id}",
+      {:graph_updated}
+    )
+  end
+
   # A conversation on a machine the caller already has (ADR 0023 gate 3).
   #
   # The launch is resolved exactly as a fresh one — agent, vault, environment,
@@ -303,7 +385,7 @@ defmodule Fountain.Conversations.Launch do
          {:ok, perm_policy} <-
            Conversations.resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <-
-           Conversations.resolve_parent_id(attrs["parent_conversation_id"], user_id),
+           resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
          {:ok, inference_source} <-
@@ -365,6 +447,10 @@ defmodule Fountain.Conversations.Launch do
     end
   end
 
+  defp reserve_inference(conv) do
+    InferenceBinding.reserve(conv, Source.load(conv.inference_source))
+  end
+
   # Commit policy with the new conversation, before analytics, audit or prompt
   # delivery. Lock its owners and recheck ceilings after the early preflight.
   defp create_attached_conversation(attrs, request, opts) do
@@ -412,7 +498,7 @@ defmodule Fountain.Conversations.Launch do
         with :ok <- check_attachable(sandbox, agent, attrs.vault_id, attrs.environment_id),
              {:ok, limits} <- Conversations.resolve_admission_limits(attrs.user_id, request),
              {:ok, conv} <- Conversations.insert_conversation_row(attrs),
-             :ok <- Conversations.reserve_inference(conv),
+             :ok <- reserve_inference(conv),
              {:ok, allowance} <-
                conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
           {conv, allowance}
@@ -644,7 +730,7 @@ defmodule Fountain.Conversations.Launch do
                  Conversations.insert_conversation_row(
                    Map.put(conversation_attrs, :sandbox_id, sandbox.id)
                  ),
-               :ok <- Conversations.reserve_inference(conv),
+               :ok <- reserve_inference(conv),
                {:ok, allowance} <-
                  conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
             {:ok, {sandbox, conv, allowance}}
