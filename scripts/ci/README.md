@@ -28,7 +28,7 @@ name in a red build says which toolchain to look at:
 | **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
 | **python-sdk** (×2) | The Python SDK on 3.9 and 3.13, conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
 | **typescript-sdk** (×2) | The TypeScript SDK on the minimum Node in `engines.node` (20.19.0) and on 24, conformance fixtures, and the packed tarball installed into a throwaway consumer project |
-| **swift-sdk** (×2) | The Swift SDK on ubuntu-24.04 and macos-15, with its own conformance step. It runs no `sdk/conformance/lint.py` |
+| **swift-sdk** (×2) | The Swift SDK on ubuntu-24.04 (upstream Swift 6.1.3) and macos-15 (Apple Swift 6.1.2 from the installed Xcode 16.4), with its own conformance step. Both satisfy the package's Swift 6.1 minimum. Update the Xcode pin when the runner image retires it. It runs no `sdk/conformance/lint.py` |
 | **cli-plugins** | Both Go modules (`cli/` and `apps/fountain_buzz/cli`) with vet and gofmt, the Hermes plugin, and the deployed-instance runner tests under `deployed/test/` |
 | **core-distribution** | Builds with `BUNDLE_EXTENSIONS=false`, boots and migrates a fresh database, probes health, and checks that extension applications and API paths are absent; then rebuilds with extensions to check their inclusion. Skips docs-only changes and reused trees |
 | **compose-fresh-clone** | `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file |

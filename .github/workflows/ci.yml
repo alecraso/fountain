@@ -1137,10 +1137,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
-      - name: Set up Swift
+      - name: Set up Swift on Linux
+        if: ${{ runner.os == 'Linux' }}
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
-          swift-version: "6.1"
+          swift-version: "6.1.3"
+
+      # Xcode 16.4 already supplies Apple Swift 6.1.2, satisfying the package's
+      # 6.1 minimum. Pin the Xcode selection and avoid downloading a second
+      # compiler. Linux exercises the upstream Swift 6.1.3 toolchain above.
+      - name: Select Apple Swift on macOS
+        if: ${{ runner.os == 'macOS' }}
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+        run: |
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          dirname "$(xcrun --find swift)" >> "$GITHUB_PATH"
+          xcrun swift --version
 
       - name: Check Swift SDK version
         run: |
