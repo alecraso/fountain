@@ -15,6 +15,7 @@ defmodule Fountain.ConversationTreeScopingTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Launch
 
   setup do
     stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
@@ -29,7 +30,7 @@ defmodule Fountain.ConversationTreeScopingTest do
       agent = insert_agent(user_id: attacker.id)
 
       assert {:error, :parent_not_found} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => attacker.id,
                  "parent_conversation_id" => victim_conv.id
@@ -41,7 +42,7 @@ defmodule Fountain.ConversationTreeScopingTest do
       agent = insert_agent(user_id: user.id)
 
       assert {:error, :parent_not_found} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "parent_conversation_id" => Ecto.UUID.generate()
@@ -54,7 +55,7 @@ defmodule Fountain.ConversationTreeScopingTest do
       agent = insert_agent(user_id: user.id)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "parent_conversation_id" => parent.id
@@ -68,7 +69,7 @@ defmodule Fountain.ConversationTreeScopingTest do
       agent = insert_agent(user_id: user.id)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       assert conv.parent_conversation_id == nil
     end

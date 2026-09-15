@@ -14,6 +14,7 @@ defmodule Fountain.SelfHostSwitchesTest do
   use Fountain.DataCase, async: false
 
   alias Fountain.{Accounts, Billing}
+  alias Fountain.Conversations.Launch
 
   @runtime_exs Path.expand("../../../../config/runtime.exs", __DIR__)
 
@@ -194,7 +195,7 @@ defmodule Fountain.SelfHostSwitchesTest do
         end)
 
         assert {:ok, _} =
-                 Fountain.Conversations.start_conversation(%{
+                 Launch.start_conversation(%{
                    "agent_id" => agent.id,
                    "user_id" => user.id
                  })

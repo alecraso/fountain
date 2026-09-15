@@ -5,6 +5,7 @@ defmodule Fountain.Conversations.AttachTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Launch
 
   setup do
     user = insert_active_user()
@@ -26,7 +27,7 @@ defmodule Fountain.Conversations.AttachTest do
   end
 
   defp attach(ctx, extra \\ %{}) do
-    Conversations.start_conversation(
+    Launch.start_conversation(
       Map.merge(
         %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "sandbox_id" => ctx.sandbox.id},
         extra
@@ -115,7 +116,7 @@ defmodule Fountain.Conversations.AttachTest do
     stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
     assert {:ok, conv} =
-             Conversations.start_conversation(%{
+             Launch.start_conversation(%{
                "agent_id" => ctx.agent.id,
                "user_id" => ctx.user.id,
                "vault_id" => ctx.vault.id

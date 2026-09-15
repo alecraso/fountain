@@ -4,6 +4,8 @@ defmodule Fountain.TeamTest do
 
   alias Fountain.{Agents, Audit, Conversations, Team}
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
+  alias Fountain.Conversations.Wake
 
   # A conversation bound to the team channel, the way add_teammate leaves one.
   defp insert_teammate_conv(user, agent, overrides \\ %{}) do
@@ -458,8 +460,8 @@ defmodule Fountain.TeamTest do
         [first, second] =
           if order == :teammate_first, do: [mate, cotenant], else: [cotenant, mate]
 
-        {:ok, _} = Conversations.wake_conversation(first.id)
-        {:ok, _} = Conversations.wake_conversation(second.id)
+        {:ok, _} = Wake.wake_conversation(first.id)
+        {:ok, _} = Wake.wake_conversation(second.id)
 
         mate_sandbox =
           Conversations._unsafe_get_conversation!(mate.id).sandbox_id
@@ -846,7 +848,7 @@ defmodule Fountain.TeamTest do
       prev = insert_teammate_conv(user, ada, sandbox: sandbox, status: "running")
       test_pid = self()
 
-      stub(ConversationServer, :release_conversation, fn id, opts ->
+      stub(Termination, :release_conversation, fn id, opts ->
         send(test_pid, {:released, id, opts})
         {:error, :busy}
       end)

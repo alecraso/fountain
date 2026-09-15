@@ -6,6 +6,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
   alias Fountain.{Audit, Conversations, Principals}
   import Ecto.Query, only: [where: 3]
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -41,7 +42,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
     other = insert_sandbox(user_id: ctx.user.id, status: "ready")
     stub(ConversationServer, :whereis, fn _ -> self() end)
 
-    expect(ConversationServer, :terminate_conversation, fn id, _ ->
+    expect(Termination, :terminate_conversation, fn id, _ ->
       # Cleanup catches actor failures, so assert this snapshot after it returns.
       send(
         self(),
@@ -62,7 +63,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
   test "a machine found after actor shutdown is also fenced before provider deletion", ctx do
     stub(ConversationServer, :whereis, fn _ -> self() end)
 
-    expect(ConversationServer, :terminate_conversation, fn _, _ ->
+    expect(Termination, :terminate_conversation, fn _, _ ->
       late = insert_sandbox(user_id: ctx.user.id, status: "ready")
       send(self(), {:late_sandbox, late.id})
       :ok
@@ -138,7 +139,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
   test "an actor-retired machine is not destroyed or counted again", ctx do
     stub(ConversationServer, :whereis, fn _ -> self() end)
 
-    expect(ConversationServer, :terminate_conversation, fn _, _ ->
+    expect(Termination, :terminate_conversation, fn _, _ ->
       {:ok, _} = Conversations.update_sandbox(ctx.sandbox, %{status: "terminated"})
       :ok
     end)
@@ -151,7 +152,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
   test "refusing a newly discovered machine's fence retains the account", ctx do
     stub(ConversationServer, :whereis, fn _ -> self() end)
 
-    expect(ConversationServer, :terminate_conversation, fn _, _ ->
+    expect(Termination, :terminate_conversation, fn _, _ ->
       late = insert_sandbox(user_id: ctx.user.id, status: "ready")
       send(self(), {:late_sandbox, late.id})
       :ok

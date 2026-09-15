@@ -19,6 +19,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Wake
 
   setup :set_mimic_global
 
@@ -62,7 +63,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
 
       stub(ConversationServer, :queue_initial_prompt, fn _pid, _prompt -> :ok end)
 
-      {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
+      {:ok, _} = Wake.wake_conversation(conv.id, "hello")
 
       woken = sandbox_of(conv.id)
       refute woken.sandbox_id == old.id, "the row still names the retired sandbox"
@@ -86,7 +87,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
     # The regression. The winner owns the conversation; the loser must not
     # repoint the row at a sandbox it is about to terminate.
     test "the conversation is left pointing where it was", %{conv: conv, old_sandbox: old} do
-      {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
+      {:ok, _} = Wake.wake_conversation(conv.id, "hello")
 
       assert sandbox_of(conv.id).sandbox_id == old.id,
              "the loser repointed the conversation at its own sandbox"
@@ -97,7 +98,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
     } do
       before = sandbox_ids()
 
-      {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
+      {:ok, _} = Wake.wake_conversation(conv.id, "hello")
 
       created = sandboxes_created_since(before)
       assert created != [], "expected the loser to have created a sandbox row"
@@ -116,7 +117,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
         :ok
       end)
 
-      {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
+      {:ok, _} = Wake.wake_conversation(conv.id, "hello")
 
       assert_receive {:queued, ^winner, "hello"}
     end
@@ -128,7 +129,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
 
       before = sandbox_ids()
 
-      assert {:error, :boom} = Conversations.wake_conversation(conv.id, "hello")
+      assert {:error, :boom} = Wake.wake_conversation(conv.id, "hello")
 
       for sandbox <- sandboxes_created_since(before) do
         assert sandbox.status == "terminated",

@@ -41,7 +41,8 @@ defmodule Fountain.Team do
   require Logger
 
   alias Fountain.{Agents, Audit, Conversations, Repo}
-  alias Fountain.Conversations.{Conversation, ConversationServer, Sandbox, Turn}
+  alias Fountain.Conversations.{Conversation, ConversationServer, Launch, Sandbox, Termination}
+  alias Fountain.Conversations.Turn
 
   @channel "fountain:team"
 
@@ -235,7 +236,7 @@ defmodule Fountain.Team do
       "vault_id" => blank_to_nil(attrs["vault_id"])
     }
 
-    case Conversations.start_or_resume_conversation(attrs, opts) do
+    case Launch.start_or_resume_conversation(attrs, opts) do
       {:ok, conv, :created} ->
         record(user_id, "team.member.added", conv, opts)
         broadcast_changed(user_id)
@@ -302,7 +303,7 @@ defmodule Fountain.Team do
       %{conversation: conv} ->
         # `audit: false`: the removal below is the thing the user asked for;
         # the terminate is how it is carried out, not a second action.
-        if live?(conv), do: ConversationServer.terminate_conversation(conv.id, audit: false)
+        if live?(conv), do: Termination.terminate_conversation(conv.id, audit: false)
 
         {_n, _} =
           Repo.update_all(
@@ -386,7 +387,7 @@ defmodule Fountain.Team do
   # vault are the teammate's, not the dead computer's, so they carry over.
   defp start_fresh(user_id, agent_id, %Conversation{} = prev, text, images, opts) do
     result =
-      Conversations.start_conversation(
+      Launch.start_conversation(
         %{
           "agent_id" => agent_id,
           "user_id" => user_id,
@@ -688,7 +689,7 @@ defmodule Fountain.Team do
     # `audit: false`: the rotation below is what the user asked for.
     release =
       if live?(prev),
-        do: ConversationServer.release_conversation(prev.id, audit: false),
+        do: Termination.release_conversation(prev.id, audit: false),
         else: :ok
 
     result =
@@ -761,7 +762,7 @@ defmodule Fountain.Team do
 
   # The computer is gone: a new one, provisioning now — what add_teammate does.
   defp open_on_new_sandbox(user_id, agent_id, %Conversation{} = prev, opts) do
-    Conversations.start_conversation(
+    Launch.start_conversation(
       %{
         "agent_id" => agent_id,
         "user_id" => user_id,

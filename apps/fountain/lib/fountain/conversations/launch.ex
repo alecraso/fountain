@@ -863,7 +863,7 @@ defmodule Fountain.Conversations.Launch do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
             with {:ok, fresh} <-
-                   Conversations.start_conversation(
+                   start_conversation(
                      attrs,
                      Keyword.put(opts, :rotate_from, conv.id)
                    ),
@@ -874,14 +874,14 @@ defmodule Fountain.Conversations.Launch do
           end
 
         nil ->
-          with {:ok, conv} <- Conversations.start_conversation(attrs, opts),
+          with {:ok, conv} <- start_conversation(attrs, opts),
                do: {:ok, conv, :created}
       end
     end
   end
 
   def start_or_resume_conversation(attrs, opts) do
-    with {:ok, conv} <- Conversations.start_conversation(attrs, opts), do: {:ok, conv, :created}
+    with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
   end
 
   defp resume_channel(conv, agent, attrs, opts) do

@@ -139,7 +139,7 @@ defmodule Fountain.Conversations.LegacyWakeReapplyTest do
   end
 
   defp reapply(c, conv),
-    do: Conversations.reapply_conversation(conv, %{"environment_id" => c.other.id})
+    do: Reapply.reapply_conversation(conv, %{"environment_id" => c.other.id})
 
   defp assert_usable_on_next_wake(c, reapplied) do
     current = Repo.reload!(c.conv)

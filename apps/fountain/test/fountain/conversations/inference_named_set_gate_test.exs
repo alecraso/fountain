@@ -2,8 +2,9 @@ defmodule Fountain.Conversations.InferenceNamedSetGateTest do
   use Fountain.DataCase, async: false
   use Mimic
 
-  alias Fountain.{Conversations, Credits, Crypto, InferenceCredentials, PlatformInference}
+  alias Fountain.{Credits, Crypto, InferenceCredentials, PlatformInference}
   alias Fountain.InferenceCredentials.Source
+  alias Fountain.Conversations.Launch
 
   setup do
     settings = [platform_anthropic_api_key: "sk-platform", platform_inference_daily_cents: 10]
@@ -70,7 +71,7 @@ defmodule Fountain.Conversations.InferenceNamedSetGateTest do
             Map.put(attrs, "sandbox_id", sandbox.id)
         end
 
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert conv.inference_source["origin"] == "own"
       assert conv.inference_source["set_id"] == ctx.selected.id
       assert conv.inference_source["revision"] == ctx.selected.revision

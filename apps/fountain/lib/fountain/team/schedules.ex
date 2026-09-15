@@ -31,7 +31,8 @@ defmodule Fountain.Team.Schedules do
 
   import Ecto.Query, warn: false
 
-  alias Fountain.{Agents, Audit, Conversations, Repo, Team}
+  alias Fountain.{Agents, Audit, Repo, Team}
+  alias Fountain.Conversations.Launch
   alias Fountain.Team.Schedule
 
   @actor "system:team_scheduler"
@@ -202,7 +203,7 @@ defmodule Fountain.Team.Schedules do
   @doc """
   Run the schedule now — from the worker on its cron, or from the UI's "Run
   now". Returns `{:ok, conv}` with the conversation the prompt went to, or
-  the `Team.send_message/5` / `Conversations.start_conversation/2` error
+  the `Team.send_message/5` / `Fountain.Conversations.Launch.start_conversation/2` error
   unchanged (`:busy`, `:provisioning`, `:not_found`, `{:sandbox_quota_exceeded, _}`,
   ...). A firing that ran stamps `last_run_at`, and `last_conversation_id` /
   `last_error` say how it went; the caller decides whether an error is worth
@@ -300,7 +301,7 @@ defmodule Fountain.Team.Schedules do
         nil -> {nil, nil}
       end
 
-    Conversations.start_conversation(
+    Launch.start_conversation(
       %{
         "agent_id" => schedule.agent_id,
         "user_id" => schedule.user_id,

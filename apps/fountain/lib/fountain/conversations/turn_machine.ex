@@ -50,7 +50,7 @@ defmodule Fountain.Conversations.TurnMachine do
   require OpenTelemetry.Tracer
 
   alias Fountain.{Agents, Conversations}
-  alias Fountain.Conversations.{Conversation, Labels}
+  alias Fountain.Conversations.{Conversation, Interruption, Labels}
   alias Fountain.InferenceCredentials.Source
   alias Fountain.PermissionPolicy
 
@@ -731,14 +731,14 @@ defmodule Fountain.Conversations.TurnMachine do
   conversation that still says it is working. Turn recovery skips retired
   turns, so this pair must finish its own parent cleanup. The second half
   rechecks the generation rather than this actor's binding
-  (`Conversations._unsafe_idle_interrupted_turn/1`). A successor admitted
+  (`Interruption._unsafe_idle_interrupted_turn/1`). A successor admitted
   while the peer was stopping is what keeps the conversation running.
   """
   @spec mark_interrupted(t()) :: t()
   def mark_interrupted(%__MODULE__{} = turn) do
     # Ownership: the actor's binding is checked with the parent and turn locked.
     applied? =
-      case Conversations._unsafe_interrupt_turn(turn.row, turn.sandbox_id) do
+      case Interruption._unsafe_interrupt_turn(turn.row, turn.sandbox_id) do
         {:ok, _} ->
           publish_stage(turn.conversation_id, "turn", "interrupted", %{
             turn_id: turn.row.id,
@@ -766,7 +766,7 @@ defmodule Fountain.Conversations.TurnMachine do
       # the turn under it. This half releases the parent that half left
       # running. See its docstring for the caller requirement and why it
       # rechecks the generation rather than the binding.
-      Conversations._unsafe_idle_interrupted_turn(turn.row)
+      Interruption._unsafe_idle_interrupted_turn(turn.row)
     end
 
     %{

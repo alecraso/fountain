@@ -4,6 +4,7 @@ defmodule FountainWeb.TeamControllerTest do
 
   alias Fountain.{Audit, Repo, Team}
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -464,7 +465,7 @@ defmodule FountainWeb.TeamControllerTest do
       ada = insert_agent(user_id: user.id, name: "Ada")
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       insert_teammate_conv(user, ada, sandbox: sandbox, status: "running")
-      stub(ConversationServer, :release_conversation, fn _id, _opts -> {:error, :busy} end)
+      stub(Termination, :release_conversation, fn _id, _opts -> {:error, :busy} end)
 
       assert %{"error" => "conversation_busy"} =
                conn

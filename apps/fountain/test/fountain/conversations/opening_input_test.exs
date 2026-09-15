@@ -4,6 +4,7 @@ defmodule Fountain.Conversations.OpeningInputTest do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.{Conversation, ConversationServer, PromptInput, Sandbox}
+  alias Fountain.Conversations.Launch
 
   setup do
     user = insert_active_user()
@@ -161,7 +162,7 @@ defmodule Fountain.Conversations.OpeningInputTest do
   defp start(ctx, extra) do
     attrs = %{"user_id" => ctx.user.id, "agent_id" => ctx.agent.id}
     attrs = if ctx.path == :attach, do: Map.put(attrs, "sandbox_id", ctx.sandbox.id), else: attrs
-    Conversations.start_conversation(Map.merge(attrs, extra))
+    Launch.start_conversation(Map.merge(attrs, extra))
   end
 
   defp row_counts, do: {Repo.aggregate(Conversation, :count), Repo.aggregate(Sandbox, :count)}

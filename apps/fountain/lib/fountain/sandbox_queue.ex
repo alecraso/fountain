@@ -370,7 +370,7 @@ defmodule Fountain.SandboxQueue do
       |> put_unless_nil("source", request.source)
 
     with {:ok, conversation, _outcome} <-
-           Fountain.Conversations.start_or_resume_conversation(attrs, replay_opts(request)) do
+           Fountain.Conversations.Launch.start_or_resume_conversation(attrs, replay_opts(request)) do
       {:ok, conversation.id}
     end
   end

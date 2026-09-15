@@ -1,6 +1,6 @@
 defmodule Fountain.Conversations.InferenceReapplyTest do
   use Fountain.DataCase, async: true
-  alias Fountain.{Conversations, Crypto, InferenceCredentials}
+  alias Fountain.{Crypto, InferenceCredentials}
   alias Fountain.Conversations.{InferenceBinding, Reapply, SpriteEnv, TurnMachine}
   alias Fountain.InferenceCredentials.Source
 
@@ -59,7 +59,7 @@ defmodule Fountain.Conversations.InferenceReapplyTest do
     historical = insert_turn(c.conv, status: "completed", inference_source: Source.dump(c.source))
 
     assert {:ok, reapplied} =
-             Conversations.reapply_conversation(c.conv, %{"environment_id" => c.other.id})
+             Reapply.reapply_conversation(c.conv, %{"environment_id" => c.other.id})
 
     assert reapplied.environment_id == c.other.id
 
@@ -86,7 +86,7 @@ defmodule Fountain.Conversations.InferenceReapplyTest do
 
   test "an explicit model reapply refreshes context without silently switching credentials", c do
     {:ok, agent} = Fountain.Agents.update_agent(c.agent, %{model: "anthropic/claude-sonnet-5"})
-    assert {:ok, reapplied} = Conversations.reapply_conversation(c.conv)
+    assert {:ok, reapplied} = Reapply.reapply_conversation(c.conv)
     assert {:ok, _, source, _} = SpriteEnv.resolve_inference(reapplied, agent, c.env, nil)
     assert source.model == agent.model
     assert source.identity == c.source.identity
@@ -105,7 +105,7 @@ defmodule Fountain.Conversations.InferenceReapplyTest do
     machine = Repo.reload!(c.sandbox)
 
     assert {:error, :inference_source_changed} =
-             Conversations.reapply_conversation(c.conv, %{"environment_id" => other.id})
+             Reapply.reapply_conversation(c.conv, %{"environment_id" => other.id})
 
     assert Repo.reload!(c.conv) == before
     assert Repo.reload!(c.sandbox) == machine

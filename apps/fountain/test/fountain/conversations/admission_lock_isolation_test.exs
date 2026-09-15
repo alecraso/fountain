@@ -2,8 +2,8 @@ defmodule Fountain.Conversations.AdmissionLockIsolationTest do
   use Fountain.DataCase, async: false
   use Mimic
 
-  alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.Launch
 
   for row <- [:account, :agent] do
     test "a launch waiting on its #{row} does not hold the fleet lock" do
@@ -97,7 +97,7 @@ defmodule Fountain.Conversations.AdmissionLockIsolationTest do
     independent(fn ->
       Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:ok, self()} end)
 
-      Conversations.start_conversation(%{
+      Launch.start_conversation(%{
         "user_id" => tenant.user.id,
         "agent_id" => tenant.agent.id,
         "sandbox_mode" => "ephemeral"

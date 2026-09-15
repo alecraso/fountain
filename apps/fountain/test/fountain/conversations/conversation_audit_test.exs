@@ -16,6 +16,8 @@ defmodule Fountain.Conversations.ConversationAuditTest do
 
   alias Fountain.{Audit, Conversations}
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -43,7 +45,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       stub_happy_sprite()
 
       {:ok, conv} =
-        Conversations.start_conversation(
+        Launch.start_conversation(
           %{"agent_id" => agent.id, "user_id" => user.id, "source" => "ui"},
           actor: "ui"
         )
@@ -57,14 +59,14 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       assert event.metadata["source"] == "ui"
       assert event.metadata["with_prompt"] == false
 
-      _ = ConversationServer.terminate_conversation(conv.id, audit: false)
+      _ = Termination.terminate_conversation(conv.id, audit: false)
     end
 
     test "an opening prompt is described, never quoted", %{user: user, agent: agent} do
       stub_happy_sprite()
 
       {:ok, conv} =
-        Conversations.start_conversation(%{
+        Launch.start_conversation(%{
           "agent_id" => agent.id,
           "user_id" => user.id,
           "prompt" => "my private business plan, in detail"
@@ -77,7 +79,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
         refute inspect(e) =~ "private business plan"
       end
 
-      _ = ConversationServer.terminate_conversation(conv.id, audit: false)
+      _ = Termination.terminate_conversation(conv.id, audit: false)
     end
 
     test "a refused start records nothing", %{user: user, agent: agent} do
@@ -87,7 +89,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
           do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       refute "conversation.created" in actions_for(user.id)
     end
@@ -100,7 +102,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
 
-      assert :ok = ConversationServer.terminate_conversation(conv.id, actor: "ui")
+      assert :ok = Termination.terminate_conversation(conv.id, actor: "ui")
 
       event = find_action(user.id, "conversation.terminated")
       assert event.resource_id == conv.id
@@ -109,7 +111,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
 
     test "a terminate that changed nothing records nothing", %{user: user} do
       assert {:error, :not_running} =
-               ConversationServer.terminate_conversation(Ecto.UUID.generate())
+               Termination.terminate_conversation(Ecto.UUID.generate())
 
       refute "conversation.terminated" in actions_for(user.id)
     end
@@ -118,7 +120,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
 
-      assert :ok = ConversationServer.terminate_conversation(conv.id, audit: false)
+      assert :ok = Termination.terminate_conversation(conv.id, audit: false)
 
       refute "conversation.terminated" in actions_for(user.id)
     end
@@ -155,7 +157,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       stub_happy_sprite()
 
       {:ok, conv} =
-        Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+        Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       secret = "transfer the funds to account 12345"
       assert :ok = ConversationServer.send_prompt(conv.id, secret, [], actor: "ui")
@@ -172,7 +174,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
         refute inspect(e) =~ "account 12345"
       end
 
-      _ = ConversationServer.terminate_conversation(conv.id, audit: false)
+      _ = Termination.terminate_conversation(conv.id, audit: false)
     end
   end
 
@@ -184,7 +186,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       stub_happy_sprite()
 
       {:ok, conv} =
-        Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+        Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       {:ok, :terminated} = Conversations._unsafe_reap_sandbox(conv.sandbox_id)
 

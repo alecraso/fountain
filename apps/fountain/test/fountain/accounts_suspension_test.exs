@@ -3,6 +3,7 @@ defmodule Fountain.AccountsSuspensionTest do
 
   alias Fountain.Accounts
   alias Fountain.Conversations
+  alias Fountain.Conversations.Launch
 
   describe "suspend_user/1 and unsuspend_user/1" do
     test "sets suspended_at and invalidates existing sessions" do
@@ -87,7 +88,7 @@ defmodule Fountain.AccountsSuspensionTest do
       {:ok, _, _} = Accounts.suspend_user(user)
 
       assert {:error, :account_suspended} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id
                })

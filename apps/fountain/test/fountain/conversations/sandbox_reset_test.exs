@@ -6,6 +6,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Wake
 
   setup do
     user = insert_active_user()
@@ -264,7 +265,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :timeout} end)
     assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
     assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
-    assert {:error, :sandbox_reset_pending} = Conversations.wake_conversation(ctx.a.id)
+    assert {:error, :sandbox_reset_pending} = Wake.wake_conversation(ctx.a.id)
 
     # A write that would keep the machine alive is refused. A write that
     # retires it is not, and is covered in the describe block below.
@@ -321,7 +322,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
 
     test "anything that would re-use the machine is still refused", ctx do
       assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
-      assert {:error, :sandbox_reset_pending} = Conversations.wake_conversation(ctx.a.id)
+      assert {:error, :sandbox_reset_pending} = Wake.wake_conversation(ctx.a.id)
 
       assert {:error, :sandbox_reset_pending} =
                Conversations.update_sandbox(ctx.home, %{status: "suspended"})
@@ -406,7 +407,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(ctx.home)
 
-    assert {:ok, woken} = Conversations.wake_conversation(ctx.a.id)
+    assert {:ok, woken} = Wake.wake_conversation(ctx.a.id)
     refute woken.sandbox_id == ctx.home.id
     fresh = Conversations._unsafe_get_sandbox!(woken.sandbox_id)
     assert fresh.mode == "persistent"
@@ -444,7 +445,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
       on_exit(fn -> if Process.alive?(actor), do: Process.exit(actor, :kill) end)
       assert_receive {:registered, ^actor}
       assert {:ok, ^actor} = ConversationServer.await_registered(ctx.b.id)
-      assert {:ok, woken} = Conversations.wake_conversation(ctx.a.id)
+      assert {:ok, woken} = Wake.wake_conversation(ctx.a.id)
       old_id = ctx.home.id
       expected_event = if(ctx.follows?, do: "replaced", else: "reset")
 
@@ -476,7 +477,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     end
 
     test "waking the one that kept the identity leaves the rebound one behind", ctx do
-      assert {:ok, woken_a} = Conversations.wake_conversation(ctx.a.id)
+      assert {:ok, woken_a} = Wake.wake_conversation(ctx.a.id)
       refute woken_a.sandbox_id == ctx.home.id
       assert Conversations._unsafe_get_sandbox!(woken_a.sandbox_id).environment_id == ctx.env.id
 
@@ -484,7 +485,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
       # row until its own wake.
       assert Conversations._unsafe_get_conversation!(ctx.b.id).sandbox_id == ctx.home.id
 
-      assert {:ok, woken_b} = Conversations.wake_conversation(ctx.b.id)
+      assert {:ok, woken_b} = Wake.wake_conversation(ctx.b.id)
       refute woken_b.sandbox_id == woken_a.sandbox_id
 
       assert Conversations._unsafe_get_sandbox!(woken_b.sandbox_id).environment_id ==
@@ -492,20 +493,20 @@ defmodule Fountain.Conversations.SandboxResetTest do
     end
 
     test "waking the rebound one first does not pull the other onto its machine", ctx do
-      assert {:ok, woken_b} = Conversations.wake_conversation(ctx.b.id)
+      assert {:ok, woken_b} = Wake.wake_conversation(ctx.b.id)
 
       assert Conversations._unsafe_get_sandbox!(woken_b.sandbox_id).environment_id ==
                ctx.other_env.id
 
       assert Conversations._unsafe_get_conversation!(ctx.a.id).sandbox_id == ctx.home.id
 
-      assert {:ok, woken_a} = Conversations.wake_conversation(ctx.a.id)
+      assert {:ok, woken_a} = Wake.wake_conversation(ctx.a.id)
       refute woken_a.sandbox_id == woken_b.sandbox_id
       assert Conversations._unsafe_get_sandbox!(woken_a.sandbox_id).environment_id == ctx.env.id
     end
 
     test "the one left behind is told its machine is gone", ctx do
-      assert {:ok, _} = Conversations.wake_conversation(ctx.a.id)
+      assert {:ok, _} = Wake.wake_conversation(ctx.a.id)
 
       messages =
         ctx.b.id

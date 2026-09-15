@@ -7,6 +7,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
   alias Fountain.{Conversations, Repo}
   alias Fountain.Accounts.User
   alias Fountain.Conversations.{Conversation, ExecutionAllowance, Sandbox}
+  alias Fountain.Conversations.Launch
 
   setup do
     previous = Application.fetch_env(:fountain, :execution_limit_ceiling)
@@ -105,7 +106,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
         |> Map.put("execution_limits", %{max_model_turns: 1})
 
       assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
-               Conversations.start_conversation(params)
+               Launch.start_conversation(params)
     end
 
     assert counts() == before_counts
@@ -328,7 +329,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
       |> Map.put("user_id", ctx.user.id)
       |> Map.put("title", %{})
 
-    assert {:error, %Ecto.Changeset{}} = Conversations.start_conversation(params)
+    assert {:error, %Ecto.Changeset{}} = Launch.start_conversation(params)
     assert counts() == before_counts
     assert creation_audits(ctx.user.id) == 0
     refute_received :worker_started
@@ -389,7 +390,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
             params
         end
 
-      assert {:error, _} = Conversations.start_or_resume_conversation(params)
+      assert {:error, _} = Launch.start_or_resume_conversation(params)
       assert Repo.reload!(ctx.conv).channel_id == "limits"
       assert counts() == before_counts
       assert creation_audits(ctx.user.id) == 0
@@ -399,7 +400,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
 
   test "quota refusal keeps the channel bound", ctx do
     {:ok, _} = Fountain.Accounts.update_sandbox_limit(ctx.user, 1)
-    assert {:error, _} = Conversations.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
+    assert {:error, _} = Launch.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
     assert Repo.reload!(ctx.conv).channel_id == "limits"
     refute_received :worker_started
   end
@@ -411,7 +412,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
       check_binding = fn id ->
         refute Repo.in_transaction?()
         assert Repo.reload!(ctx.conv).channel_id == nil
-        assert Conversations.channel_conversation(rotation_attrs(ctx, unquote(path))).id == id
+        assert Launch.channel_conversation(rotation_attrs(ctx, unquote(path))).id == id
         send(owner, :binding_checked)
       end
 
@@ -430,7 +431,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
       params =
         if unquote(path) == :attach, do: Map.put(params, "prompt", "continue"), else: params
 
-      assert {:ok, _, :created} = Conversations.start_or_resume_conversation(params)
+      assert {:ok, _, :created} = Launch.start_or_resume_conversation(params)
       assert_received :binding_checked
     end
   end
@@ -439,11 +440,11 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:error, :fixture_rejection} end)
 
     assert {:ok, failed, :created} =
-             Conversations.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
+             Launch.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
 
     assert failed.status == "failed"
     assert failed.channel_id == nil
-    assert Conversations.channel_conversation(rotation_attrs(ctx, :fresh)).id == ctx.conv.id
+    assert Launch.channel_conversation(rotation_attrs(ctx, :fresh)).id == ctx.conv.id
     assert Repo.get!(ExecutionAllowance, failed.id).limits == %{}
   end
 
@@ -455,8 +456,8 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     end)
 
     params = Map.put(rotation_attrs(ctx, :attach), "prompt", "continue")
-    assert {:error, :busy} = Conversations.start_or_resume_conversation(params)
-    assert Conversations.channel_conversation(params).id == ctx.conv.id
+    assert {:error, :busy} = Launch.start_or_resume_conversation(params)
+    assert Launch.channel_conversation(params).id == ctx.conv.id
     assert counts() == before_counts
   end
 
@@ -481,10 +482,10 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     end)
 
     assert {:ok, _, :created} =
-             Conversations.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
+             Launch.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
 
     assert_received {:winner, id}
-    assert Conversations.channel_conversation(rotation_attrs(ctx, :fresh)).id == id
+    assert Launch.channel_conversation(rotation_attrs(ctx, :fresh)).id == id
     assert Repo.reload!(ctx.conv).channel_id == nil
   end
 

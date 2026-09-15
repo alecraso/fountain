@@ -3,6 +3,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, ExecutionGuard, TurnExecution}
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -21,7 +22,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
     # the owner out of their own recovery with nothing to un-fence it.
     turn = insert_turn(c.conv, status: "running")
     assert is_nil(ConversationServer.whereis(c.conv.id))
-    assert :ok = ConversationServer.release_conversation(c.conv.id)
+    assert :ok = Termination.release_conversation(c.conv.id)
     assert Conversations._unsafe_get_conversation!(c.conv.id).status == "terminated"
     # Release terminates the parent; it does not rewrite the turn's history.
     assert Repo.reload!(turn).status == "running"
@@ -60,7 +61,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
       execution = execution(c, @state)
       turn = Repo.get!(Conversations.Turn, execution.turn_id)
       assert is_nil(ConversationServer.whereis(c.conv.id))
-      assert {:error, :execution_fenced} = ConversationServer.release_conversation(c.conv.id)
+      assert {:error, :execution_fenced} = Termination.release_conversation(c.conv.id)
       assert Repo.reload!(execution) == execution
       assert Repo.reload!(turn) == turn
       assert Repo.reload!(c.conv) == c.conv
@@ -75,7 +76,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
     {:ok, _} =
       ExecutionGuard._unsafe_record_termination(execution.id, execution.attempt_id, :ok)
 
-    assert :ok = ConversationServer.release_conversation(c.conv.id)
+    assert :ok = Termination.release_conversation(c.conv.id)
     assert Repo.reload!(c.conv).status == "terminated"
     assert Repo.reload!(c.sandbox) == c.sandbox
 
@@ -97,7 +98,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
 
     turn = insert_turn(other, status: "running")
     other = Repo.reload!(other)
-    assert :ok = ConversationServer.release_conversation(c.conv.id)
+    assert :ok = Termination.release_conversation(c.conv.id)
     assert Repo.reload!(other) == other
     assert Repo.reload!(turn) == turn
     assert Repo.reload!(c.sandbox) == c.sandbox
@@ -105,7 +106,7 @@ defmodule Fountain.Conversations.ReleaseFenceTest do
 
   test "a deleted parent returns not_running", c do
     Repo.delete!(c.conv)
-    assert {:error, :not_running} = ConversationServer.release_conversation(c.conv.id)
+    assert {:error, :not_running} = Termination.release_conversation(c.conv.id)
   end
 
   defp execution(c, state) do

@@ -57,7 +57,7 @@ defmodule Fountain.Accounts.Deletion do
   require Logger
 
   alias Fountain.Accounts.User
-  alias Fountain.Conversations.{ConversationServer, Sandbox}
+  alias Fountain.Conversations.{ConversationServer, Sandbox, Termination}
   alias Fountain.{Audit, Conversations, Repo}
 
   # Includes `suspended`: parked sprites are excluded from the concurrency
@@ -255,7 +255,7 @@ defmodule Fountain.Accounts.Deletion do
         # No per-conversation row: `account.deleted` already says everything
         # went away, and the user_id these would carry is nilified moments
         # later anyway — they would be orphans describing a cascade.
-        ConversationServer.terminate_conversation(id, audit: false)
+        Termination.terminate_conversation(id, audit: false)
       catch
         kind, reason ->
           Logger.warning("account deletion: terminate #{id} failed: #{inspect({kind, reason})}")

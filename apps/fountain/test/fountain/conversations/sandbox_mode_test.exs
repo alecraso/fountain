@@ -9,6 +9,8 @@ defmodule Fountain.Conversations.SandboxModeTest do
   alias Fountain.Agents.Agent
   alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Wake
 
   setup do
     user = insert_active_user()
@@ -22,7 +24,7 @@ defmodule Fountain.Conversations.SandboxModeTest do
   end
 
   defp launch(ctx, extra \\ %{}) do
-    Conversations.start_conversation(
+    Launch.start_conversation(
       Map.merge(%{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id}, extra)
     )
   end
@@ -140,7 +142,7 @@ defmodule Fountain.Conversations.SandboxModeTest do
 
     stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
-    assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+    assert {:ok, woken} = Wake.wake_conversation(conv.id)
     refute woken.sandbox_id == old.id
     assert Conversations._unsafe_get_sandbox!(woken.sandbox_id).mode == "persistent"
     assert Repo.reload(old).status == "terminated"

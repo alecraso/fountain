@@ -14,6 +14,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
   alias Fountain.Conversations.Lifecycle
   alias Managoat.Runtimes.ACP
+  alias Fountain.Conversations.Reapply
 
   defp acp_agent(user, runtime \\ "claude") do
     insert_agent(user_id: user.id, runtime: runtime)
@@ -113,7 +114,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
           {:ok, nil}
         end)
 
-        assert {:ok, _} = Conversations.reapply_conversation(Repo.reload!(conv))
+        assert {:ok, _} = Reapply.reapply_conversation(Repo.reload!(conv))
         assert_receive {:before_refresh, state, persisted}
         assert persisted.configuration_revision == old.configuration_revision + 1
         assert state.inference_source == old.inference_source

@@ -3,6 +3,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
 
   alias Fountain.Audit
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
 
   defmodule Probe do
     use GenServer
@@ -36,7 +37,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
   test "forwards attribution to the actor and keeps the outer lifecycle audit", ctx do
     pid = probe(ctx.conv.id, :ok)
     opts = [actor: "ui", request_ip: "192.0.2.4"]
-    assert :ok = ConversationServer.terminate_conversation(ctx.conv.id, opts)
+    assert :ok = Termination.terminate_conversation(ctx.conv.id, opts)
     assert_received {:termination_request, ^pid, {:terminate_conv, ^opts}}
     assert [event] = events(ctx)
     assert event.actor == "ui"
@@ -47,7 +48,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
     probe(ctx.conv.id, {:error, :sandbox_unavailable})
 
     assert {:error, :sandbox_unavailable} =
-             ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
+             Termination.terminate_conversation(ctx.conv.id, actor: "ui")
 
     assert events(ctx) == []
   end
@@ -58,7 +59,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
 
       assert {:ok, {:error, :provider_transaction_open}} =
                Repo.transaction(fn ->
-                 ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
+                 Termination.terminate_conversation(ctx.conv.id, actor: "ui")
                end)
 
       refute_received {:termination_request, _, _}
@@ -73,7 +74,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
       pid = probe(ctx.conv.id, {:error, :unknown_call})
 
       assert {:error, :unknown_call} =
-               ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
+               Termination.terminate_conversation(ctx.conv.id, actor: "ui")
 
       assert_received {:termination_request, ^pid, {:terminate_conv, [actor: "ui"]}}
       refute_received {:termination_request, ^pid, :terminate_conv}
@@ -82,7 +83,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
 
     test "does not retry when the actor pod understands the tuple", ctx do
       probe(ctx.conv.id, :ok)
-      assert :ok = ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
+      assert :ok = Termination.terminate_conversation(ctx.conv.id, actor: "ui")
       assert_received {:termination_request, _, {:terminate_conv, _}}
       refute_received {:termination_request, _, :terminate_conv}
     end
@@ -91,7 +92,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
       probe(ctx.conv.id, {:error, :sandbox_unavailable})
 
       assert {:error, :sandbox_unavailable} =
-               ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui")
+               Termination.terminate_conversation(ctx.conv.id, actor: "ui")
 
       assert_received {:termination_request, _, {:terminate_conv, _}}
       refute_received {:termination_request, _, :terminate_conv}
@@ -102,7 +103,7 @@ defmodule Fountain.Conversations.TerminationClientTest do
       pid = probe(ctx.conv.id, :ok)
 
       assert :ok =
-               ConversationServer.terminate_conversation(ctx.conv.id,
+               Termination.terminate_conversation(ctx.conv.id,
                  actor: "ui",
                  request_ip: "192.0.2.9",
                  audit: false

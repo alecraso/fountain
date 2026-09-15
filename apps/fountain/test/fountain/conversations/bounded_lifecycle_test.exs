@@ -11,6 +11,8 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
   alias Managoat.Sandbox
   alias Managoat.Sandbox.Command
+  alias Fountain.Conversations.Interruption
+  alias Fountain.Conversations.Termination
 
   setup do
     # Only this offline test substitutes capabilities. Public admission remains
@@ -118,12 +120,12 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
       actor
     end)
 
-    task = Task.async(fn -> ConversationServer.interrupt(c.conv.id) end)
+    task = Task.async(fn -> Interruption.interrupt(c.conv.id) end)
     assert :ok = Task.await(task, 1_000)
     assert Repo.get!(Turn, turn.id).status == "interrupted"
     assert Repo.get!(TurnExecution, execution.id).state == "ready"
     assert Process.alive?(actor)
-    assert :ok = ConversationServer.interrupt(c.conv.id)
+    assert :ok = Interruption.interrupt(c.conv.id)
   end
 
   test "deleting the parent retains cleanup when actor termination fails", c do
@@ -137,7 +139,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
         "delete-session"
       )
 
-    stub(ConversationServer, :terminate_conversation, fn _, _ ->
+    stub(Termination, :terminate_conversation, fn _, _ ->
       {:error, :provider_unavailable}
     end)
 

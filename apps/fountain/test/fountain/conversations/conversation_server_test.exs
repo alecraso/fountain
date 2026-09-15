@@ -19,6 +19,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
   alias Fountain.{Accounts, Environments}
   alias Fountain.Repo
+  alias Fountain.Conversations.Interruption
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -1204,7 +1206,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     test "still marks the conversation and sandbox terminated", %{conv: conv, sandbox: sandbox} do
       # After a BEAM restart the GenServer is gone but the rows remain, and a
       # user still needs to be able to clean up.
-      assert :ok = ConversationServer.terminate_conversation(conv.id)
+      assert :ok = Termination.terminate_conversation(conv.id)
 
       assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "terminated"
@@ -1212,13 +1214,13 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
     test "reports not_running for an unknown conversation" do
       assert {:error, :not_running} =
-               ConversationServer.terminate_conversation(Ecto.UUID.generate())
+               Termination.terminate_conversation(Ecto.UUID.generate())
     end
 
     test "does not resurrect an already-failed sandbox", %{conv: conv, sandbox: sandbox} do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
-      assert :ok = ConversationServer.terminate_conversation(conv.id)
+      assert :ok = Termination.terminate_conversation(conv.id)
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
     end
   end
@@ -1269,36 +1271,36 @@ defmodule Fountain.Conversations.ConversationServerTest do
     test "with no server, marks the conversation alone", %{conv: conv, sandbox: sandbox} do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
 
-      assert :ok = ConversationServer.release_conversation(conv.id)
+      assert :ok = Termination.release_conversation(conv.id)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
 
       assert {:error, :not_running} =
-               ConversationServer.release_conversation(Ecto.UUID.generate())
+               Termination.release_conversation(Ecto.UUID.generate())
     end
 
     test "terminating the retired conversation later leaves its successor's sandbox alone",
          %{conv: conv, sandbox: sandbox, user: user, agent: agent} do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
-      assert :ok = ConversationServer.release_conversation(conv.id)
+      assert :ok = Termination.release_conversation(conv.id)
 
       successor =
         insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
       # A terminate (or a delete, which cascades through it) of the old thread.
-      assert :ok = ConversationServer.terminate_conversation(conv.id)
+      assert :ok = Termination.terminate_conversation(conv.id)
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
 
       # Once the successor is past resuming too, the sandbox goes with it.
       {:ok, _} = Conversations.update_conversation(successor, %{status: "terminated"})
-      assert :ok = ConversationServer.terminate_conversation(conv.id)
+      assert :ok = Termination.terminate_conversation(conv.id)
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "terminated"
     end
   end
 
   describe "interrupt/1 and send_prompt/3 with no running server" do
     test "interrupt reports not_running", %{conv: conv} do
-      assert {:error, :not_running} = ConversationServer.interrupt(conv.id)
+      assert {:error, :not_running} = Interruption.interrupt(conv.id)
     end
 
     # The two misses are different answers (#1179). A conversation that exists
@@ -1306,7 +1308,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     # conflating them is what left `interrupt` telling an owner their own
     # conversation belonged to someone else.
     test "interrupt for an unknown conversation reports not_found" do
-      assert {:error, :not_found} = ConversationServer.interrupt(Ecto.UUID.generate())
+      assert {:error, :not_found} = Interruption.interrupt(Ecto.UUID.generate())
     end
 
     test "interrupt of a terminated conversation reports not_running, not not_found", %{
@@ -1314,7 +1316,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     } do
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
-      assert {:error, :not_running} = ConversationServer.interrupt(conv.id)
+      assert {:error, :not_running} = Interruption.interrupt(conv.id)
     end
 
     test "send_prompt for an unknown conversation reports not_running" do
@@ -1371,7 +1373,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # No server is registered for this conversation at all — exactly the
       # state a dead process leaves behind. `list_sessions` (stubbed to `[]`
       # by stub_happy_sprite/1) means reattach finds nothing to resume.
-      assert {:error, :idle} = ConversationServer.interrupt(conv.id)
+      assert {:error, :idle} = Interruption.interrupt(conv.id)
 
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
 

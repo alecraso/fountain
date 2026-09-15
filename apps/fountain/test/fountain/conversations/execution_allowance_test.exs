@@ -404,6 +404,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
   alias Fountain.Conversations
   alias Fountain.Conversations.{Conversation, Sandbox}
   alias Fountain.Conversations.ExecutionAllowance, as: Allowance
+  alias Fountain.Conversations.Launch
   import Fountain.DataCase, only: [errors_on: 1]
   import Fountain.Factory, only: [insert_conversation: 1]
   import Ecto.Query, only: [from: 2]
@@ -574,7 +575,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
                 :fresh -> Map.put(params, "sandbox_mode", "ephemeral")
               end
 
-            Conversations.start_conversation(params)
+            Launch.start_conversation(params)
           end)
 
         try do
@@ -708,7 +709,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
               end)
 
               started = System.monotonic_time(:millisecond)
-              result = Conversations.start_or_resume_conversation(params)
+              result = Launch.start_or_resume_conversation(params)
               {result, System.monotonic_time(:millisecond) - started}
             end)
 
@@ -723,7 +724,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
           assert elapsed < 5_000
 
           assert Repo.reload!(previous).channel_id == "rotation"
-          assert Conversations.channel_conversation(params).id == previous.id
+          assert Launch.channel_conversation(params).id == previous.id
           refute_received :unexpected_worker_started
         after
           # Let it commit and drop the row lock before cleanup runs: a
@@ -811,14 +812,14 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
                 end
               end)
 
-              Conversations.start_or_resume_conversation(params)
+              Launch.start_or_resume_conversation(params)
             end)
 
           try do
             assert_receive :rotation_reserved, 5_000
             # Uncommitted unbinding is invisible: the existing conversation remains
             # the channel's binding while the winner waits to commit admission.
-            assert Conversations.channel_conversation(params).id == previous.id
+            assert Launch.channel_conversation(params).id == previous.id
 
             loser =
               independent_writer(fn ->
@@ -827,7 +828,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
                   {:error, :fixture_rejection}
                 end)
 
-                Conversations.start_or_resume_conversation(params)
+                Launch.start_or_resume_conversation(params)
               end)
 
             try do
@@ -841,7 +842,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
               assert {:ok, replacement, :created} = Task.await(winner)
               assert {:error, changeset} = Task.await(loser)
               assert errors_on(changeset).channel_id == ["binding changed; retry the rotation"]
-              assert Conversations.channel_conversation(params).id == replacement.id
+              assert Launch.channel_conversation(params).id == replacement.id
               assert Repo.reload!(previous).channel_id == nil
               assert length(Conversations.list_conversations(user.id)) == 2
               expected_sandboxes = if path == :fresh, do: 2, else: 1

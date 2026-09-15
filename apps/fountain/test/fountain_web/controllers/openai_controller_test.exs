@@ -15,6 +15,7 @@ defmodule FountainWeb.OpenAIControllerTest do
   alias Fountain.Conversations
   alias Fountain.Conversations.ConversationServer
   alias FountainWeb.OpenAIController
+  alias Fountain.Conversations.Launch
 
   setup do
     # No starter agent (ADR 0038): `/v1/models` lists every agent the tenant
@@ -1032,7 +1033,7 @@ defmodule FountainWeb.OpenAIControllerTest do
 
       assert json_response(conn, 400)["error"]["code"] == "no_pending_tool_calls"
 
-      assert Conversations.channel_conversation(%{
+      assert Launch.channel_conversation(%{
                "channel_id" => OpenAIController.channel_id("never-opened"),
                "agent_id" => agent.id,
                "user_id" => user.id

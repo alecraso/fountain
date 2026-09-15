@@ -4,6 +4,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Fountain.{Audit, Conversations}
+  alias Fountain.Conversations.Launch
 
   for {first, barrier} <- [termination: :row, attachment: :row, termination: :machine] do
     test "#{first} wins the race between termination and a new co-tenant at #{barrier} lock" do
@@ -36,7 +37,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
           )
 
         :attachment ->
-          Conversations.start_conversation(%{
+          Launch.start_conversation(%{
             "user_id" => user.id,
             "agent_id" => agent.id,
             "sandbox_id" => sandbox.id

@@ -4,6 +4,7 @@ defmodule Fountain.Conversations.InitialStartFailureTest do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.{Conversation, ConversationServer, Sandbox}
+  alias Fountain.Conversations.Launch
 
   setup do
     user = insert_active_user()
@@ -103,5 +104,5 @@ defmodule Fountain.Conversations.InitialStartFailureTest do
   end
 
   defp start(ctx),
-    do: Conversations.start_conversation(%{"user_id" => ctx.user.id, "agent_id" => ctx.agent.id})
+    do: Launch.start_conversation(%{"user_id" => ctx.user.id, "agent_id" => ctx.agent.id})
 end

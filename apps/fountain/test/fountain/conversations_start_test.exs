@@ -3,6 +3,8 @@ defmodule Fountain.ConversationsStartTest do
   use Mimic
 
   alias Fountain.{Agents, Conversations}
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Wake
 
   # start_conversation/1 and the per-launch environment override (#783).
   # Split out of the 2,215-line conversations_context_test.exs (#899): ExUnit
@@ -28,7 +30,7 @@ defmodule Fountain.ConversationsStartTest do
         {:error, {:unavailable, :timeout}}
       end)
 
-      assert {:error, :sandbox_resume_failed} = Conversations.wake_conversation(conv.id)
+      assert {:error, :sandbox_resume_failed} = Wake.wake_conversation(conv.id)
       assert Repo.reload(sandbox).status == "suspended"
     end
   end
@@ -48,7 +50,7 @@ defmodule Fountain.ConversationsStartTest do
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
       assert {:error, {:sandbox_provider_disabled, :e2b}} =
-               Conversations.wake_conversation(conv.id)
+               Wake.wake_conversation(conv.id)
 
       assert Repo.reload(sandbox).status == "suspended"
     end
@@ -76,7 +78,7 @@ defmodule Fountain.ConversationsStartTest do
         )
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => attacker.id,
                  "sprite_name" => target.machine_name
@@ -92,7 +94,7 @@ defmodule Fountain.ConversationsStartTest do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "sprite_name" => "review-loop-7"
@@ -112,7 +114,7 @@ defmodule Fountain.ConversationsStartTest do
       full = "fountain-" <> binary_part(user.id, 0, 8) <> "-again"
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "sprite_name" => full
@@ -128,7 +130,7 @@ defmodule Fountain.ConversationsStartTest do
 
       for name <- ["has a space", "slash/es", "-leading-dash", String.duplicate("x", 41)] do
         assert {:error, :invalid_sprite_name} =
-                 Conversations.start_conversation(%{
+                 Launch.start_conversation(%{
                    "agent_id" => agent.id,
                    "user_id" => user.id,
                    "sprite_name" => name
@@ -144,7 +146,7 @@ defmodule Fountain.ConversationsStartTest do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "sprite_name" => ""
@@ -163,7 +165,7 @@ defmodule Fountain.ConversationsStartTest do
       before = Fountain.Quotas.active_sandbox_count(user.id)
 
       assert {:error, :invalid_sandbox_api_access} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "sandbox_mode" => "ephemeral",
@@ -180,7 +182,7 @@ defmodule Fountain.ConversationsStartTest do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "sandbox_mode" => "ephemeral",
@@ -198,7 +200,7 @@ defmodule Fountain.ConversationsStartTest do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
       assert sandbox.provider == "sprites"
@@ -211,7 +213,7 @@ defmodule Fountain.ConversationsStartTest do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       assert conv.agent_version_id == Agents.get_agent_version(agent.id, 2, user.id).id
     end
@@ -232,7 +234,7 @@ defmodule Fountain.ConversationsStartTest do
       before = Fountain.Quotas.active_sandbox_count(user.id)
 
       assert {:error, {:sandbox_provider_disabled, :e2b}} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       assert Fountain.Quotas.active_sandbox_count(user.id) == before
     end
@@ -250,7 +252,7 @@ defmodule Fountain.ConversationsStartTest do
         "vault_id" => vault.id
       }
 
-      assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+      assert {:error, :vault_not_found} = Launch.start_conversation(attrs)
     end
 
     test "is refused once the tenant is at its concurrent-sandbox cap" do
@@ -261,7 +263,7 @@ defmodule Fountain.ConversationsStartTest do
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: ^limit, limit: ^limit}}} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
     end
 
     test "the cap is checked before any sandbox row is allocated" do
@@ -274,7 +276,7 @@ defmodule Fountain.ConversationsStartTest do
       before = Fountain.Quotas.active_sandbox_count(user.id)
 
       assert {:error, _} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       # A denial that still allocated would let a caller ratchet past the cap
       # by retrying, which is the failure mode the cap exists to prevent.
@@ -293,7 +295,7 @@ defmodule Fountain.ConversationsStartTest do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, _} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => other.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => other.id})
     end
 
     test "terminated sandboxes free capacity" do
@@ -305,13 +307,13 @@ defmodule Fountain.ConversationsStartTest do
             do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       {:ok, _} = Conversations.update_sandbox(first, %{status: "terminated"})
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
       assert {:ok, _} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
     end
 
     test "creates sandbox, conversation, and starts server", %{} do
@@ -328,7 +330,7 @@ defmodule Fountain.ConversationsStartTest do
         "prompt" => "hello"
       }
 
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert conv.agent_id == agent.id
       assert conv.user_id == user.id
       assert conv.status == "pending"
@@ -349,7 +351,7 @@ defmodule Fountain.ConversationsStartTest do
         "parent_conversation_id" => parent_conv.id
       }
 
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert conv.parent_conversation_id == parent_conv.id
     end
 
@@ -362,7 +364,7 @@ defmodule Fountain.ConversationsStartTest do
       end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => ""}
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert is_nil(conv.vault_id)
     end
 
@@ -376,7 +378,7 @@ defmodule Fountain.ConversationsStartTest do
       end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert conv.vault_id == vault.id
     end
 
@@ -387,7 +389,7 @@ defmodule Fountain.ConversationsStartTest do
       for ids <- [nil, [foreign.id]] do
         agent = insert_agent(user_id: user.id, allowed_vault_ids: ids)
         attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => foreign.id}
-        assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+        assert {:error, :vault_not_found} = Launch.start_conversation(attrs)
       end
     end
 
@@ -401,7 +403,7 @@ defmodule Fountain.ConversationsStartTest do
       end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert conv.vault_id == vault.id
     end
 
@@ -412,7 +414,7 @@ defmodule Fountain.ConversationsStartTest do
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [allowed.id])
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => other.id}
-      assert {:error, :vault_not_allowed} = Conversations.start_conversation(attrs)
+      assert {:error, :vault_not_allowed} = Launch.start_conversation(attrs)
     end
 
     test "returns {:error, :vault_not_allowed} for any vault when the allowlist is empty", %{} do
@@ -421,7 +423,7 @@ defmodule Fountain.ConversationsStartTest do
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [])
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
-      assert {:error, :vault_not_allowed} = Conversations.start_conversation(attrs)
+      assert {:error, :vault_not_allowed} = Launch.start_conversation(attrs)
     end
 
     test "empty allowlist still permits starting with no vault at all", %{} do
@@ -433,7 +435,7 @@ defmodule Fountain.ConversationsStartTest do
       end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id}
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert is_nil(conv.vault_id)
     end
   end
@@ -455,7 +457,7 @@ defmodule Fountain.ConversationsStartTest do
     defp launch(ctx, agent, policy) do
       attrs = %{"agent_id" => agent.id, "user_id" => ctx.user.id}
       attrs = if policy, do: Map.put(attrs, "permission_policy", policy), else: attrs
-      Conversations.start_conversation(attrs)
+      Launch.start_conversation(attrs)
     end
 
     test "no override leaves the column nil, and the agent's policy stands alone", ctx do
@@ -631,7 +633,7 @@ defmodule Fountain.ConversationsStartTest do
         "environment_id" => ctx.other_env.id
       }
 
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
       assert conv.environment_id == ctx.other_env.id
 
       assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).environment_id ==
@@ -646,7 +648,7 @@ defmodule Fountain.ConversationsStartTest do
           "environment_id" => value
         }
 
-        assert {:ok, conv} = Conversations.start_conversation(attrs)
+        assert {:ok, conv} = Launch.start_conversation(attrs)
         assert is_nil(conv.environment_id)
 
         assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).environment_id ==
@@ -660,7 +662,7 @@ defmodule Fountain.ConversationsStartTest do
 
       for id <- [foreign.id, Ecto.UUID.generate()] do
         attrs = %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "environment_id" => id}
-        assert {:error, :environment_not_found} = Conversations.start_conversation(attrs)
+        assert {:error, :environment_not_found} = Launch.start_conversation(attrs)
       end
     end
 
@@ -677,11 +679,11 @@ defmodule Fountain.ConversationsStartTest do
         "environment_id" => ctx.other_env.id
       }
 
-      assert {:ok, conv} = Conversations.start_conversation(ok)
+      assert {:ok, conv} = Launch.start_conversation(ok)
       assert conv.environment_id == ctx.other_env.id
 
       refused = %{"agent_id" => agent.id, "user_id" => ctx.user.id, "environment_id" => third.id}
-      assert {:error, :environment_not_allowed} = Conversations.start_conversation(refused)
+      assert {:error, :environment_not_allowed} = Launch.start_conversation(refused)
     end
 
     test "an empty allowlist forbids every override but still permits the agent's own", ctx do
@@ -693,7 +695,7 @@ defmodule Fountain.ConversationsStartTest do
         "environment_id" => ctx.other_env.id
       }
 
-      assert {:error, :environment_not_allowed} = Conversations.start_conversation(refused)
+      assert {:error, :environment_not_allowed} = Launch.start_conversation(refused)
 
       # Naming the agent's own environment is not an override — it is pinned
       # (a later change of the agent's environment does not move it), but it
@@ -704,7 +706,7 @@ defmodule Fountain.ConversationsStartTest do
         "environment_id" => ctx.agent_env.id
       }
 
-      assert {:ok, conv} = Conversations.start_conversation(own)
+      assert {:ok, conv} = Launch.start_conversation(own)
       assert conv.environment_id == ctx.agent_env.id
     end
 
@@ -715,7 +717,7 @@ defmodule Fountain.ConversationsStartTest do
       {:ok, agent} = Agents.update_agent(ctx.agent, %{allowed_environment_ids: []})
 
       attrs = %{"agent_id" => agent.id, "user_id" => ctx.user.id, "environment_id" => foreign.id}
-      assert {:error, :environment_not_allowed} = Conversations.start_conversation(attrs)
+      assert {:error, :environment_not_allowed} = Launch.start_conversation(attrs)
     end
 
     test "channel resume keys on the override: a different environment is a different binding",
@@ -723,25 +725,25 @@ defmodule Fountain.ConversationsStartTest do
       base = %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "channel_id" => "chan-783"}
 
       assert {:ok, first, :created} =
-               Conversations.start_or_resume_conversation(
+               Launch.start_or_resume_conversation(
                  Map.put(base, "environment_id", ctx.other_env.id)
                )
 
       # Same channel, same environment: resumed.
       assert {:ok, again, :resumed} =
-               Conversations.start_or_resume_conversation(
+               Launch.start_or_resume_conversation(
                  Map.put(base, "environment_id", ctx.other_env.id)
                )
 
       assert again.id == first.id
 
       # Same channel, no override: a fresh conversation, not the pinned one.
-      assert {:ok, plain, :created} = Conversations.start_or_resume_conversation(base)
+      assert {:ok, plain, :created} = Launch.start_or_resume_conversation(base)
       refute plain.id == first.id
       assert is_nil(plain.environment_id)
 
       # And the plain one is now what a plain launch resumes.
-      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(base)
+      assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(base)
       assert resumed.id == plain.id
     end
   end
@@ -787,11 +789,11 @@ defmodule Fountain.ConversationsStartTest do
         # better served by a new conversation on a working machine.
         dead = bound_conversation(ctx, unquote(status))
 
-        assert {:ok, fresh, :created} = Conversations.start_or_resume_conversation(ctx.attrs)
+        assert {:ok, fresh, :created} = Launch.start_or_resume_conversation(ctx.attrs)
         refute fresh.id == dead.id
 
         # And the new one is what the channel resumes from here.
-        assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(ctx.attrs)
+        assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(ctx.attrs)
         assert resumed.id == fresh.id
       end
     end
@@ -799,14 +801,14 @@ defmodule Fountain.ConversationsStartTest do
     test "a suspended sandbox is parked, not gone, and still resumes", ctx do
       parked = bound_conversation(ctx, "suspended")
 
-      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(ctx.attrs)
+      assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(ctx.attrs)
       assert resumed.id == parked.id
     end
 
     test "a ready sandbox resumes, as before", ctx do
       live = bound_conversation(ctx, "ready")
 
-      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(ctx.attrs)
+      assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(ctx.attrs)
       assert resumed.id == live.id
     end
   end

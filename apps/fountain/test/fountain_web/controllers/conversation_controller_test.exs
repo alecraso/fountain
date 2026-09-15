@@ -4,6 +4,9 @@ defmodule FountainWeb.ConversationControllerTest do
 
   alias Fountain.Conversations.ConversationServer
   alias FountainWeb.ConversationController
+  alias Fountain.Conversations.Interruption
+  alias Fountain.Conversations.Termination
+  alias Fountain.Conversations.Wake
 
   setup do
     user = insert_active_user()
@@ -1025,7 +1028,7 @@ defmodule FountainWeb.ConversationControllerTest do
 
       # The wake is what carries the answer to the agent; only that it was
       # asked for matters here.
-      stub(Fountain.Conversations, :wake_conversation, fn id, prompt ->
+      stub(Wake, :wake_conversation, fn id, prompt ->
         send(self(), {:woken, id, prompt})
         {:ok, %{}}
       end)
@@ -1142,7 +1145,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      expect(ConversationServer, :terminate_conversation, fn id, _opts ->
+      expect(Termination, :terminate_conversation, fn id, _opts ->
         assert id == conv.id
         {:error, :sandbox_unavailable}
       end)
@@ -1158,7 +1161,7 @@ defmodule FountainWeb.ConversationControllerTest do
 
     test "returns 204 on success", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :terminate_conversation, fn _id, _opts -> :ok end)
+      stub(Termination, :terminate_conversation, fn _id, _opts -> :ok end)
 
       conn =
         conn
@@ -1175,7 +1178,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :terminate_conversation, fn _id, _opts ->
+      stub(Termination, :terminate_conversation, fn _id, _opts ->
         {:error, :not_running}
       end)
 
@@ -1202,7 +1205,7 @@ defmodule FountainWeb.ConversationControllerTest do
   describe "POST /api/conversations/:conversation_id/interrupt" do
     test "returns 204 on success", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id, _opts -> :ok end)
+      stub(Interruption, :interrupt, fn _id, _opts -> :ok end)
 
       conn =
         conn
@@ -1227,7 +1230,7 @@ defmodule FountainWeb.ConversationControllerTest do
 
       test = self()
 
-      stub(ConversationServer, :interrupt, fn id, _opts ->
+      stub(Interruption, :interrupt, fn id, _opts ->
         send(test, {:interrupted, id}) && :ok
       end)
 
@@ -1251,7 +1254,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :not_running} end)
+      stub(Interruption, :interrupt, fn _id, _opts -> {:error, :not_running} end)
 
       conn =
         conn
@@ -1269,7 +1272,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :not_found} end)
+      stub(Interruption, :interrupt, fn _id, _opts -> {:error, :not_found} end)
 
       conn =
         conn
@@ -1285,7 +1288,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :idle} end)
+      stub(Interruption, :interrupt, fn _id, _opts -> {:error, :idle} end)
 
       conn =
         conn

@@ -4,6 +4,8 @@ defmodule Fountain.Conversations.TerminationFallbackTest do
 
   alias Fountain.{Audit, Conversations}
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -83,11 +85,10 @@ defmodule Fountain.Conversations.TerminationFallbackTest do
   end
 
   defp terminate(ctx),
-    do:
-      ConversationServer.terminate_conversation(ctx.conv.id, actor: "ui", request_ip: "192.0.2.5")
+    do: Termination.terminate_conversation(ctx.conv.id, actor: "ui", request_ip: "192.0.2.5")
 
   defp attach(ctx) do
-    Conversations.start_conversation(%{
+    Launch.start_conversation(%{
       "user_id" => ctx.user.id,
       "agent_id" => ctx.agent.id,
       "sandbox_id" => ctx.sandbox.id

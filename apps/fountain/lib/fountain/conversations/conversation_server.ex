@@ -26,6 +26,7 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.Conversations.{Pending, Provisioning, ProvisionWatchdog, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, Termination, TurnLaunch}
   alias Fountain.Conversations.TurnMachine
+  alias Fountain.Conversations.Wake
 
   # ── public api ────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ defmodule Fountain.Conversations.ConversationServer do
     result =
       case whereis(conv_id) do
         nil ->
-          case Conversations.wake_conversation(conv_id, prompt) do
+          case Wake.wake_conversation(conv_id, prompt) do
             {:ok, _conv} -> :ok
             {:error, :gone} -> {:error, :gone}
             {:error, :not_found} -> {:error, :not_running}
@@ -169,14 +170,6 @@ defmodule Fountain.Conversations.ConversationServer do
   def queue_initial_prompt(pid, prompt, images \\ []) when is_pid(pid) do
     GenServer.cast(pid, {:initial_prompt, prompt, images})
   end
-
-  @doc """
-  Interrupt the turn in flight, if any; see
-  `Fountain.Conversations.Interruption.interrupt/2`. The client half lives
-  there since #2213; this delegate keeps every caller
-  (`conversation_controller.ex`) and Mimic pin on `ConversationServer` valid.
-  """
-  defdelegate interrupt(conv_id, opts \\ []), to: Interruption
 
   @doc """
   Answer an outstanding permission request (#940).
@@ -262,19 +255,6 @@ defmodule Fountain.Conversations.ConversationServer do
       pid -> call_server(pid, {:answer_caller_tools, answers})
     end
   end
-
-  @doc """
-  Terminate the conversation; see `Fountain.Conversations.Termination.terminate_conversation/2`.
-  The client half lives there since #2209; this delegate keeps every caller
-  and Mimic pin on `ConversationServer` valid.
-  """
-  defdelegate terminate_conversation(conv_id, opts \\ []), to: Termination
-
-  @doc """
-  End the conversation but keep its computer; see
-  `Fountain.Conversations.Termination.release_conversation/2`.
-  """
-  defdelegate release_conversation(conv_id, opts \\ []), to: Termination
 
   @doc """
   Apply the conversation's current selection to the machine it is running on.
@@ -475,7 +455,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       # ownership: this newly started actor fetched its parent above. A journal
       # left by another incarnation is retired, never reattached or replayed.
-      case Fountain.Conversations.Interruption.retire_journal_before_reattach(conv.id) do
+      case Interruption.retire_journal_before_reattach(conv.id) do
         {:ok, :unbounded} -> provision_with_rows(state, conv, sandbox)
         {:ok, {:bounded, _}} -> {:stop, :normal, state}
         {:error, _} -> {:stop, :normal, state}

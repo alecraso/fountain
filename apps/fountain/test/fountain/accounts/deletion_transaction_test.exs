@@ -4,6 +4,7 @@ defmodule Fountain.Accounts.DeletionTransactionTest do
 
   alias Fountain.Accounts.{Deletion, User}
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
 
   for operation <- [:delete_user, :destroy_user_sprites, :destroy_id_sprites] do
     test "#{operation} refuses an enclosing transaction before teardown" do
@@ -14,7 +15,7 @@ defmodule Fountain.Accounts.DeletionTransactionTest do
       events = Fountain.Audit.list_for_user(user.id)
 
       stub(ConversationServer, :whereis, fn _ -> self() end)
-      reject(ConversationServer, :terminate_conversation, 2)
+      reject(Termination, :terminate_conversation, 2)
       reject(Managoat.Sandbox.Sprites, :destroy, 1)
 
       assert {:ok, {:error, :provider_transaction_open}} =

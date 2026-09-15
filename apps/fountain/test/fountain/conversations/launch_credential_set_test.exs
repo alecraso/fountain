@@ -17,6 +17,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
   alias Fountain.Conversations.InferenceResolution
   alias Fountain.Crypto
   alias Fountain.InferenceCredentials
+  alias Fountain.Conversations.Launch
 
   setup do
     # Stop the real ConversationServer from starting: these tests are about
@@ -106,7 +107,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(user)
 
       {:ok, conv} =
-        Conversations.start_conversation(%{
+        Launch.start_conversation(%{
           "agent_id" => agent.id,
           "user_id" => user.id,
           "inference_credential_id" => second.id
@@ -122,7 +123,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(user, %{"inference_credential_id" => second.id})
 
       {:ok, conv} =
-        Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+        Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       assert conv.inference_credential_id == second.id
       assert conv.inference_source["set_id"] == second.id
@@ -135,7 +136,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       {:ok, theirs} = InferenceCredentials.create_set(other.id, "Theirs")
 
       assert {:error, :inference_credential_not_found} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "inference_credential_id" => theirs.id
@@ -149,7 +150,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       assert is_nil(agent.allowed_inference_credential_ids)
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "inference_credential_id" => second.id
@@ -162,7 +163,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(user, %{"allowed_inference_credential_ids" => []})
 
       assert {:error, :inference_credential_not_allowed} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "inference_credential_id" => second.id
@@ -173,14 +174,14 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(user, %{"allowed_inference_credential_ids" => [second.id]})
 
       assert {:ok, _} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "inference_credential_id" => second.id
                })
 
       assert {:error, :inference_credential_not_allowed} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "inference_credential_id" => default.id
@@ -198,7 +199,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
         })
 
       assert {:ok, conv} =
-               Conversations.start_conversation(%{
+               Launch.start_conversation(%{
                  "agent_id" => agent.id,
                  "user_id" => user.id,
                  "inference_credential_id" => second.id
@@ -216,7 +217,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(user)
 
       {:ok, conv} =
-        Conversations.start_conversation(%{
+        Launch.start_conversation(%{
           "agent_id" => agent.id,
           "user_id" => user.id,
           "inference_credential_id" => second.id
@@ -242,32 +243,31 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       attrs = channel_attrs(ctx.user, agent, sandbox)
 
       assert {:ok, first, :created} =
-               Conversations.start_or_resume_conversation(
+               Launch.start_or_resume_conversation(
                  Map.put(attrs, "inference_credential_id", ctx.default.id)
                )
 
       assert {:ok, second, :created} =
-               Conversations.start_or_resume_conversation(
+               Launch.start_or_resume_conversation(
                  Map.put(attrs, "inference_credential_id", ctx.second.id)
                )
 
       refute first.id == second.id
       assert first.sandbox_id == second.sandbox_id
 
-      assert Conversations.channel_conversation(
-               Map.put(attrs, "inference_credential_id", ctx.second.id)
-             ).id == second.id
+      assert Launch.channel_conversation(Map.put(attrs, "inference_credential_id", ctx.second.id)).id ==
+               second.id
     end
 
     test "an omitted selection retains its source after the default changes", ctx do
       agent = agent_for(ctx.user)
       sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
       attrs = channel_attrs(ctx.user, agent, sandbox)
-      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, first, :created} = Launch.start_or_resume_conversation(attrs)
       assert first.inference_source["set_id"] == ctx.default.id
       assert {:ok, _} = InferenceCredentials.set_default(ctx.second)
 
-      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(attrs)
       assert resumed.id == first.id
       assert Repo.reload!(resumed).inference_source == first.inference_source
     end
@@ -279,13 +279,13 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       attrs =
         Map.put(channel_attrs(ctx.user, agent, sandbox), "inference_credential_id", ctx.second.id)
 
-      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, first, :created} = Launch.start_or_resume_conversation(attrs)
       assert {:ok, _} = Agents.update_agent(agent, %{"allowed_inference_credential_ids" => []})
 
       assert {:error, :inference_credential_not_allowed} =
-               Conversations.start_or_resume_conversation(attrs)
+               Launch.start_or_resume_conversation(attrs)
 
-      assert is_nil(Conversations.channel_conversation(attrs))
+      assert is_nil(Launch.channel_conversation(attrs))
       assert Repo.reload!(first).channel_id == attrs["channel_id"]
     end
 
@@ -293,11 +293,11 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(ctx.user)
       sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
       attrs = channel_attrs(ctx.user, agent, sandbox)
-      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, first, :created} = Launch.start_or_resume_conversation(attrs)
       write_key(ctx.default, ctx.dek, :anthropic_api_key, "sk-replaced")
 
       assert {:error, :inference_source_changed} =
-               Conversations.start_or_resume_conversation(attrs)
+               Launch.start_or_resume_conversation(attrs)
 
       assert Repo.reload!(first).inference_source == first.inference_source
     end
@@ -306,11 +306,11 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(ctx.user, %{"inference_credential_id" => ctx.second.id})
       sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
       attrs = channel_attrs(ctx.user, agent, sandbox)
-      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, first, :created} = Launch.start_or_resume_conversation(attrs)
       assert {:ok, _} = InferenceCredentials.delete_set(ctx.second)
 
       assert {:error, :inference_credential_not_found} =
-               Conversations.start_or_resume_conversation(attrs)
+               Launch.start_or_resume_conversation(attrs)
 
       assert Repo.reload!(first).inference_source["set_id"] == ctx.second.id
     end
@@ -323,11 +323,11 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(ctx.user, %{"inference_credential_id" => ctx.second.id})
       sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
       attrs = channel_attrs(ctx.user, agent, sandbox)
-      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, first, :created} = Launch.start_or_resume_conversation(attrs)
       assert first.inference_source["set_id"] == ctx.second.id
       first |> Ecto.Changeset.change(inference_source: nil) |> Repo.update!()
 
-      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(attrs)
       assert resumed.id == first.id
       assert Repo.reload!(resumed).inference_source["set_id"] == ctx.second.id
     end
@@ -339,11 +339,11 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       attrs =
         Map.put(channel_attrs(ctx.user, agent, sandbox), "inference_credential_id", ctx.second.id)
 
-      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, first, :created} = Launch.start_or_resume_conversation(attrs)
       assert first.inference_source["set_id"] == ctx.second.id
       first |> Ecto.Changeset.change(inference_source: nil) |> Repo.update!()
 
-      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(attrs)
+      assert {:ok, resumed, :resumed} = Launch.start_or_resume_conversation(attrs)
       assert resumed.id == first.id
       assert Repo.reload!(resumed).inference_source["set_id"] == ctx.second.id
     end
@@ -354,7 +354,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = agent_for(ctx.user)
       sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
       attrs = Map.delete(channel_attrs(ctx.user, agent, sandbox), "channel_id")
-      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert {:ok, conv} = Launch.start_conversation(attrs)
 
       turn_attrs = %{
         conversation_id: conv.id,
@@ -390,7 +390,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
 
       assert {:ok, conv} =
-               Conversations.start_conversation(
+               Launch.start_conversation(
                  Map.delete(channel_attrs(ctx.user, agent, sandbox), "channel_id")
                )
 
@@ -434,16 +434,14 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       attrs = Map.delete(channel_attrs(ctx.user, agent, sandbox), "channel_id")
 
       assert {:ok, first} =
-               Conversations.start_conversation(
+               Launch.start_conversation(
                  Map.put(attrs, "inference_credential_id", ctx.default.id)
                )
 
       assert first.status == "idle"
 
       assert {:error, :codex_inference_conflict} =
-               Conversations.start_conversation(
-                 Map.put(attrs, "inference_credential_id", ctx.second.id)
-               )
+               Launch.start_conversation(Map.put(attrs, "inference_credential_id", ctx.second.id))
 
       assert Repo.aggregate(
                from(c in Fountain.Conversations.Conversation,
