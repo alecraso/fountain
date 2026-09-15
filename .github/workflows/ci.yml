@@ -68,7 +68,7 @@ jobs:
         run: bash scripts/ci/already-tested.sh
 
   changes:
-    name: Classify documentation and SDK changes
+    name: Classify documentation changes
     # Never on push, and deliberately so. There, `already-tested` above
     # already collapses a rebased squash-merge to a few seconds, and a main
     # push that is NOT already-tested is precisely the case that must run
@@ -92,10 +92,6 @@ jobs:
       manual_docs: ${{ steps.filter.outputs.manual_docs }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
       tree: ${{ steps.tree.outputs.tree }}
-      sdk_elixir: ${{ steps.filter.outputs.sdk_elixir }}
-      sdk_python: ${{ steps.filter.outputs.sdk_python }}
-      sdk_typescript: ${{ steps.filter.outputs.sdk_typescript }}
-      sdk_swift: ${{ steps.filter.outputs.sdk_swift }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
@@ -108,8 +104,8 @@ jobs:
 
       - name: Classify the diff
         id: filter
-        # Resolve the same base for documentation and SDK selection. Unknown
-        # paths, failed diffs and manual dispatch select the full server plan.
+        # Unknown paths, failed diffs and manual dispatch select the full
+        # server plan.
         env:
           # Empty on pull_request, which is how the script picks its base.
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
@@ -123,7 +119,7 @@ jobs:
           }
 
           # A manual run requests complete validation, without a diff or
-          # tree-reuse shortcut. An empty base selects every SDK too.
+          # tree-reuse shortcut.
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             decide
           fi
@@ -773,7 +769,6 @@ jobs:
       # which is also what enforces `erasableSyntaxOnly`, the setting that
       # keeps those sources runnable without a build step.
       - name: Set up Node
-        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -783,7 +778,6 @@ jobs:
       # `--no-audit --no-fund`: see the typescript-sdk job, which carries the
       # measurement. Here it is only to make `npm run generate` runnable.
       - name: SDK install
-        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         working-directory: sdk/typescript
         run: npm ci --no-audit --no-fund
 
@@ -794,7 +788,6 @@ jobs:
       # API that drift apart. This is the arm that covers the WHOLE document;
       # the manifest checks below cover what each client reaches for by name.
       - name: SDK types match the spec
-        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         working-directory: sdk/typescript
         run: |
           npm run generate
@@ -810,8 +803,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.sdk_elixir != 'false' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -894,8 +886,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.sdk_python != 'false' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -943,8 +934,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.sdk_typescript != 'false' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -1123,8 +1113,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     needs: [already-tested, changes]
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.sdk_swift != 'false' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -1706,27 +1695,6 @@ jobs:
       - name: Evaluate shipped alert fixtures
         run: /usr/bin/python3 scripts/test-alerts.py
 
-  sdk-checks:
-    name: SDK checks
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    if: ${{ always() }}
-    needs:
-      - already-tested
-      - changes
-      - elixir-sdk
-      - python-sdk
-      - typescript-sdk
-      - swift-sdk
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
-        with:
-          persist-credentials: false
-      - name: Every selected SDK check passed
-        env:
-          CI_NEEDS: ${{ toJSON(needs) }}
-        run: python3 scripts/ci/gate.py --sdk
-
   gate:
     name: CI required
     runs-on: ubuntu-24.04
@@ -1736,7 +1704,6 @@ jobs:
       - already-tested
       - changes
       - workflow-checks
-      - sdk-checks
       - test
       - coverage
       - elixir-static

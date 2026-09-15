@@ -9,33 +9,28 @@ from gate import FULL_JOBS, JOBS, PROBES, SDK_JOBS, validate
 EVENTS = ("pull_request", "push", "merge_group", "workflow_dispatch")
 
 
-def plan(event="pull_request", docs=False, reuse=False, sdks=None, manual=True):
+def plan(event="pull_request", docs=False, reuse=False, manual=True):
     if event == "workflow_dispatch":
-        docs, sdks = False, SDK_JOBS
-    if sdks is None:
-        sdks = set() if docs else SDK_JOBS
-    if event == "push":
-        sdks = SDK_JOBS
+        docs = False
     jobs = {job: {"result": "skipped", "outputs": {}} for job in JOBS}
     jobs["workflow-checks"]["result"] = "success"
-    jobs["sdk-checks"]["result"] = "success"
     if "already-tested" in PROBES[event]:
         jobs["already-tested"] = {"result": "success", "outputs": {"skip": str(reuse).lower()}}
     if "changes" in PROBES[event]:
         jobs["changes"] = {"result": "success", "outputs": {
             "docs_only": str(docs).lower(), "manual_docs": str(manual).lower(),
             "cli_docs": "false", "tree": "a" * 40,
-            **{"sdk_" + job.removesuffix("-sdk"): str(job in sdks).lower() for job in SDK_JOBS},
         }}
     if reuse:
         return jobs
+    # The SDK legs run on every plan that is not a reused tree.
+    for job in SDK_JOBS:
+        jobs[job]["result"] = "success"
     if docs and manual:
         jobs["docs"]["result"] = "success"
     elif not docs:
-        for job in FULL_JOBS - SDK_JOBS:
+        for job in FULL_JOBS:
             jobs[job]["result"] = "success"
-    for job in sdks:
-        jobs[job]["result"] = "success"
     return jobs
 
 
@@ -110,6 +105,37 @@ class GateTest(unittest.TestCase):
             with self.subTest(event=event):
                 with self.assertRaises(ValueError):
                     validate(event, jobs)
+
+    def test_sdk_legs_run_on_docs_only_plans_and_skip_only_for_reused_trees(self):
+        for event in ("pull_request", "merge_group"):
+            for job in SDK_JOBS:
+                jobs = plan(event, docs=True)
+                jobs[job]["result"] = "skipped"
+                with self.subTest(event=event, job=job):
+                    with self.assertRaises(ValueError):
+                        validate(event, jobs)
+        for job in SDK_JOBS:
+            jobs = plan("merge_group", reuse=True)
+            jobs[job]["result"] = "success"
+            with self.subTest(job=job):
+                with self.assertRaises(ValueError):
+                    validate("merge_group", jobs)
+
+    def test_sdk_job_conditions_honor_only_tree_reuse(self):
+        """No classifier output may skip an SDK leg; the contract check is unconditional."""
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text()
+        jobs = dict(re.findall(r"^  ([a-z][a-z0-9-]*):\n(.*?)(?=^  [a-z][a-z0-9-]*:|\Z)",
+                               workflow.split("\njobs:\n", 1)[1], re.M | re.S))
+        for job in SDK_JOBS:
+            condition = re.search(r"^    if: (.*?)(?=\n\n)", jobs[job], re.M | re.S)[1]
+            self.assertEqual(condition, "${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}")
+        release = jobs["release-and-contract"]
+        steps = dict(re.findall(r"      - name: ([^\n]+)\n(.*?)(?=      - (?:name:|uses:)|\Z)", release, re.S))
+        for name in ("Set up Node", "SDK install", "SDK types match the spec",
+                     "Validate OpenAPI spec", "SDK wire contract is current"):
+            self.assertNotIn("        if:", steps[name])
+        self.assertIn("run: scripts/sdk-contract/build.sh --check", steps["SDK wire contract is current"])
+        self.assertNotIn("sdk_", workflow.split("\n  changes:\n", 1)[1].split("\n  test:\n", 1)[0])
 
     def test_unexpected_failed_job_cannot_hide_on_docs_path(self):
         for event in ("pull_request", "merge_group"):

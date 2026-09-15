@@ -7,8 +7,8 @@ import tempfile
 import textwrap
 import unittest
 
-from changes import MANUAL_EXTENSIONS, classify_sdks, classify_docs
-from gate import SDK_GATE_JOBS, validate, validate_sdks
+from changes import MANUAL_EXTENSIONS, classify_docs
+from gate import validate
 from test_gate import plan
 
 
@@ -16,30 +16,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class DocumentationRoutingTest(unittest.TestCase):
-    def test_paths_select_checks_in_both_aggregates(self):
+    def test_paths_select_checks(self):
         cases = [
             (["CLAUDE.md", "CONTRIBUTING.md", "SETUP.md", "contributing/docs.md",
-              "standards/new-guide.md", "scripts/ci/README.md"], True, False, False, set()),
-            (["README.md"], True, True, False, set()),
-            (["docs/nav.yml", "docs/images/primitives.svg"], True, True, False, set()),
-            (["CONTRIBUTING.md", "docs/index.md"], True, True, False, set()),
-            (["docs/cli/commands.md"], True, True, True, set()),
-            (["docs/python-sdk.md"], True, True, False, {"python"}),
-            (["sdk/python/README.md"], True, False, False, {"python"}),
+              "standards/new-guide.md", "scripts/ci/README.md"], True, False, False),
+            (["README.md"], True, True, False),
+            (["docs/nav.yml", "docs/images/primitives.svg"], True, True, False),
+            (["CONTRIBUTING.md", "docs/index.md"], True, True, False),
+            (["docs/cli/commands.md"], True, True, True),
+            (["docs/python-sdk.md"], True, True, False),
+            (["sdk/python/README.md"], True, False, False),
         ]
         cases += [([f"apps/{app}/docs/nav.yml", f"apps/{app}/docs/guide.md"],
-                   True, True, False, set()) for app in MANUAL_EXTENSIONS]
-        for paths, short, manual, cli, sdks in cases:
+                   True, True, False) for app in MANUAL_EXTENSIONS]
+        for paths, short, manual, cli in cases:
             with self.subTest(paths=paths):
                 flags = classify_docs(paths)
                 self.assertEqual(flags, {"docs_only": short, "manual_docs": manual, "cli_docs": cli})
-                self.assertEqual(classify_sdks(paths), sdks)
                 for event, reuse in (("pull_request", False), ("merge_group", False), ("merge_group", True)):
-                    needs = plan(event, docs=short, manual=manual, reuse=reuse,
-                                 sdks={f"{language}-sdk" for language in sdks})
+                    needs = plan(event, docs=short, manual=manual, reuse=reuse)
                     needs["changes"]["outputs"]["cli_docs"] = str(cli).lower()
                     validate(event, needs)
-                    validate_sdks(event, {k: v for k, v in needs.items() if k in SDK_GATE_JOBS})
                     self.assertEqual(needs["docs"]["result"],
                                      "success" if manual and not reuse else "skipped")
                     for job, state in needs.items():
@@ -64,10 +61,9 @@ class DocumentationRoutingTest(unittest.TestCase):
 
     def test_malformed_paths_and_empty_diffs_require_full_validation(self):
         for paths in ([], [""], ["/docs/index.md"], ["docs/../mix.exs"],
-                      ["docs//index.md"], ["docs/./index.md"], ["docs/file\nsdk_python=false"]):
+                      ["docs//index.md"], ["docs/./index.md"], ["docs/file\ndocs_only=true"]):
             with self.subTest(paths=paths):
                 self.assertFalse(classify_docs(paths)["docs_only"])
-                self.assertEqual(classify_sdks(paths), {"elixir", "python", "swift", "typescript"})
 
     def test_cli_reference_checks_cannot_be_hidden_by_contributor_classification(self):
         for event in ("pull_request", "merge_group"):
@@ -75,10 +71,8 @@ class DocumentationRoutingTest(unittest.TestCase):
             needs["changes"]["outputs"]["cli_docs"] = "true"
             with self.assertRaisesRegex(ValueError, "CLI documentation requires manual checks"):
                 validate(event, needs)
-            with self.assertRaises(ValueError):
-                validate_sdks(event, {k: v for k, v in needs.items() if k in SDK_GATE_JOBS})
 
-    def test_malformed_documentation_flags_fail_both_gates(self):
+    def test_malformed_documentation_flags_fail_the_gate(self):
         for key in ("docs_only", "manual_docs", "cli_docs"):
             for value in (None, "", "TRUE", True, False, 0, [], {}):
                 with self.subTest(key=key, value=value):
@@ -86,8 +80,6 @@ class DocumentationRoutingTest(unittest.TestCase):
                     needs["changes"]["outputs"][key] = value
                     with self.assertRaises(ValueError):
                         validate("merge_group", needs)
-                    with self.assertRaises(ValueError):
-                        validate_sdks("merge_group", {k: v for k, v in needs.items() if k in SDK_GATE_JOBS})
 
     def test_real_diff_includes_deleted_and_renamed_code(self):
         with tempfile.TemporaryDirectory() as directory:
