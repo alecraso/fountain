@@ -19,7 +19,7 @@ name in a red build says which toolchain to look at:
 
 | Job | What it runs |
 |---|---|
-| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, the changelog guard and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Required even for docs-only changes and reused trees |
+| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, the changelog guard and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Policy checks run even for docs-only changes and reused trees; alert evaluation skips only explicit docs-only plans |
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
@@ -225,8 +225,9 @@ their agreement and every supported event plan.
 
 `changes.py` reads one NUL-delimited diff with rename detection disabled, then
 selects documentation checks from those paths. The contributor-only
-allowlist is Markdown-specific; executable files and new extension directories
-select the full server plan. A move out of code retains the old code path in
+allowlist includes ADR and changelog-fragment Markdown. Non-Markdown decision
+evidence, executable files and new extension directories select the full server
+plan. A move out of code retains the old code path in
 the diff. Missing bases, failed/empty diffs and malformed paths select full CI.
 
 `docs_only=true` skips the server suite. `manual_docs=true` additionally requires

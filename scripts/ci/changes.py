@@ -18,13 +18,13 @@ CONTRIBUTOR_FILES = {"CLAUDE.md", "CONTRIBUTING.md", "SETUP.md", "scripts/ci/REA
 
 def contributor_doc(path):
     return path in CONTRIBUTOR_FILES or (
-        path.endswith(".md") and path.startswith(("contributing/", "standards/"))
+        path.endswith(".md") and path.startswith(("contributing/", "standards/", "decisions/", "changelog.d/"))
     )
 
 
 def manual_doc(path):
     # README's diagram alt text is checked by Fountain.DocsTest.
-    return path == "README.md" or path.startswith(
+    return path in {"README.md", "CHANGELOG.md"} or path.startswith(
         ("docs/", *(f"apps/{app}/docs/" for app in MANUAL_EXTENSIONS))
     )
 
