@@ -23,7 +23,7 @@ name in a red build says which toolchain to look at:
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
-| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `manual_docs` (which selects the published-manual tests), `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
+| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `manual_docs` (which selects the published-manual tests), `cli_docs` and `tree` (`scripts/ci/changes.py`). Fail-open: an unreadable diff or an unregistered path selects the full server plan. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
 | **already-tested** | `Skip the re-run when a PR already tested this exact tree`: `scripts/ci/already-tested.sh` compares the checkout tree with a successful run's `tested-tree` artifact. Runs only on `push` and `merge_group`. Missing or expired artifacts and API failures leave `skip=false` |
 | **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
 | **python-sdk** (×2) | The Python SDK on 3.9 and 3.13, conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
@@ -33,7 +33,6 @@ name in a red build says which toolchain to look at:
 | **core-distribution** | Builds with `BUNDLE_EXTENSIONS=false`, boots and migrates a fresh database, probes health, and checks that extension applications and API paths are absent; then rebuilds with extensions to check their inclusion. Skips docs-only changes and reused trees |
 | **compose-fresh-clone** | `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file |
 | **compose-pinned-image-boot** | `scripts/compose-boot-check.sh` exercises the Compose quick start against its pinned release image. An unpublished pin that matches the version in `mix.exs` defers the boot check to `release.yml`; any other missing pin fails |
-| **sdk-checks** | A stable aggregate over the four SDK jobs. A selected SDK must succeed even on a docs-only server plan, because an SDK's own docs page selects it. Legs skip only for a reused tree or an unselected language |
 | **docs** | Compiles the embedded manual, runs `scripts/test-docs.sh` (core and extension documentation suites), and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` and `manual_docs` are true and the tree is not reused; skipped on `push` |
 | **gate** | `CI required`: validates every expected job result and records a successful PR checkout tree |
 
@@ -173,7 +172,7 @@ gh pr merge <N> --squash --auto     # queue it; the queue merges when green
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
-PR runs 25 jobs; a full merge group runs 26 because both probes run. The
+PR runs 24 jobs; a full merge group runs 25 because both probes run. The
 documented limit is 20 concurrent runners. The queue builds one group at a
 time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
@@ -208,72 +207,39 @@ Node and browser entry points with a fake fetch implementation. It also bundles
 that consumer for a browser, checking the package export conditions.
 These three extracted jobs lint fixtures before their
 tests. Swift retains its separate conformance test step.
-`CI required` requires every selected SDK job. A failed, cancelled or
-unexpectedly skipped job fails the gate. Main runs all SDKs unless a verified
-tested tree authorizes reuse. Manual workflow dispatch always selects every
-SDK and the full server plan. Both gates reject a
-manual classification that attempts to skip part of that plan.
+**The four SDK jobs run on every plan.** Pull requests, merge groups, manual
+dispatches and main pushes all run them, docs-only plans included; the one
+thing that skips an SDK leg is verified tested-tree reuse, exactly as it
+skips the server jobs. There is no per-language path classification: each
+leg is a fraction of a minute, and the routing that used to skip an
+unselected language cost more to keep right than it saved. `CI required`
+requires all four directly; a failed, cancelled or unexpectedly skipped leg
+fails the gate.
 
-`SDK checks` reports the SDK result even when docs-only classification or a
-previously tested tree skips every SDK leg. It validates the same probe
-outputs as the full gate and rejects missing, failed or unexpectedly skipped
-jobs. `CI required` depends on this aggregate. Only the full gate publishes
-`tested-tree` evidence; passing the SDK gate cannot authorize reuse of a tree.
-
-Register a new job in
-`gate.py`'s `FULL_JOBS` and the workflow gate's `needs` list together. For an
-SDK job, also update `SDK_JOBS` and the `sdk-checks` dependencies. Run
-`test_gate.py` and `test_sdk_gate.py` to verify their agreement and every
-supported event plan.
+Register a new job in `gate.py`'s `FULL_JOBS` and the workflow gate's
+`needs` list together. For an SDK job, also add it to `SDK_JOBS`, which is
+what keeps it required on a docs-only plan. Run `test_gate.py` to verify
+their agreement and every supported event plan.
 
 ## Documentation path classification
 
 `changes.py` reads one NUL-delimited diff with rename detection disabled, then
-selects documentation and SDK checks from the same paths. The contributor-only
+selects documentation checks from those paths. The contributor-only
 allowlist is Markdown-specific; executable files and new extension directories
 select the full server plan. A move out of code retains the old code path in
 the diff. Missing bases, failed/empty diffs and malformed paths select full CI.
 
 `docs_only=true` skips the server suite. `manual_docs=true` additionally requires
 the `docs` job on that short path; contributor-only text needs no Elixir job.
-Both aggregates validate these booleans, and `cli_docs=true` requires manual
-checks. SDK README edits still select their language. The documentation job
-honors verified tree reuse on the merge queue, just like the server jobs.
+The gate validates these booleans, and `cli_docs=true` requires manual
+checks. An SDK's README is documentation for this purpose; its SDK job runs
+either way. The documentation job honors verified tree reuse on the merge
+queue, just like the server jobs.
 
 See [the manual contribution guide](../../contributing/docs.md#checks-for-documentation-changes)
 for the path table and matching local commands. Register an extension's docs
 in `MANUAL_EXTENSIONS` and `scripts/test-docs.sh` together; the routing tests
 check that the selected manuals have runnable documentation suites.
-
-## SDK path classification
-
-`changes` reports four `sdk_<language>` outputs from `changes.py`, using
-its existing PR merge base or merge-group base. Each SDK job consumes its
-own output. The two gates independently validate the selection and exact job
-results. Missing or malformed outputs fail both gates; only explicit `false`
-lets a job skip.
-
-The classifier selects an SDK for its directory, documentation page or
-registered release tooling. Shared contract and conformance files select all
-SDKs. So do API implementation, build configuration and unregistered paths.
-An explicit allowlist selects none for unrelated docs, console UI, server
-tests and telemetry. Mixed changes select the union of their SDKs. SDK docs
-select their language even on the server docs-only path.
-
-The release job installs TypeScript dependencies and checks generated types
-only when TypeScript is selected. Server wire-contract generation and its
-freshness check remain required on every full server plan. Shared contract
-changes select all SDKs, including that generated-type check.
-
-Invalid bases, failed or empty diffs, malformed paths and undecodable names
-select every SDK. The NUL-delimited Git diff disables rename detection, so a
-move out of an SDK still selects its former owner. Outputs contain only fixed
-keys and boolean values.
-
-Register a new language in `LANGUAGES` and `OWNED_FILES`, expose its workflow
-output, and add routing fixtures in `test_sdk_changes.py`. Register SDK docs
-and checked snippets before the unrelated-docs allowlist. Keep contract
-triggers outside that allowlist; uncertainty must select every SDK.
 
 ## Coverage
 

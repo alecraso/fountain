@@ -8,7 +8,7 @@ import tempfile
 import textwrap
 import unittest
 
-from gate import FULL_JOBS, SDK_GATE_JOBS, SDK_JOBS, validate, validate_sdks
+from gate import FULL_JOBS, validate
 from test_gate import plan
 
 
@@ -37,28 +37,16 @@ class DispatchTest(unittest.TestCase):
             self.assertFalse((root / "called").exists())
             values = dict(line.split("=", 1) for line in output.read_text().splitlines())
             self.assertEqual(values, {"diff_base": "", "docs_only": "false",
-                                      "manual_docs": "true", "cli_docs": "false",
-                                      **{f"sdk_{job.removesuffix('-sdk')}": "true" for job in SDK_JOBS}})
+                                      "manual_docs": "true", "cli_docs": "false"})
 
-    def test_both_gates_reject_partial_manual_plans(self):
-        original = plan("workflow_dispatch")
-        mutations = [("docs_only", "true")]
-        mutations += [("sdk_" + job.removesuffix("-sdk"), "false") for job in SDK_JOBS]
-        for key, value in mutations:
-            needs = copy.deepcopy(original)
-            needs["changes"]["outputs"][key] = value
-            if key == "docs_only":
-                for job in FULL_JOBS - SDK_JOBS:
-                    needs[job]["result"] = "skipped"
-                needs["docs"]["result"] = "success"
-            else:
-                needs[key.removeprefix("sdk_") + "-sdk"]["result"] = "skipped"
-            with self.subTest(key=key):
-                with self.assertRaisesRegex(ValueError, "manual CI must select the complete plan"):
-                    validate("workflow_dispatch", needs)
-                with self.assertRaisesRegex(ValueError, "manual CI must select the complete plan"):
-                    validate_sdks("workflow_dispatch", {name: state for name, state in needs.items()
-                                                       if name in SDK_GATE_JOBS})
+    def test_gate_rejects_a_partial_manual_plan(self):
+        needs = copy.deepcopy(plan("workflow_dispatch"))
+        needs["changes"]["outputs"]["docs_only"] = "true"
+        for job in FULL_JOBS:
+            needs[job]["result"] = "skipped"
+        needs["docs"]["result"] = "success"
+        with self.assertRaisesRegex(ValueError, "manual CI must select the complete plan"):
+            validate("workflow_dispatch", needs)
 
     def test_full_manual_gate_can_publish_tested_tree_evidence(self):
         needs = plan("workflow_dispatch")

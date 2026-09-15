@@ -30,9 +30,9 @@ open the route.
 |---|---|
 | `CLAUDE.md`, `CONTRIBUTING.md`, `SETUP.md`, `scripts/ci/README.md`, Markdown under `contributing/` or `standards/` | Repository policy, alert fixtures, changelog and conflict-marker checks, plus the secret scan |
 | `README.md`, `docs/`, or the Buzz, Google, Microsoft or Slack manuals | Core rendering and structural tests, plus every extension's documentation and manual-integration tests |
-| An SDK's `README.md` or its page under `docs/` | That SDK's existing checks; published pages also get the manual tests |
+| An SDK's `README.md` or its page under `docs/` | The four SDK checks, which run on every plan; published pages also get the manual tests |
 | `docs/cli.md` or `docs/cli/` | Manual tests and the CLI reference parity checks |
-| Code, configuration, unregistered paths, or mixed code/documentation changes | Full server validation and the selected SDK checks |
+| Code, configuration, unregistered paths, or mixed code/documentation changes | Full server validation and the four SDK checks |
 
 The short paths apply to pull requests and merge groups. Main reuses a tested
 tree when possible; otherwise it runs full CI. A manual CI dispatch also runs
