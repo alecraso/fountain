@@ -107,9 +107,8 @@ engineer", send one of them a message, and wait for the reply. The exchange
 appears in both threads. Read [Team](../api.md#team).
 
 **A teammate is not locked to your app.** The same agent answers over
-[ACP](../integrations/acp.md) in an editor, over
-[AG-UI](../integrations/openbot.md) from another agent platform, and over
-Nostr.
+[ACP](../integrations/acp.md) in an editor, over the
+[API](../api.md) from your own code, and over Nostr.
 
 Each of those surfaces binds its own durable thread, by the mechanism
 your app uses. Your UI is one door onto something that exists whether or not

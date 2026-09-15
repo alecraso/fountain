@@ -60,7 +60,6 @@ therefore stay apart, and you write no code for it.
 Reach it the way you already work.
 
 - [**ACP**](integrations/acp.md), for an editor or a chat surface.
-- [**AG-UI**](integrations/openbot.md), for a coworker platform.
 - [**REST and SSE**](api.md), for your own code, with
   [TypeScript](sdk.md), [Python](python-sdk.md), [Elixir](elixir-sdk.md) and
   [Swift](swift-sdk.md) SDKs and a [CLI](cli.md) over them.

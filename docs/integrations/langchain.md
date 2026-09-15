@@ -1,154 +1,45 @@
-# LangChain and Deep Agents
+# LangChain and Deep Agents (retired)
 
-[LangChain](https://github.com/langchain-ai/langchain) is the agent framework,
-and [Deep Agents](https://github.com/langchain-ai/deepagents) is its harness
-for an orchestrator that plans and delegates to subagents. Fountain fits
-there as a **subagent**. The orchestrator plans. A Fountain agent does the
-work in a sandbox of its own, with its own repositories and credentials, and
-reports back once.
+Fountain used to fit into [LangChain](https://github.com/langchain-ai/langchain)
+and [Deep Agents](https://github.com/langchain-ai/deepagents) as a **subagent**:
+a `FountainAgent` runnable in one Python file, talking to Fountain over the
+[OpenAI-compatible API](openai-compatible.md) as a `ChatOpenAI` model, with a
+LangGraph `thread_id` mapped to a sandbox. **That API is gone**, removed in
+the release that carries
+[ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md),
+and the integration and its `examples/deepagents-contractor` example went with
+it.
 
-```
-  Deep Agent (LangGraph)  ──task tool──▶  FountainAgent runnable  ──HTTPS──▶  Fountain  ──▶  sandbox
-    plans, reads reports                    POST /v1/chat/completions             /v1        the Fountain agent
-                                            X-Fountain-Thread: <thread_id>:<agent>
-```
+This page stays because the URL is in other people's notes.
 
-It rides on the [OpenAI-compatible API](openai-compatible.md), so it is
-alpha, behind the `openai_compat` flag. There is no package to install from
-us. One file, `fountain_langchain.py`, is the whole integration, and the
-example ships it.
+## What has no replacement
 
-## Summary
+Be clear about the size of this, because it is the biggest thing the
+retirement costs:
 
-| | |
-|---|---|
-| Direction | Inbound. LangChain drives Fountain. |
-| Talks over | OpenAI chat completions, at `POST /v1/chat/completions`. |
-| Configured on | Your LangChain code. |
-| Plugin | None. One Python file, in the example. |
-| Credential | A Fountain API key, as the bearer token. |
-| Scope | One LangGraph `thread_id` is one sandbox per Fountain agent. |
-| Status | Alpha, with the endpoint under it. Read [Feature status](../reference/feature-status.md). |
+- **A stock `ChatOpenAI` pointed at Fountain.** The integration worked because
+  Fountain spoke a dialect LangChain already had a client for. It does not any
+  more, so there is no base URL to swap in.
+- **The `role: "tool"` continuation loop.** LangChain's tool calling returned
+  results to Fountain as chat messages, and the request-defined tool bridge
+  turned those into answers for the agent. Both halves are retired
+  (ADR 0057). Fountain's native API has no equivalent: an agent's tools are
+  configured on the agent, not defined per request by the caller.
 
-## Set it up
+Nothing in the native API gives either of those back, and this page is not
+going to pretend otherwise.
 
-Make an API key.
+## What you can still do
 
-```bash
-fountain keys create langchain
-```
+Drive Fountain from Python directly, with the
+[Python SDK](../python-sdk.md) or the [conversation API](../api.md): create a
+conversation for the work, prompt it, follow its stream, read the result, and
+hand that back to your orchestrator yourself. That replaces the *delegation*
+— an orchestrator handing work to a Fountain agent and reading its report —
+which is what most people used this for. It is a wrapper you write, not a
+model object LangChain already understands.
 
-Clone the example and install it.
-
-```bash
-git clone https://github.com/managoat/fountain
-cd fountain/examples/deepagents-contractor
-pip install -r requirements.txt
-export FOUNTAIN_TOKEN=ftn_...
-export ANTHROPIC_API_KEY=sk-ant-...      # the orchestrator's model, not Fountain's
-```
-
-Run it.
-
-```bash
-python main.py --list                                  # the agents on your account
-python main.py -a reflex-1 -a pr-reviewer \
-  "Ask pr-reviewer to review the open PRs on jhgaylor/rounds, then summarise."
-```
-
-The orchestrator is an ordinary model that returns tool calls. Each `-a` names a Fountain
-agent it can delegate to. `--thread` keeps the same sandboxes on a second
-run.
-
-## Three shapes
-
-`FountainAgent(name)` has three shapes that treat the agent as a leaf, and a
-fourth that makes it the model. The three send one prompt, wait for the turn,
-and return the text.
-
-A **Deep Agents subagent**, for `create_deep_agent`.
-
-```python
-from deepagents import create_deep_agent
-from fountain_langchain import FountainAgent
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-5",
-    subagents=[
-        FountainAgent("pr-reviewer").as_subagent(
-            "Reviews and fixes pull requests. Its sandbox has the repository."
-        ),
-    ],
-)
-agent.invoke({"messages": [("user", "...")]}, {"configurable": {"thread_id": "t1"}})
-```
-
-A **tool**, for `create_agent` or for a loop of your own.
-
-```python
-from langchain.agents import create_agent
-
-agent = create_agent(model="anthropic:claude-sonnet-5",
-                     tools=[FountainAgent("pr-reviewer").as_tool()])
-```
-
-A **runnable**, for a graph of your own. The input and the output both hold
-`messages`, which is the shape a Deep Agents subagent must have.
-
-```python
-runnable = FountainAgent("pr-reviewer").as_runnable()
-```
-
-## The thread
-
-The thread key is what keeps a conversation in one sandbox. The runnable reads
-the LangGraph `thread_id` from the ambient config and appends the agent's
-name. Thus one Deep Agents thread holds one sandbox per Fountain agent,
-across turns and across runs. Pass `thread="..."` to fix it yourself. Without
-either, the `FountainAgent` makes one random key and keeps it.
-
-A busy thread is a `409` with `Retry-After`. The runnable waits and sends
-again. Fountain does not queue a second prompt behind a turn that is in
-progress.
-
-## A Fountain agent as the model
-
-The fourth shape puts a Fountain agent *inside* the loop. `create_agent`
-needs a model that returns tool calls. Fountain returns the calls to the
-tools that *you* pass on the request, and runs its own tools in the sandbox
-([Your tools](openai-compatible.md#your-tools)). So `ChatOpenAI` with the
-Fountain base URL is a model, and your LangChain tools run on your side.
-
-```python
-from langchain.agents import create_agent
-from langchain_core.tools import tool
-from fountain_langchain import FountainAgent
-
-@tool
-def lookup_order(id: str) -> str:
-    """Find an order by id."""
-    return orders[id]
-
-agent = create_agent(model=FountainAgent("support").as_model(), tools=[lookup_order])
-agent.invoke({"messages": [("user", "Where is order A-17?")]})
-```
-
-`as_model()` is `ChatOpenAI(base_url=..., model=...)` with the thread header
-set, so the loop stays in one sandbox. Two caveats.
-
-- `langchain-openai` drops `reasoning_content`, the field Fountain streams
-  while a sandbox provisions. A first turn looks silent for a minute. The
-  three shapes above use the stock `openai` client and print those stages to
-  stderr.
-- The agent's own tools do not come back as tool calls. Only the tools you
-  pass do. A tool call that you do not answer in five minutes returns an
-  error to the agent, and the turn continues.
-
-## What it does not do
-
-- A sandbox backend for Deep Agents. That protocol needs `execute` inside
-  the sandbox, and Fountain's unit is a conversation, not a shell.
-- A package on PyPI. The file is small enough to copy.
-
-The example is
-[`examples/deepagents-contractor`](https://github.com/managoat/fountain/tree/main/examples/deepagents-contractor).
+If the Fountain agent needs to call back into your application mid-run,
+configure that as an MCP server **on the agent**, with `${VAR}` references
+resolved from the environment and the vault. That path is fully supported and
+is not the retired bridge. Read [Plug into Fountain](clients.md).
