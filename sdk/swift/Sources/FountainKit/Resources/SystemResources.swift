@@ -70,7 +70,7 @@ public struct AuditResource: Sendable {
     before: Int? = nil,
     actionPrefix: String? = nil,
     resourceType: String? = nil
-  ) async throws -> Page<[AuditEvent]> {
+  ) async throws -> Page<[AuditEvent], PageMeta> {
     let (data, _) = try await client.raw(
       .get, "/api/audit",
       options: .init(query: [
@@ -79,8 +79,8 @@ public struct AuditResource: Sendable {
         "action_prefix": actionPrefix,
         "resource_type": resourceType,
       ]))
-    let envelope = try APIClient.decode(Envelope<[AuditEvent]>.self, from: data)
-    return Page(items: envelope.data, meta: envelope.meta)
+    let response = try APIClient.decode(AuditEventListResponse.self, from: data)
+    return Page(items: response.data, meta: response.meta)
   }
 }
 
@@ -93,7 +93,7 @@ public struct SearchResource: Sendable {
     offset: Int = 0,
     agentID: String? = nil,
     conversationID: String? = nil
-  ) async throws -> Page<[SearchHit]> {
+  ) async throws -> Page<[SearchHit], SearchResponse.Meta> {
     let (data, _) = try await client.raw(
       .get, "/api/search",
       options: .init(query: [
@@ -103,7 +103,7 @@ public struct SearchResource: Sendable {
         "agent_id": agentID,
         "conversation_id": conversationID,
       ]))
-    let envelope = try APIClient.decode(Envelope<[SearchHit]>.self, from: data)
-    return Page(items: envelope.data, meta: envelope.meta)
+    let response = try APIClient.decode(SearchResponse.self, from: data)
+    return Page(items: response.data, meta: response.meta)
   }
 }

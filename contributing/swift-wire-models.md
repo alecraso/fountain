@@ -23,7 +23,8 @@ The generator reads the committed contract and does not require Elixir to run.
 | PermissionRequest | Intentionally handwritten, and not a wire model: it is derived from a `Block` through `init?(block:)` and never decoded |
 | JSONValue, ConversationInputField and WireValue / enum wrappers | Intentionally handwritten value/behavior types; their raw-string decoding preserves unknown server values |
 | Swift Fountain map product | Uses JSON objects rather than duplicated typed wire properties; remains supported |
-| PageMeta (`Client/APIClient.swift`), APIErrorBody (`Errors/FountainError.swift`) | Contract-shaped but handwritten outside `Models/`; unmigrated and outside #2269's four seams (#2300) |
+| PageMeta, SearchResponse.Meta, AuditEventListResponse, LogEventListResponse, SearchResponse | Generated (#2300). The cursor envelope (`has_more`, `limit`, `next_cursor`) is declared inline on `AuditEventListResponse` and `LogEventListResponse`, never as a named schema; both declarations are named `PageMeta` in `INLINE_TYPES` and the reused-inline-shape guard is what proves they match. `has_more` and `limit` are pinned: the contract requires both and every published `PageMeta` had them Optional. `/api/search` pages by offset, a different shape, so it has its own `SearchResponse.Meta`, wholly new and therefore at contract requiredness. The handwritten `PageMeta` (in `Client/APIClient.swift`, not `Models/`) was the union of both shapes, so `offset` is a recorded removal in `REMOVED_PROPERTIES`. `Page<Items, Meta>` carries whichever meta the endpoint declares |
+| APIErrorBody (`Errors/FountainError.swift`) | Contract-shaped but handwritten. Not generatable as the contract stands: seven named error schemas plus an inline 402 body, unified by behaviour (`reason` outranks `error` on the auth endpoints, `errors` may be a string or an array per field, `httpStatus` is stamped by the client) and carrying `active_sandboxes`, which no contract error schema declares. A single named error schema server-side comes first |
 
 ## Compatibility rules
 
@@ -87,10 +88,14 @@ from the release.
 The released **Swift** answers the source question — did this SDK already
 publish the property as Optional. Decoding can be safe while flipping a
 published `x?` to `x` still breaks a consumer's code, and 38 of the pins are
-held by this rule alone. It reads every public property of every model under
-`Models/` at the tag, wherever that model lived then, so `Teammate` counts from
-when it was handwritten; handwritten nested types were declared inside their
-parent and generated ones in an extension, and both read as the same key. A
+held by this rule alone. It reads every public property of every type under
+`Sources/FountainKit` at the tag, wherever that type lived then, so `Teammate`
+counts from when it was handwritten and `PageMeta` from when it lived in
+`Client/APIClient.swift` (#2300 widened the read from `Models/` for exactly
+that move: a wire type shipped outside `Models/` was the one case neither this
+rule nor the presence rule could see); handwritten nested types were declared
+inside their parent and generated ones in an extension, and both read as the
+same key. A
 name that is a Swift keyword is published escaped — `Catalog.SandboxProviders`'s
 `` `default` `` is the one today — and both sides normalize to the bare name, so
 a pin on it cannot be deleted in silence. The rule is only as good as that
@@ -136,7 +141,8 @@ fails is a claim nobody meant to make, unless `REMOVED_PROPERTIES` — a table
 beside `REQUIRED_BY_CONTRACT` — records the removal as deliberate, citing the
 PR and changelog fragment that made it. Its first entry is
 `("AuthMe", "onboardingState")`, retired in #2269 when `AuthMe` moved to
-generation.
+generation; the second is `("PageMeta", "offset")`, which moved to
+`SearchResponse.Meta` in #2300.
 
 An entry has two lives, and **it must not be pruned in the release that
 retires the property**. While the release it cites is still the baseline the

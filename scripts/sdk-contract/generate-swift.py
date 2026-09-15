@@ -88,6 +88,9 @@ RESOURCE_ROOTS = [
     'AuthMeResponse',
     'AdminUserListResponse',
     'LogEvent',
+    'AuditEventListResponse',
+    'LogEventListResponse',
+    'SearchResponse',
 ]
 
 SCHEMA_PATHS = {
@@ -111,11 +114,20 @@ TYPE_NAMES.update({
     'CatalogApps': 'Catalog.Apps',
     'AuthMeResponse': 'AuthMe',
     'AdminUserListResponseMeta': 'AdminUserListResponse.Meta',
+    'SearchResponseMeta': 'SearchResponse.Meta',
 })
 
 INLINE_TYPES.update({
     ('Agent', 'skills_item'): 'AgentSkillsItem',
     ('AgentUpdate', 'skills_item'): 'AgentSkillsItem',
+    # The cursor envelope is declared inline on each list response, never as
+    # a named schema (#2300). One public name for the two declarations; the
+    # reused-inline-shape guard is what proves they are the same shape, so a
+    # third list endpoint with a divergent `meta` fails here rather than
+    # silently taking the first one's. `/api/search` pages by offset and is
+    # a different shape, so it keeps its own `SearchResponse.Meta`.
+    ('AuditEventListResponse', 'meta'): 'PageMeta',
+    ('LogEventListResponse', 'meta'): 'PageMeta',
 })
 
 ENUM_TYPES.update({
@@ -222,6 +234,11 @@ OPTIONAL_COMPAT.update({
     # `duration_ms`. One published LogEvent decodes both shapes.
     ('LogEvent', 'id'),
     ('LogEvent', 'ts'),
+    # The contract requires both on every cursor page and every published
+    # PageMeta had them Optional (it lived in `Client/APIClient.swift` until
+    # #2300, which is why the released baseline reads the whole module).
+    ('PageMeta', 'has_more'),
+    ('PageMeta', 'limit'),
 })
 
 # Properties this SDK exposes for the first time, on types that already
@@ -270,6 +287,12 @@ REMOVED_PROPERTIES = {
         "#2269 finished #1393: the server dropped users.onboarding_state in "
         "v0.16.0, so the key had decoded nil for two releases. See "
         "changelog.d/2269-swift-authme-generated.md."),
+    ("PageMeta", "offset"): (
+        "#2300 generated PageMeta from the cursor envelope `/api/audit` and "
+        "`/api/conversations/:id/events` declare. The handwritten struct was "
+        "the union of that shape and `/api/search`'s offset page, so `offset` "
+        "decoded nil on every cursor endpoint; it lives on `SearchResponse.Meta` "
+        "now. See changelog.d/2300-swift-page-meta.md."),
 }
 
 # Properties this SDK publishes that the contract does not describe, each with
@@ -296,7 +319,11 @@ INPUT_ORDERS = {
     'AgentSkillsItem': ['name', 'content', 'source', 'ref'],
 }
 
-RELEASED_MODELS = "sdk/swift/Sources/FountainKit/Models"
+# The whole module, not `Models/`: a wire type that shipped outside it —
+# `PageMeta` lived in `Client/APIClient.swift` until #2300 — has to count as
+# published, or its move into generation would be the one case the source rule
+# and the presence rule cannot see.
+RELEASED_MODELS = "sdk/swift/Sources/FountainKit"
 DECLARATION = re.compile(r"(\s*)(?:public\s+)?(?:final\s+)?(?:struct|enum|class|actor|extension)\s+(\w+)")
 # A property whose name is a Swift keyword is published escaped — `default` is
 # the one today — and the generated side spells it the same way, so both sides
@@ -388,7 +415,8 @@ def released_properties():
     what shipped and authorize itself. A tag cannot move, and "already shipped"
     means released, which is what the rule in contributing/swift-wire-models.md
     is about. Every model the release carries counts, wherever it lived then —
-    `Teammate` shipped handwritten and is generated now.
+    `Teammate` shipped handwritten and is generated now, and `PageMeta` shipped
+    outside `Models/` altogether.
     """
     shipped = {}
     for path in released("ls-tree", "-r", "--name-only", "<tag>", "--", RELEASED_MODELS).split():
@@ -711,7 +739,7 @@ class Generator:
         generated = {TYPE_NAMES.get(owner, owner) for owner in self.models}
         current = public_properties(
             "\n".join(self.model(owner, fields) for owner, fields in self.models.items()), {})
-        for path in sorted((ROOT / RELEASED_MODELS).glob("*.swift")):
+        for path in sorted((ROOT / RELEASED_MODELS).rglob("*.swift")):
             if path != OUTPUT:
                 public_properties(path.read_text(), current)
         failures = []

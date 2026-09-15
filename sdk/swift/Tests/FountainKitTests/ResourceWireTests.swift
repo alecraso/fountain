@@ -263,5 +263,48 @@ import Testing
     #expect(teammate.presence.state == .online && teammate.presence.label == nil)
     #expect(teammate.usageTotal == nil && teammate.lastTurn == nil && teammate.preview == nil)
     #expect(teammate.agent.model == nil && teammate.conversation.title == nil)
+
+    // `has_more` and `limit` are required by the contract and pinned, because
+    // every PageMeta this SDK published had them Optional (#2300). Both cursor
+    // list responses reach the same generated type, so both decode with the
+    // pinned keys absent here.
+    let audit = try decode(
+      AuditEventListResponse.self, #"{"data":[{"id":1,"action":"a"}],"meta":{}}"#)
+    #expect(audit.meta.hasMore == nil && audit.meta.limit == nil && audit.meta.nextCursor == nil)
+    let events = try decode(
+      LogEventListResponse.self, #"{"data":[],"meta":{"next_cursor":null}}"#)
+    #expect(events.meta.hasMore == nil && events.meta.limit == nil && events.meta.nextCursor == nil)
+  }
+
+  /// One public `PageMeta` for the two cursor-paged lists and a separate
+  /// `SearchResponse.Meta` for the offset-paged search: the handwritten
+  /// PageMeta was the union of both and `offset` decoded nil everywhere except
+  /// search (#2300). The offset page is a wholly new generated type, so it
+  /// takes contract requiredness and every member is non-Optional.
+  @Test func pageMetaFollowsEachListEndpointsOwnEnvelope() throws {
+    let audit = try decode(
+      AuditEventListResponse.self,
+      #"{"data":[{"id":7,"action":"vault.secret.write"}],"meta":{"has_more":true,"limit":1,"next_cursor":6}}"#
+    )
+    #expect(audit.data.first?.id == 7)
+    #expect(audit.meta == PageMeta(hasMore: true, limit: 1, nextCursor: 6))
+    let events = try decode(
+      LogEventListResponse.self,
+      #"{"data":[{"kind":"output","stream":"stdout"}],"meta":{"has_more":false,"limit":1000,"next_cursor":null}}"#
+    )
+    #expect(events.data.first?.kind == .output)
+    #expect(events.meta == PageMeta(hasMore: false, limit: 1000, nextCursor: nil))
+    let search = try decode(
+      SearchResponse.self,
+      #"{"data":[{"kind":"turn","conversation_id":"c1"}],"meta":{"has_more":true,"limit":20,"offset":40}}"#
+    )
+    let meta: SearchResponse.Meta = search.meta
+    #expect(meta.hasMore == true && meta.limit == 20 && meta.offset == 40)
+    #expect(search.data.first?.conversationID == "c1")
+    // The offset page cannot pass for a cursor page: a missing member fails
+    // the response rather than decoding as an all-nil PageMeta would.
+    #expect(throws: FountainError.self) {
+      try decode(SearchResponse.self, #"{"data":[],"meta":{"has_more":false,"limit":20}}"#)
+    }
   }
 }

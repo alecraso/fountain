@@ -111,7 +111,7 @@ public struct ConversationsResource: Sendable {
     after: Int = 0,
     limit: Int = 1000,
     streams: [LogStream] = []
-  ) async throws -> Page<[LogEvent]> {
+  ) async throws -> Page<[LogEvent], PageMeta> {
     let (data, _) = try await client.raw(
       .get, "/api/conversations/\(id)/events",
       options: .init(query: [
@@ -120,8 +120,8 @@ public struct ConversationsResource: Sendable {
         "blocks": "true",
         "streams": streams.isEmpty ? nil : streams.map(\.rawValue).joined(separator: ","),
       ]))
-    let envelope = try APIClient.decode(Envelope<[LogEvent]>.self, from: data)
-    return Page(items: envelope.data, meta: envelope.meta)
+    let response = try APIClient.decode(LogEventListResponse.self, from: data)
+    return Page(items: response.data, meta: response.meta)
   }
 
   /// The whole feed from `after`, paging until `has_more` is false.
