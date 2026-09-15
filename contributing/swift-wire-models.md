@@ -12,6 +12,7 @@ The generator reads the committed contract and does not require Elixir to run.
 | Agent, Skill, AgentVersion, AgentInput | Generated; preserve names, initializer order, numeric policy values, explicit nullable inputs and the create/update convenience |
 | Environment, EnvironmentInput, Vault, VaultInput, Secret | Generated; preserve JSONValue conveniences. Secret unions the environment/vault schemas and rejects conflicting shared definitions |
 | Connection, ConnectionProvider, Teammate and nested types, TeamSchedule/Input | Generated; retain unknown enum handling and derived teammate identity |
+| TeamAddRequest, TeamRenameRequest, TeamMessageRequest | Generated (#2300); the small request bodies local to `TeamResource`'s `add`, `rename` and `message`. `TeamMessageRequest.labels`, a field these methods do not yet expose, types `[String: JSONValue]` rather than `[String: String]` because its contract-declared `additionalProperties` allows a null value per key, which a non-Optional `String` cannot decode. Request bodies are encoded and never decoded, so none of the three needs an `OPTIONAL_COMPAT` pin; `rename` still sends an explicit JSON `null` for `nil` (never omits the key), which the caller now spells `TeamRenameRequest(name: nil)` plus `setNull(.name)` |
 | APIKey, CreatedAPIKey, AuditEvent, SearchHit, Catalog/nested types, ApplyResult/nested types, AdminUser, AdminSandbox, AdminEvent | Generated from endpoint payload shapes, including shapes nested inside envelopes |
 | AuthMe | Generated. `role` and `email_verified` are pinned: the contract requires both and every published AuthMe had them Optional. `onboardingState` is retired, not pinned — #1393 dropped the column, so no server emits the key |
 | AdminUserPage | Decodes the generated `AdminUserListResponse` and its `Meta`; keeps `users` and the computed `hasMore`, and declares no wire keys of its own |
@@ -22,7 +23,7 @@ The generator reads the committed contract and does not require Elixir to run.
 | PermissionRequest | Intentionally handwritten, and not a wire model: it is derived from a `Block` through `init?(block:)` and never decoded |
 | JSONValue, ConversationInputField and WireValue / enum wrappers | Intentionally handwritten value/behavior types; their raw-string decoding preserves unknown server values |
 | Swift Fountain map product | Uses JSON objects rather than duplicated typed wire properties; remains supported |
-| PageMeta (`Client/APIClient.swift`), APIErrorBody (`Errors/FountainError.swift`), TeamResource request bodies | Contract-shaped but handwritten outside `Models/`; unmigrated and outside #2269's four seams |
+| PageMeta (`Client/APIClient.swift`), APIErrorBody (`Errors/FountainError.swift`) | Contract-shaped but handwritten outside `Models/`; unmigrated and outside #2269's four seams (#2300) |
 
 ## Compatibility rules
 

@@ -73,6 +73,9 @@ RESOURCE_ROOTS = [
     'Teammate',
     'TeamSchedule',
     'TeamScheduleUpdateRequest',
+    'TeamAddRequest',
+    'TeamRenameRequest',
+    'TeamMessageRequest',
     'ApiKey',
     'ApiKeyCreatedResponse',
     'AuditEvent',
@@ -167,6 +170,11 @@ TYPE_OVERRIDES = {
     # refuses by design. Naming the type here stops the walk entering that
     # schema while `blocks` keeps its published element type.
     ('LogEvent', 'blocks'): '[Block]',
+    # Nullable-valued map: additionalProperties allows a null string per key,
+    # which a typed `[String: String]` cannot decode. No handwritten Body
+    # ever exposed this field, so there is no prior [String: String?] API to
+    # preserve; JSONValue matches the other open-ended dictionaries above.
+    ('TeamMessageRequest', 'labels'): '[String: JSONValue]',
 }
 
 OPTIONAL_COMPAT.update({
@@ -287,6 +295,8 @@ INPUT_ORDERS = {
     'VaultUpdate': ['name', 'description', 'metadata'],
     'EnvironmentUpdate': ['name', 'packages', 'env_vars', 'setup_script', 'setup_timeout_seconds', 'networking_type', 'networking_config', 'repositories', 'metadata'],
     'TeamScheduleUpdateRequest': ['cron', 'prompt', 'name', 'one_off', 'enabled'],
+    'TeamAddRequest': ['agent_id', 'name', 'environment_id', 'vault_id'],
+    'TeamMessageRequest': ['prompt', 'images', 'labels'],
     'AgentUpdate': ['name', 'description', 'system', 'model', 'runtime', 'runtime_command', 'sandbox_provider', 'sandbox_mode', 'environment_id', 'permission_policy', 'skills', 'mcp_servers', 'metadata', 'allowed_vault_ids', 'allowed_environment_ids'],
     'AgentSkillsItem': ['name', 'content', 'source', 'ref'],
 }
@@ -441,7 +451,7 @@ class Generator:
         self.done = set()
         self.nested = {}
         self.dependencies = {}
-        self.input_roots = {"ConversationCreateRequest", "ImageInput", "AgentUpdate", "EnvironmentUpdate", "VaultUpdate", "TeamScheduleUpdateRequest"}
+        self.input_roots = {"ConversationCreateRequest", "ImageInput", "AgentUpdate", "EnvironmentUpdate", "VaultUpdate", "TeamScheduleUpdateRequest", "TeamAddRequest", "TeamRenameRequest", "TeamMessageRequest"}
         self.encodable = set(self.input_roots)
 
     def reference(self, owner, ref):

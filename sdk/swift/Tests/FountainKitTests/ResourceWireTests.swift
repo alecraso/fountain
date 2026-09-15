@@ -115,6 +115,36 @@ import Testing
     #expect(schedule.enabled == false && schedule.nextRunAt != nil && schedule.lastError == nil)
   }
 
+  @Test func teamRequestBodiesEncodeGeneratedWireShapesAndPreserveNullVsOmission() throws {
+    let add = try body(
+      TeamAddRequest(agentID: "a1", name: "Bob", environmentID: "e1", vaultID: "v1"))
+    #expect(
+      add
+        == .object([
+          "agent_id": .string("a1"), "name": .string("Bob"),
+          "environment_id": .string("e1"), "vault_id": .string("v1"),
+        ]))
+    #expect(try body(TeamAddRequest(agentID: "a1"))["name"] == nil)
+
+    // `rename`'s public method always sends an explicit null for a nil name
+    // (never omits it), which the generated model spells with `setNull`.
+    #expect(try body(TeamRenameRequest(name: "Bob"))["name"] == .string("Bob"))
+    #expect(try body(TeamRenameRequest(name: nil))["name"] == nil)
+    var reset = TeamRenameRequest(name: nil)
+    reset.setNull(.name)
+    #expect(try body(reset)["name"] == .null)
+
+    let message = try body(
+      TeamMessageRequest(
+        prompt: "go", images: [ImageInput(data: "Zm9v", mediaType: "image/png")],
+        labels: ["team": .string("eng"), "priority": .null]))
+    #expect(message["prompt"] == .string("go"))
+    #expect(message["images"]?.arrayValue?.count == 1)
+    #expect(message["labels"]?["team"] == .string("eng"))
+    #expect(message["labels"]?["priority"] == .null)
+    #expect(try body(TeamMessageRequest(prompt: "go"))["images"] == nil)
+  }
+
   @Test func accountApplyAndAdminShapesRetainNamesDatesAndMetadata() throws {
     let key = try decode(
       APIKey.self,
