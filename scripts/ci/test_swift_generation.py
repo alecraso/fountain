@@ -123,21 +123,86 @@ class SwiftGeneration(unittest.TestCase):
         # generates, would be dead weight this guard would need to explain
         # rather than a caught regression, so it fails here instead of
         # staying silent.
+        #
+        # An entry has two lives, and the difference is which release is the
+        # baseline. While the release it cites is still the last one, the
+        # entry is load-bearing: `shipped` carries the key, the presence rule
+        # would fail on it, and the entry is what clears that. Once the
+        # release that removed the property has itself shipped, `shipped` no
+        # longer carries the key, the rule -- which only ever looks at keys in
+        # `shipped` -- can no longer consult the entry, and it is inert.
+        #
+        # Both lives have to pass here, because no single commit sees both.
+        # Tagging is a consequence of merging, so the tree that becomes
+        # vX.Y.Z is tested before the tag exists and again, as `main`, after
+        # it does. Requiring the entry to be live made every release turn the
+        # next CI run red (v0.18.0 did this to `AuthMe.onboardingState`), and
+        # deleting it beforehand fails the pre-tag run instead. So an aged-out
+        # entry is tolerated and checked for inertness; pruning it is
+        # follow-up tidying, and the ceiling below is what stops the table
+        # quietly filling with dead entries.
         shipped = swiftgen.released_properties()
         always_sent = swiftgen.released_requiredness()
         generator = swiftgen.Generator(copy.deepcopy(self.contract))
         generator.render()
         for name, key in sorted(swiftgen.REMOVED_PROPERTIES):
             with self.subTest(name=name, key=key):
-                self.assertIn((name, key), shipped,
-                               f"{name}.{key} was not published at {swiftgen.released_tag()}")
                 pruned = {k: v for k, v in swiftgen.REMOVED_PROPERTIES.items() if k != (name, key)}
                 with mock.patch.object(swiftgen, "REMOVED_PROPERTIES", pruned):
                     reported = generator.compatibility_failures(shipped, always_sent)
+                if (name, key) not in shipped:
+                    self.assertEqual(
+                        reported, [],
+                        f"{name}.{key} is not published at {swiftgen.released_tag()}, so the "
+                        "entry has aged out and should change nothing; it is still "
+                        "changing the verdict",
+                    )
+                    continue
                 self.assertTrue(
                     any(f"{name}.{key} shipped in" in failure for failure in reported),
                     f"{name}.{key} is not absent from the current output",
                 )
+
+    def test_the_removal_history_has_not_grown(self):
+        # The ceiling that pays for tolerating an aged-out entry above. The
+        # table may shrink freely -- pruning an entry the release moved past
+        # is the expected tidying -- and growing it means editing this number
+        # in the same diff, so a reviewer sees it move. Same shape as
+        # `test_the_undescribed_property_table_has_not_grown`.
+        ceiling = 1
+        self.assertLessEqual(len(swiftgen.REMOVED_PROPERTIES), ceiling)
+        for (name, key), reason in swiftgen.REMOVED_PROPERTIES.items():
+            with self.subTest(name=name, key=key):
+                self.assertTrue(reason.strip(), "every entry has to say why it exists")
+                # An entry is a claim about a removal, so it cites the PR and
+                # the fragment that made it (generate-swift.py's own rule).
+                self.assertRegex(reason, r"#\d+", "an entry cites the PR that retired the property")
+
+    def test_an_aged_out_removal_entry_is_inert_and_does_not_fail(self):
+        # The release-advancement path, made explicit rather than left to
+        # whichever entry happens to have aged out. An entry naming a
+        # property no release published cannot be consulted by the presence
+        # rule, so it neither clears nor causes a failure, and generation
+        # still succeeds. This is what lets the table carry an entry across
+        # the release that prunes it.
+        shipped = swiftgen.released_properties()
+        always_sent = swiftgen.released_requiredness()
+        aged_out = ("AuthMe", "neverPublishedAnywhere")
+        self.assertNotIn(aged_out, shipped)
+        # Added to the live table, not substituted for it: dropping the
+        # entries that are still load-bearing would fail generation for an
+        # unrelated reason and prove nothing about this one.
+        with mock.patch.object(
+            swiftgen, "REMOVED_PROPERTIES",
+            swiftgen.REMOVED_PROPERTIES | {aged_out: "aged out, #0000"},
+        ):
+            generator = swiftgen.Generator(copy.deepcopy(self.contract))
+            generator.render()
+            self.assertEqual(generator.compatibility_failures(shipped, always_sent), [])
+        # And the verdict is the same without it, which is what "inert" means.
+        baseline = swiftgen.Generator(copy.deepcopy(self.contract))
+        baseline.render()
+        self.assertEqual(baseline.compatibility_failures(shipped, always_sent), [])
 
     def test_a_vanished_property_fails_generation(self):
         # The reproduction #2296 describes: a property stops being generated
@@ -263,28 +328,94 @@ class SwiftGeneration(unittest.TestCase):
 
     def test_the_released_tag_is_the_baseline_for_both_questions(self):
         # No baseline file to keep in step; both come from the last release.
-        # The released contract says what that server always sent.
+        #
+        # Nothing here may name a fact about one particular release. This test
+        # used to assert that `CatalogMcpServersItem` was absent from the
+        # released Swift and that `Teammate.name` was required -- both true of
+        # v0.17.1, and the first of them false the moment v0.18.0 shipped the
+        # generated resource models, which turned the release's own tag into a
+        # red CI run on `main`. A baseline fixture that quotes the current
+        # release expires on the next one, so assert the mechanism instead and
+        # let the release supply its own examples.
         always_sent = swiftgen.released_requiredness()
-        self.assertTrue(always_sent["Teammate", "name"])
-        self.assertFalse(always_sent["Agent", "description"])
-        # A shape the released SDK never exposed is still one that server
-        # emitted, so it is in this baseline even though it is not in the next.
-        self.assertTrue(always_sent["CatalogMcpServersItem", "slug"])
-        # The released Swift says what this SDK already published as Optional,
-        # including the models that shipped handwritten. Handwritten nested
-        # types were declared inside their parent and generated ones in an
-        # extension; both have to read as the same key.
         shipped = swiftgen.released_properties()
-        self.assertEqual(shipped["Teammate", "name"], False)
-        self.assertEqual(shipped["Teammate", "usageTotal"], True)
-        self.assertEqual(shipped["Teammate.Presence", "label"], True)
-        self.assertEqual(shipped["Sandbox.RunnerRef", "online"], True)
-        self.assertNotIn("CatalogMcpServersItem", {owner for owner, _ in shipped})
+        self.assertTrue(always_sent, "the released contract is the requiredness baseline")
+        self.assertTrue(shipped, "the released Swift is the optionality baseline")
+        # Both discriminate rather than answering one way for everything: a
+        # baseline stuck at all-True or all-False would satisfy a subset of
+        # the rules while measuring nothing.
+        for name, baseline in [("always_sent", always_sent), ("shipped", shipped)]:
+            with self.subTest(baseline=name):
+                self.assertEqual({type(value) for value in baseline.values()}, {bool})
+                self.assertIn(True, baseline.values())
+                self.assertIn(False, baseline.values())
+        # The released Swift is read with its nested types, whichever release
+        # it is: handwritten nested types were declared inside their parent
+        # and generated ones in an extension, and both have to read as one
+        # dotted key. `test_the_released_swift_parser_reads_every_published_property`
+        # pins the exact count against the release's own declarations.
+        self.assertTrue([owner for owner, _ in shipped if "." in owner],
+                        "nested types reach the optionality baseline")
         generator = swiftgen.Generator(copy.deepcopy(self.contract))
         generator.render()
         self.assertEqual(generator.compatibility_failures(shipped, always_sent), [])
         # Neither baseline knowing the type means no older server emits it.
         self.assertEqual(generator.compatibility_failures({}, {}), [])
+
+    def test_both_baselines_read_the_release_tag(self):
+        # What the test above is named for, asserted directly instead of
+        # through literals that quote whichever release is current.
+        #
+        # Not by pointing the readers at an older tag: an older contract can
+        # carry a shape the *current* generator refuses -- v0.17.0's does,
+        # since #2288 -- so reading a real earlier release raises for a
+        # reason that has nothing to do with baselines. Capture the git calls
+        # instead and assert the tag is what both readers ask for. This also
+        # guards the caching: both memoize, and a cache that outlived the tag
+        # would answer for the wrong release.
+        sentinel = "v0.0.0-probe"
+        contract = json.dumps(self.contract)
+        model = "public struct Probe: Codable {\n    public var only: String?\n}\n"
+        calls = []
+
+        def fake_git(*args):
+            calls.append(args)
+            if args[0] == "ls-tree":
+                return f"{swiftgen.RELEASED_MODELS}/Probe.swift\n"
+            if args[0] == "show" and args[1].endswith(":sdk/contract/contract.json"):
+                return contract
+            if args[0] == "show":
+                return model
+            raise AssertionError(f"unexpected git call: {args}")
+
+        def clear():
+            for reader in (swiftgen.released_tag, swiftgen.released_requiredness,
+                           swiftgen.released_properties):
+                reader.cache_clear()
+
+        try:
+            clear()
+            with mock.patch.object(swiftgen, "released_tag", lambda: sentinel), \
+                 mock.patch.object(swiftgen, "_git", fake_git):
+                swiftgen.released_requiredness.cache_clear()
+                swiftgen.released_properties.cache_clear()
+                self.assertTrue(swiftgen.released_requiredness())
+                self.assertEqual(swiftgen.released_properties(), {("Probe", "only"): True})
+            # Every tree read carried the tag, so neither baseline can drift
+            # to the working tree or to a branch.
+            self.assertTrue(calls, "the baselines read the tree through git")
+            for args in calls:
+                with self.subTest(args=args):
+                    self.assertTrue(
+                        any(sentinel in str(argument) for argument in args),
+                        "a baseline read that does not name the release tag",
+                    )
+        finally:
+            # Leave the module's caches holding the real release, or every
+            # test after this one measures the wrong tree.
+            clear()
+            swiftgen.released_requiredness()
+            swiftgen.released_properties()
 
     def test_a_shape_the_sdk_never_exposed_is_still_an_older_server_shape(self):
         # Absence from the released SDK is not absence from the released
