@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Conversation requests pass through SDKs as API inputs"
-description: "Separate wire requests from local run settings. TypeScript implements the first path; other clients and generated Swift models are tracked follow-ups."
+description: "Separate API-shaped requests from local run settings across four SDKs, with generated wire models and checked propagation."
 tags: [api, sdk]
 status: stable
 adr: "0056"
@@ -40,10 +40,28 @@ stream following, permissions, retries or expected behavioral test results.
 
 ## Implementation status
 
-TypeScript implements `runRequest` and derives `ConversationInput` from the
-existing generated document in #2228. Python (#2229), Elixir (#2230), Swift
-models/request paths (#2231), CLI JSON input (#2232), and the integrated
-verification workflow (#2233) remain unbuilt in this revision.
+The foundation is implemented in TypeScript (#2234), Python (#2235), Elixir
+(#2236), and both Swift products (#2240). TypeScript derives `ConversationInput`
+from the generated document; FountainKit's conversation models derive from the
+committed contract. The published nullability repair landed in #2239.
+
+CLI `conv create --file <path|->` (#2237) accepts API-shaped JSON and prints the
+creation response without following a turn. The unified generation/check command
+and cross-client propagation probes landed in #2241. The probe changes a temporary
+contract, including nested referenced request types, rather than publishing a
+synthetic API field. Existing behavioral conformance stays independently authored.
+
+The new run paths distinguish newly created channels from resumed channels. A
+resume binds the existing conversation without submitting the prompt, so the
+client captures the cursor/history and submits the prompt once before following
+it. Durable identity under concurrent prompt submission remains #1406.
+
+This does not finish removing duplication: legacy convenience builders remain,
+first-party caller migration is #2249, shared launch implementation is #2250,
+and remaining Swift wire models are #2251. Tracker #2247 owns that follow-through;
+#2248 records package availability and rollout evidence. Independent SDK release
+policies remain in force; merging the foundation did not itself release new
+Swift or CLI artifacts.
 
 ## Consequences
 
