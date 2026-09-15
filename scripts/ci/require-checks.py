@@ -25,11 +25,15 @@ def api(path, payload=None, method="PUT"):
 # while also starving every open PR. Raise this only after the concurrency
 # ceiling does.
 #
-# min_entries_to_merge: 2 with a 5 minute wait — batching is the only lever
-# that buys throughput under that same ceiling, because five PRs merged as one
-# group cost one 26-job run instead of five. In a burst the group fills at once
-# and nothing waits; in a quiet hour a lone PR waits up to five minutes, which
-# is the hour where nobody is blocked on it.
+# min_entries_to_merge: 1 with no wait — a queued PR builds as soon as the
+# builder is free. Batching still happens where it pays: with one group
+# building at a time, every PR queued while it builds joins the next group
+# (up to max_entries_to_merge), so a burst costs one run per group rather
+# than one per PR. The former 2-entry, 5-minute wait only bought batching in
+# a quiet queue, where it never had company to wait for: over 44 merge groups
+# in September 2026 a stacked PR, which lands one stage at a time and can
+# never batch with its own parent, paid the full wait at every stage, and no
+# group was ejected. A wait that never batches is latency, not throughput.
 #
 # ALLGREEN, not HEADGREEN: a group merges only when every entry passed, which
 # is the entire reason to run a queue over a tree nobody tested.
@@ -39,8 +43,8 @@ MERGE_QUEUE = {
     "max_entries_to_build": 1,
     "max_entries_to_merge": 5,
     "merge_method": "SQUASH",
-    "min_entries_to_merge": 2,
-    "min_entries_to_merge_wait_minutes": 5,
+    "min_entries_to_merge": 1,
+    "min_entries_to_merge_wait_minutes": 0,
 }
 
 

@@ -101,9 +101,13 @@ essentially 100%, and build-in-PR-and-retag becomes possible for the first
 time (its own prerequisite, `BUILD_SHA` baked into the image, is unchanged and
 still has to be injected at deploy time).
 
-Merging stops being instant. A lone PR waits up to five minutes for company
-before it even builds, which is the cost of batching under the job ceiling.
-Nothing should wait on a queued PR synchronously.
+Merging stops being instant. One group builds at a time, so a queued PR
+waits for the group ahead of it and then builds with everything that queued
+meanwhile, which is the batching that pays under the job ceiling. (The queue
+first shipped with a two-entry, five-minute wait for company as well; that
+wait never batched a stacked PR, which lands one stage at a time, and was
+removed in September 2026 in favour of building at once.) Nothing should wait
+on a queued PR synchronously.
 
 A queued PR can be ejected. That is the mechanism working: the failure is the
 change against a main it had never been tested with. It stays open with the

@@ -155,10 +155,11 @@ gh pr merge <N> --squash --auto     # queue it; the queue merges when green
 - **A queued PR can still be rejected.** If the group fails, the PR is
   ejected and stays open with the failure attached. That failure is usually
   real: your change against a main it had never been tested with.
-- **Merging is not instant.** A lone PR waits up to five minutes for company
-  (batching is how the queue affords a full suite under the free plan's 20
-  concurrent jobs), then builds. Queue it and move on; watch
-  `gh pr checks <N>`.
+- **Merging is not instant.** A queued PR builds as soon as the queue is
+  free, and one group builds at a time, so under a burst it waits for the
+  group ahead of it and then builds together with everything that queued
+  meanwhile (batching is how the queue affords a full suite under the free
+  plan's 20 concurrent jobs). Queue it and move on; watch `gh pr checks <N>`.
 - **Stacked PRs do not go in the queue until they are the tip.** GitHub only
   queues a PR whose base is `main`, so a stack lands one stage at a time:
   merge stage 1, let GitHub retarget stage 2 to `main`, queue stage 2.

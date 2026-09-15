@@ -233,9 +233,10 @@ conversation-facing feature goes in the app; marketing copy goes in
 Every change is a PR with an approving review, queued with
 `gh pr merge <N> --squash --auto`. GitHub builds the merge result before
 letting it in, so nothing needs rebasing to be mergeable, a queued PR can
-still be ejected by a real failure, and a lone PR waits up to five minutes
-for company before building. An unreviewed PR never enters the queue and
-`--auto` looks stuck; check `gh pr view <N> --json reviewDecision` first.
+still be ejected by a real failure, and a queued PR builds as soon as the
+queue is free, batched with whatever else queued while it waited. An
+unreviewed PR never enters the queue and `--auto` looks stuck; check
+`gh pr view <N> --json reviewDecision` first.
 Stacked PRs land one stage at a time from the tip. A PR that changes
 something a user or operator can observe adds a fragment under
 `changelog.d/` (its README has the format); `CHANGELOG.md` itself is written
