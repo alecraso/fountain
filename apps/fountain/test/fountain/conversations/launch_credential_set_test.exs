@@ -4,7 +4,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
   decision 3), bounded by `agent.allowed_inference_credential_ids`.
 
   The precedence is the launch, then the agent, then the account's default,
-  and it is `SpriteEnv.credential_set_id/2` that says so -- one function, so
+  and it is `InferenceResolution.credential_set_id/2` that says so -- one function, so
   the provision and the door gate cannot disagree about which credential this
   conversation runs on.
   """
@@ -14,7 +14,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
 
   alias Fountain.Agents
   alias Fountain.Conversations
-  alias Fountain.Conversations.SpriteEnv
+  alias Fountain.Conversations.InferenceResolution
   alias Fountain.Crypto
   alias Fountain.InferenceCredentials
 
@@ -61,21 +61,43 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
       agent = %{inference_credential_id: default.id}
       conv = %{inference_credential_id: second.id}
 
-      assert SpriteEnv.credential_set_id(conv, agent) == second.id
+      assert InferenceResolution.credential_set_id(conv, agent) == second.id
     end
 
     test "the agent answers when the launch said nothing", %{default: default} do
-      assert SpriteEnv.credential_set_id(%{inference_credential_id: nil}, %{
+      assert InferenceResolution.credential_set_id(%{inference_credential_id: nil}, %{
                inference_credential_id: default.id
              }) == default.id
     end
 
     test "nil is the account's default, and a conversation with no agent has only that" do
-      assert SpriteEnv.credential_set_id(%{inference_credential_id: nil}, nil) == nil
+      assert InferenceResolution.credential_set_id(%{inference_credential_id: nil}, nil) == nil
 
-      assert SpriteEnv.credential_set_id(%{inference_credential_id: nil}, %{
+      assert InferenceResolution.credential_set_id(%{inference_credential_id: nil}, %{
                inference_credential_id: nil
              }) == nil
+    end
+
+    # A conversation admitted before sources were stored has no expected
+    # source, and re-validating it is a new selection on the set it or its
+    # agent names, not the account default. Review on #2197: the helper
+    # once dropped the set whenever it re-validated, and the resolver then
+    # chose the default for every legacy row.
+    test "revalidate/3 with no stored source selects the set the agent names", %{
+      user: user,
+      default: default,
+      second: second
+    } do
+      agent = agent_for(user, %{"inference_credential_id" => second.id})
+      conv = %{user_id: user.id, runtime: "claude", inference_source: nil}
+
+      assert {:ok, source, _} = InferenceResolution.revalidate(conv, agent, [])
+      assert source.set_id == second.id
+      refute source.set_id == default.id
+
+      override = Map.put(conv, :inference_credential_id, default.id)
+      assert {:ok, source, _} = InferenceResolution.revalidate(override, agent, [])
+      assert source.set_id == default.id
     end
   end
 
@@ -104,7 +126,7 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
 
       assert conv.inference_credential_id == second.id
       assert conv.inference_source["set_id"] == second.id
-      assert SpriteEnv.credential_set_id(conv, agent) == second.id
+      assert InferenceResolution.credential_set_id(conv, agent) == second.id
     end
 
     test "another tenant's set is not found, not attached", %{user: user} do
@@ -291,6 +313,39 @@ defmodule Fountain.Conversations.LaunchCredentialSetTest do
                Conversations.start_or_resume_conversation(attrs)
 
       assert Repo.reload!(first).inference_source["set_id"] == ctx.second.id
+    end
+
+    # Rows admitted before sources were stored resume with `inference_source`
+    # nil, and `InferenceBinding.reserve/2` persists whatever resume resolves
+    # for them. That must be the set the agent (or the launch) named, or the
+    # first resume pins the account default to the conversation for good.
+    test "a legacy conversation with no stored source resumes on the agent's set", ctx do
+      agent = agent_for(ctx.user, %{"inference_credential_id" => ctx.second.id})
+      sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
+      attrs = channel_attrs(ctx.user, agent, sandbox)
+      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert first.inference_source["set_id"] == ctx.second.id
+      first |> Ecto.Changeset.change(inference_source: nil) |> Repo.update!()
+
+      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(attrs)
+      assert resumed.id == first.id
+      assert Repo.reload!(resumed).inference_source["set_id"] == ctx.second.id
+    end
+
+    test "a legacy conversation with no stored source resumes on its own override", ctx do
+      agent = agent_for(ctx.user)
+      sandbox = insert_sandbox(user_id: ctx.user.id, agent_id: agent.id, status: "ready")
+
+      attrs =
+        Map.put(channel_attrs(ctx.user, agent, sandbox), "inference_credential_id", ctx.second.id)
+
+      assert {:ok, first, :created} = Conversations.start_or_resume_conversation(attrs)
+      assert first.inference_source["set_id"] == ctx.second.id
+      first |> Ecto.Changeset.change(inference_source: nil) |> Repo.update!()
+
+      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(attrs)
+      assert resumed.id == first.id
+      assert Repo.reload!(resumed).inference_source["set_id"] == ctx.second.id
     end
   end
 
