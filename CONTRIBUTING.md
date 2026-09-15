@@ -59,6 +59,10 @@ That appends a `Signed-off-by:` trailer using your `user.name` and
 `user.email`. Note that `git config format.signOff true` does **not** do this
 for `git commit`; use `-s`, or install a `commit-msg` hook.
 
+CI's `workflow-checks` job (`scripts/ci/dco.py`) refuses a PR with a commit
+missing the trailer. Fix it with `git commit --amend -s` for the last commit,
+or `git rebase --signoff <base>` for several.
+
 ## Before you push
 
 Run focused tests while iterating. Before pushing, choose the checks for the
