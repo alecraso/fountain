@@ -20,6 +20,82 @@ Changes that have merged but not yet shipped are the files under
 [`changelog.d/`](https://github.com/managoat/fountain/tree/main/changelog.d);
 the release PR rolls them into a dated section here.
 
+## [0.17.1] - 2026-09-15
+
+### Added
+
+- Agent checklists appear as `plan` blocks in conversation events and streams.
+  Each block contains a full snapshot for live clients and event replay.
+
+- TypeScript SDK `runRequest` accepts API-shaped conversation inputs with separate execution options (#2228).
+
+- Python SDK `run_request` forwards API-shaped conversation inputs with separate local execution options (#2229).
+
+- Elixir SDK `Fountain.run_request/3` forwards API-shaped conversation inputs with separate execution options (#2230).
+
+- Generate Swift conversation wire models and accept API-shaped run requests in both Swift clients, preserving omitted, null and false request values (#2231).
+
+- `fountain conv create --file <path|->` accepts API-shaped JSON from a file or stdin and prints the creation response, including queued or promptless starts (#2232).
+
+- Add a unified wire-generation command and cross-client propagation probes so optional conversation fields no longer require per-client field registration (#2233).
+
+### Changed
+
+- The OpenAPI document declares the permission policy once, as the
+  `PermissionPolicy` component, instead of repeating it inline on `Agent`,
+  `AgentRequest`, `AgentUpdate`, `Conversation` and `ConversationCreateRequest`
+  (#1899). The wire shape is unchanged: the five properties are now a `$ref` to
+  that component, keep their own descriptions, and still accept the `null` a
+  policy-less agent or conversation carries. A generated client gains a named
+  type where it had an anonymous object with the same body. TypeScript SDK
+  4.1.0 follows.
+
+- Use API-shaped conversation requests in onboarding snippets and the Hermes client's internal creation boundary; document the request path for callers with resource IDs (#2249).
+
+- **`mix precommit` is now `scripts/precommit.sh`**, one process per stage
+  with a named-stage summary, and its exit status is the verdict: the run
+  stops at the first failing stage and exits with that stage's status.
+  `mix precommit --list` prints the stages and `mix precommit credo test`
+  runs a subset. It refuses an Elixir that does not match `.tool-versions`
+  (`PRECOMMIT_ALLOW_TOOLCHAIN_DRIFT=1` overrides).
+- **`CLAUDE.md` shrinks to rules, commands and links.** The CI job table and
+  coverage notes moved to `scripts/ci/README.md`, the manual's guardrails and
+  prose linters to `contributing/docs.md`, the component-library recipes to
+  `contributing/component-libraries.md`, and the flake procedure to
+  `CONTRIBUTING.md`, each rule with one home.
+- **Component-library extraction is paused** (ADR 0037 addendum) unless an
+  independent consumer or a release schedule of its own justifies the
+  two-PR coordination cost.
+
+### Fixed
+
+- `POST /api/agents` and `PUT /api/agents/{id}` accept `"permission_policy":
+  null` and store an empty policy, which is what the OpenAPI document has
+  promised since the field existed. A null used to pass the schema and the
+  changeset and come back as a 500 from the database's not-null constraint
+  (#1899).
+- `scripts/sdk-contract/build.sh` refuses a document where a property says
+  `nullable: true` and a standards validator would still reject `null` (#1899).
+  In OpenAPI 3.0 `nullable` relaxes the type of the node it sits on, so a
+  property that borrows its shape from `allOf`/`oneOf` needs the composition to
+  admit null too. Nothing in the server's own casting can see the difference.
+  Two properties already in that state, `Conversation.sandbox` and `Turn.usage`,
+  are recorded in the guard's ratchet and tracked in
+  https://github.com/managoat/fountain/issues/2189.
+
+- The verified landing's "no inference credential yet" banner now shows when
+  the agent's named credential set is empty on a deployment with a platform
+  key, because a launch on that agent is refused rather than sent to the
+  platform key; the banner asks the same resolver the launch does (#2185).
+
+- The published conversation sandbox and turn usage schemas accept the null values the server returns without making their non-null component types nullable everywhere (#2189).
+
+- Generate encoding support and public initializers for nested and referenced Swift conversation input models, including array and dictionary elements; preserve omission, explicit null and values inside nullable child inputs and shared response models (#2241).
+
+- Initialize required Swift model storage before nullable-property setters while preserving public initializer argument order (#2241).
+
+- Share SDK conversation launch handling between request APIs and convenience helpers, including correct new-channel turn selection and resumed prompt/image dispatch (#2250).
+
 ## [0.17.0] - 2026-09-14
 
 ### Upgrade notes
