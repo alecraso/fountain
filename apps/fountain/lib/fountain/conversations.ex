@@ -24,6 +24,7 @@ defmodule Fountain.Conversations do
   }
 
   alias Fountain.Conversations.Reapply
+  alias Fountain.Conversations.Wake
   alias Fountain.Conversations.InferenceResolution
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
@@ -3291,7 +3292,7 @@ defmodule Fountain.Conversations do
         }
       })
 
-      # No prompt in the child spec — see start_conversation_server/4.
+      # No prompt in the child spec — see Wake.start_conversation_server/4.
       start_result =
         Horde.DynamicSupervisor.start_child(
           Fountain.ConversationSupervisor,
@@ -5191,7 +5192,7 @@ defmodule Fountain.Conversations do
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
-      case maybe_reuse_sandbox(conv) do
+      case Wake.maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
           # Reuse provisions nothing, so the fresh-path gates below never ran
           # here — a canceled or suspended user could restart a server against
@@ -5203,8 +5204,8 @@ defmodule Fountain.Conversations do
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
                :ok <- Fountain.Billing.check_spend(conv.user_id),
                :ok <- check_saved_inference(conv, agent),
-               {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
+               {:ok, _} <- Wake.wake_suspended_sandbox(conv.user_id, sandbox_id) do
+            case Wake.start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
                 # Lost a concurrent wake of the same conversation to another
                 # caller reusing the same sandbox. Mirrors the handoff in
@@ -5298,85 +5299,6 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
-  # confirms the sprite still exists, we can reattach without provisioning a
-  # new one. Otherwise, fall through to creating a fresh sandbox.
-  defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
-
-  defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
-    case _unsafe_get_sandbox(sandbox_id) do
-      %Sandbox{reset_requested_at: at, status: status}
-      when not is_nil(at) and status not in ["terminated", "failed"] ->
-        {:error, :sandbox_reset_pending}
-
-      %{status: status, machine_name: name} = sandbox
-      when status in ["ready", "suspended"] and is_binary(name) ->
-        probe_reusable_sandbox(sandbox, sandbox_id)
-
-      # A provision is in flight — or was, in a BEAM that is gone. The
-      # caller waits for the registry before deciding which (#800).
-      %{status: status} when status in ["pending", "starting"] ->
-        {:provisioning, sandbox_id}
-
-      _ ->
-        :create_new
-    end
-  end
-
-  # The row's provider is sticky: a parked sandbox wakes on the backend that
-  # holds its disk, never on whatever the instance default is by now. A row
-  # whose (non-default) provider lost its credentials fails retryably — the
-  # same protect-the-parked-disk reasoning as :sprite_probe_failed below;
-  # falling through to :create_new would retire the row and orphan (or lose)
-  # the parked sandbox. Re-adding the credentials restores wakes.
-  defp probe_reusable_sandbox(%{status: status, machine_name: name} = sandbox, sandbox_id) do
-    provider = sandbox_provider_atom(sandbox)
-
-    if provider != Fountain.SandboxProviders.default_provider() and
-         not Fountain.SandboxProviders.enabled?(provider) do
-      Logger.warning(
-        "sandbox #{sandbox_id} is on disabled provider #{provider}; refusing to wake or retire"
-      )
-
-      {:error, {:sandbox_provider_disabled, provider}}
-    else
-      probe_sandbox(provider, name, status, sandbox_id)
-    end
-  end
-
-  defp probe_sandbox(provider, name, status, sandbox_id) do
-    case Managoat.Sandbox.get(Managoat.Sandbox.build_handle(provider, name)) do
-      {:ok, _info} ->
-        {:reuse, sandbox_id}
-
-      {:error, :not_found} ->
-        :create_new
-
-      # The machine behind a runner-backed sandbox is not connected (#834):
-      # the same protect-the-disk rule as below, named, so the caller can say
-      # "the machine is off" rather than "the provider is unreachable".
-      {:error, {:unavailable, :runner_offline}} ->
-        {:error, :runner_offline}
-
-      {:error, reason} ->
-        # A transient probe failure must not cost the disk: falling to
-        # :create_new retires this row, and the reaper then destroys the
-        # still-live sprite — with the agent's memory on it. Only a
-        # definitive not-found gives up the sandbox; anything else fails the
-        # wake retryably (503 + Retry-After at the API).
-        #
-        # This clause was `suspended`-only until #799: a `ready` row is the
-        # same parked disk once its server is gone (a deploy, a crash, a
-        # partition), and the 2026-08-18 incident showed the provider going
-        # unreachable for 70 s with nine `ready` rows behind it.
-        Logger.warning(
-          "sprite probe failed for #{status} sandbox #{sandbox_id}: #{inspect(reason)}"
-        )
-
-        {:error, :sprite_probe_failed}
-    end
-  end
-
   def sandbox_provider_atom(%{provider: provider}) when is_binary(provider),
     do: String.to_existing_atom(provider)
 
@@ -5401,91 +5323,6 @@ defmodule Fountain.Conversations do
       {:ok, provider}
     else
       {:error, {:sandbox_provider_disabled, provider}}
-    end
-  end
-
-  # Waking a suspended sandbox turns a parked sprite back into compute, so it
-  # re-runs the quota gate — under the same advisory lock as creation, with the
-  # row re-read inside. Two concurrent wakes both probe `suspended`; the loser
-  # re-reads the winner's `ready` flip and must not double-stamp the clock.
-  # `exclude: sandbox_id` makes the check identical for both ("does the user
-  # have capacity besides this sandbox"), so the loser is never spuriously
-  # refused at the cap for a wake that added no concurrency.
-  defp wake_suspended_sandbox(user_id, sandbox_id) do
-    case _unsafe_get_sandbox(sandbox_id) do
-      %Sandbox{status: "suspended"} ->
-        Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
-          case _unsafe_get_sandbox(sandbox_id) do
-            %Sandbox{status: "suspended"} = sandbox ->
-              resume_and_wake(sandbox)
-
-            sandbox ->
-              {:ok, sandbox}
-          end
-        end)
-
-      sandbox ->
-        {:ok, sandbox}
-    end
-  end
-
-  # Resume BEFORE the row flips: if the provider's wake call fails, the row
-  # stays `suspended` and the wake fails retryably — the parked disk is the
-  # agent's memory, and a row marked ready over a still-parked backend would
-  # strand it. For Sprites resume is a probe (waking is a side effect of the
-  # next exec); for pause/stop providers it is the call that restarts the
-  # sandbox.
-  defp resume_and_wake(sandbox) do
-    handle =
-      Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.machine_name)
-
-    case Managoat.Sandbox.resume(handle) do
-      {:ok, _handle} ->
-        update_sandbox(sandbox, %{
-          status: "ready",
-          last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-
-      {:error, reason} ->
-        Logger.warning(
-          "resume failed for suspended sandbox #{sandbox.id} (#{inspect(reason)}); " <>
-            "leaving it parked"
-        )
-
-        {:error, :sandbox_resume_failed}
-    end
-  end
-
-  # The child spec deliberately carries no prompt.
-  #
-  # Horde redistributes children when cluster membership changes — which every
-  # deploy does — and restarts each one from its *stored child spec*. A prompt
-  # baked into that spec is therefore replayed on every rebalance, silently
-  # re-running the user's last message against the agent. Production
-  # accumulated 38 turns from 2 distinct prompts on one conversation this way,
-  # one duplicate per rollout, and the agent on the other end spent several
-  # turns pointing out it was being asked the same thing repeatedly.
-  #
-  # So the prompt is delivered out of band, after the server exists. A cast is
-  # queued behind handle_continue(:provision), so it is processed once
-  # provisioning finishes; if provisioning fails the server stops and the cast
-  # dies with it, which is the right outcome — no turn on a failed provision.
-  defp start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
-    with {:ok, pid} <-
-           Horde.DynamicSupervisor.start_child(
-             Fountain.ConversationSupervisor,
-             {ConversationServer,
-              [
-                conversation_id: conv.id,
-                sandbox_id: sandbox_id,
-                runtime_module: runtime_module
-              ]}
-           ) do
-      if is_binary(initial_prompt) and initial_prompt != "" do
-        ConversationServer.queue_initial_prompt(pid, initial_prompt)
-      end
-
-      {:ok, _unsafe_get_conversation!(conv.id)}
     end
   end
 
@@ -5551,7 +5388,7 @@ defmodule Fountain.Conversations do
       # before coming here, so the first server — often on another pod, and
       # so invisible to this node's registry for a beat — is found and
       # handed the prompt instead of being raced by a second provision.
-      case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
+      case Wake.start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
         {:ok, _} ->
           old_sandbox_id = conv.sandbox_id
           _ = mark_old_sandbox_terminated(old_sandbox_id)
