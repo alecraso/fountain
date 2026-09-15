@@ -159,6 +159,11 @@ defmodule FountainWeb.TeamStreamTest do
     assert decoded["conversation_id"] == ada_conv.id
     assert decoded["agent_id"] == ada.id
     assert decoded["kind"] == "output"
+
+    # #2297: the frame this stream actually sends matches the schema the
+    # operation now declares, not just the bare string it used to.
+    assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded) ==
+             :ok
   end
 
   test "the first byte is a comment, sent before any event or heartbeat", %{
@@ -209,6 +214,16 @@ defmodule FountainWeb.TeamStreamTest do
     conn = Task.await(task, 5_000)
     assert conn.resp_body =~ "event: team\ndata: {\"reason\":\"changed\"}"
     assert conn.resp_body =~ "from-new-linus"
+
+    # #2297: `team` is a StreamSignal, not a StreamLogEvent — it carries no
+    # `kind`/`ts`, which the operation's declared response union accounts for.
+    [payload] =
+      Regex.run(~r/event: team\ndata: (\{[^\n]*\})/, conn.resp_body, capture: :all_but_first)
+
+    decoded = Jason.decode!(payload)
+
+    assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamSignal, decoded) ==
+             :ok
   end
 
   test "a schedule change sends a `schedule` event (#825)", %{user: user, raw_key: key} do
@@ -227,6 +242,15 @@ defmodule FountainWeb.TeamStreamTest do
 
     conn = Task.await(task, 5_000)
     assert conn.resp_body =~ "event: schedule\ndata: {\"reason\":\"changed\"}"
+
+    # #2297: `schedule` is a StreamSignal too.
+    [payload] =
+      Regex.run(~r/event: schedule\ndata: (\{[^\n]*\})/, conn.resp_body, capture: :all_but_first)
+
+    decoded = Jason.decode!(payload)
+
+    assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamSignal, decoded) ==
+             :ok
   end
 
   test "a runner connecting or dropping sends a `team` event (#834)", %{user: user, raw_key: key} do

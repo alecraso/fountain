@@ -1567,6 +1567,14 @@ defmodule FountainWeb.ConversationControllerTest do
       body = conn.resp_body
       assert body =~ "event: output"
       assert body =~ "hello"
+
+      # #2297: the frame this stream actually sends matches the schema the
+      # operation now declares, not just the bare string it used to.
+      [payload] = Regex.run(~r/data: (\{[^\n]*hello[^\n]*\})/, body, capture: :all_but_first)
+      decoded = Jason.decode!(payload)
+
+      assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded) ==
+               :ok
     end
 
     test "replays only matching stream events when streams filter is set", %{

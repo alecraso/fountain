@@ -1025,7 +1025,7 @@ defmodule FountainWeb.ConversationController do
       ]
     ],
     responses: [
-      ok: {"SSE stream", "text/event-stream", %OpenApiSpex.Schema{type: :string}},
+      ok: {"SSE stream", "text/event-stream", Schemas.StreamLogEvent},
       not_found: {"Not found", "application/json", Schemas.Error}
     ]
   )
@@ -1212,7 +1212,7 @@ defmodule FountainWeb.ConversationController do
     payload =
       Jason.encode!(%{
         kind: "stage",
-        stream: nil,
+        stream: "",
         data:
           Jason.encode!(%{
             reason: inspect(reason),

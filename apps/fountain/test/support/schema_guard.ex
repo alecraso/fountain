@@ -179,6 +179,33 @@ defmodule FountainWeb.SchemaGuard do
   end
 
   @doc """
+  Validate an already-decoded value against a named component schema.
+
+  `check/1` above never reaches an SSE frame: its `decode/1` step only handles
+  `content-type: application/json`, and a stream is `text/event-stream`. A
+  frame is not a `%Plug.Conn{}` response either — it is one `data:` line out of
+  many chunks written to an open connection — so a test that wants a frame
+  checked against `StreamLogEvent` (#2297) parses it out by hand and calls this
+  directly rather than going through `check/1`.
+  """
+  @spec validate_value(module(), term()) :: :ok | {:error, String.t()}
+  def validate_value(schema_module, value) do
+    spec = spec()
+
+    context = %Cast{
+      value: value,
+      schema: schema_module.schema(),
+      schemas: spec.components.schemas,
+      read_write_scope: :read
+    }
+
+    case Cast.cast(context) do
+      {:ok, _} -> :ok
+      {:error, errors} -> {:error, Enum.map_join(errors, "; ", &Cast.Error.message_with_path/1)}
+    end
+  end
+
+  @doc """
   Every documented operation, as `"METHOD /path/{template}"`.
 
   The same spelling `sdk/contract/contract.json` uses, so a name is the same

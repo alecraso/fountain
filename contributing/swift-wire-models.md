@@ -17,7 +17,7 @@ The generator reads the committed contract and does not require Elixir to run.
 | AuthMe | Generated. `role` and `email_verified` are pinned: the contract requires both and every published AuthMe had them Optional. `onboardingState` is retired, not pinned — #1393 dropped the column, so no server emits the key |
 | AdminUserPage | Decodes the generated `AdminUserListResponse` and its `Meta`; keeps `users` and the computed `hasMore`, and declares no wire keys of its own |
 | ConversationBindingUpdate / ConversationReapplyRequest | Intentionally handwritten: three states are behaviour a generated `Optional` cannot express, since "leave it alone" and "remove it" are different requests. `reapplyRequestSendsEveryFieldTheContractAccepts` derives the field list from the contract, so a property added to the request fails a test rather than being silently unsendable |
-| LogEvent | Generated. `id` and `ts` are pinned because one published model decodes two shapes: the REST row carries both, the SSE frame carries no `id` at all (it is the frame's `id:` line). `conversation_id` and `agent_id` come from `EXTRA_PROPERTIES`, and `stageData` stays an extension because a Swift extension can add a computed property but never a stored one |
+| LogEvent | Generated. `id` and `ts` are pinned because one published model decodes two shapes, both contract-described since #2297: the REST row (`LogEvent`) carries both, the SSE frame (`StreamLogEvent`) carries no `id` at all (it is the frame's `id:` line). `conversation_id` and `agent_id` read their type from `StreamLogEvent` — the `owner == "LogEvent"` branch in `fields()` — rather than the REST schema, because the REST row genuinely never sends them and describing them there would promise a shape `GET /api/conversations/:id/events` never returns (#2298). `stageData` stays an extension because a Swift extension can add a computed property but never a stored one |
 | Block | Intentionally handwritten. Its `body` is a two-branch `oneOf` (a string, or the plan array) that feeds two published properties, and it is one of the contract's two nodes carrying both `additionalProperties` and `properties` — both of which generation refuses by design (#2277). It also keeps an open-shaped `extra` catch-all no schema records |
 | PermissionOption | Intentionally handwritten. The contract has no schema for it: `Block.options` items are open objects, so generation would retype it `[[String: JSONValue]]`. It also accepts both `optionId` and `option_id`, which nothing in the contract records |
 | PermissionRequest | Intentionally handwritten, and not a wire model: it is derived from a `Block` through `init?(block:)` and never decoded |
@@ -165,17 +165,18 @@ replace: it is still the one test file that imports `FountainKit` without
 disappears. But it is a hand-written list that only names the families #2251
 moved, where the generation-time rule reaches every currently generated type.
 
-`EXTRA_PROPERTIES` is the third table and the smallest: two properties this
-SDK publishes that the contract does not describe. Both are SSE-frame fields —
-the team and events streams add `conversation_id`, the team stream adds
-`agent_id` — and the frame has no schema to read them from, because all three
-stream operations declare `text/event-stream` with a bare string schema. An
-entry is a claim that the server sends a field the contract does not document,
-so a ceiling test holds the count at two the way `SchemaGuardAllowlist` holds
-its own, and a test fails an entry whose key the contract has since described:
-at that point the ordinary path generates it and the entry is duplication.
-Describing the frame properly would retire both entries and is the better fix
-when someone wants it.
+`EXTRA_PROPERTIES` is the third table, for properties this SDK publishes that
+the contract does not describe anywhere. It is empty since #2297: it held the
+SSE frame's `conversation_id` and `agent_id`, undescribed because all three
+stream operations declared `text/event-stream` with a bare string schema.
+Describing the frame as `StreamLogEvent` retired both — `LogEvent`'s
+`owner == "LogEvent"` branch in `fields()` reads their type from that sibling
+schema now, so the contract stays the one source and nothing here duplicates
+it. An entry is a claim that the server sends a field the contract does not
+document anywhere, so a ceiling test holds the count at 0 the way
+`SchemaGuardAllowlist` holds its own, and a test fails an entry whose key the
+contract has since described: at that point the ordinary path generates it
+and the entry is duplication.
 
 The 19 `TYPE_OVERRIDES` entries retain existing `JSONValue` APIs for
 deliberately dynamic payloads: metadata, packages, networking config,

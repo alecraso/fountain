@@ -4709,6 +4709,53 @@ export interface components {
             data: components["schemas"]["Secret"];
         };
         /**
+         * StreamLogEvent
+         * @description One frame of the conversation, events or team SSE log stream (#2297). Same fields as `LogEvent` minus `id` — the frame's id travels in the SSE `id:` line, never the JSON body — plus `conversation_id` and `agent_id`, which the REST log feed never sends because its URL or list item already names the conversation.
+         *
+         *     Not every stream sends every optional field here; see each property's own description for which of `GET /api/conversations/:id/stream`, `GET /api/events/stream` and `GET /api/team/stream` include it. The events and team streams also send `StreamSignal` frames on the same connection.
+         */
+        StreamLogEvent: {
+            /**
+             * Format: uuid
+             * @description The teammate whose conversation this is. Sent only on `GET /api/team/stream`, to route the event to a roster row.
+             */
+            agent_id?: string;
+            /** @description Only with `?blocks=true`: `data` parsed server-side into the blocks a transcript renders. Empty for non-output events. */
+            blocks?: components["schemas"]["Block"][];
+            /**
+             * Format: uuid
+             * @description Which conversation this event belongs to. Sent on `GET /api/events/stream` and `GET /api/team/stream`; not sent on `GET /api/conversations/:id/stream`, whose URL already names the conversation.
+             */
+            conversation_id?: string;
+            /** @description Output text, or JSON-encoded metadata for stage events. */
+            data?: string;
+            /** @description Sent on `GET /api/events/stream`. Not sent on `GET /api/conversations/:id/stream` or `GET /api/team/stream`. */
+            duration_ms?: number | null;
+            /** @enum {string} */
+            kind: "output" | "stage";
+            /** @description Lifecycle stage name. null on an event that has no stage. */
+            stage?: string | null;
+            /**
+             * @description Lifecycle state of the stage. null on an event that has no state.
+             * @enum {string|null}
+             */
+            state?: "started" | "done" | "failed" | "interrupted" | null;
+            /** @description `stdout` / `stderr` for output events; empty for stage events. */
+            stream?: string;
+            /** Format: date-time */
+            ts: string;
+            /** Format: uuid */
+            turn_id?: string | null;
+        };
+        /**
+         * StreamSignal
+         * @description A change-signal frame on the events or team SSE stream (#2297) — not a log event, and no `conversation_id`/`agent_id`/anything else `StreamLogEvent` declares. The event name says what changed: `conversations` on `GET /api/events/stream` (the caller's conversation list changed — created, titled, read, deleted, finished), `team` on `GET /api/team/stream` (the roster changed) and `schedule` on `GET /api/team/stream` (a team schedule was created, updated, deleted or fired). The client re-lists rather than reading anything from the body.
+         */
+        StreamSignal: {
+            /** @enum {string} */
+            reason: "changed";
+        };
+        /**
          * StripeUrlResponse
          * @description A Stripe-hosted URL to open in a browser. Single-use and short-lived.
          */
@@ -11709,7 +11756,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": string;
+                    "text/event-stream": components["schemas"]["StreamLogEvent"];
                 };
             };
             /** @description Unauthorized */
@@ -12818,7 +12865,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": string;
+                    "text/event-stream": components["schemas"]["StreamLogEvent"] | components["schemas"]["StreamSignal"];
                 };
             };
             /** @description Unauthorized */
@@ -15168,7 +15215,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": string;
+                    "text/event-stream": components["schemas"]["StreamLogEvent"] | components["schemas"]["StreamSignal"];
                 };
             };
             /** @description Unauthorized */

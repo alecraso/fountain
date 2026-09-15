@@ -544,9 +544,10 @@ class SwiftGeneration(unittest.TestCase):
         # apps/fountain: the table may shrink freely, and growing it means
         # editing this number in the same diff, so a reviewer sees it move.
         # Every entry is a claim that the server sends a field the contract
-        # does not document, which is true of the SSE frame and should stay
-        # rare.
-        ceiling = 2
+        # does not document. It held the SSE frame's two fields until #2297
+        # described the frame as StreamLogEvent, which retired both — the
+        # ceiling is 0 rather than deleted so a new entry still has to move it.
+        ceiling = 0
         self.assertLessEqual(len(swiftgen.EXTRA_PROPERTIES), ceiling)
         for (owner, key), (node, reason) in swiftgen.EXTRA_PROPERTIES.items():
             with self.subTest(owner=owner, key=key):
@@ -562,10 +563,10 @@ class SwiftGeneration(unittest.TestCase):
                     key, schema.get("properties", {}),
                     f"the contract now describes {owner}.{key}; delete the entry")
 
-    def test_undescribed_properties_reach_the_output(self):
+    def test_stream_only_log_event_properties_reach_the_output(self):
         # Scoped to the one struct: `conversation_id` is a real contract
         # property on several other models, so a whole-file search would pass
-        # whether or not the table did anything.
+        # whether or not this worked.
         def log_event(output):
             body = output.split("public struct LogEvent:", 1)[1]
             return body.split("\n}", 1)[0]
@@ -577,12 +578,30 @@ class SwiftGeneration(unittest.TestCase):
         # neither, and only the team stream carries agent_id.
         self.assertIn("public var conversationID: String?", generated)
         self.assertIn("public var agentID: String?", generated)
-        # Emptying the table used to drop both properties in silence (#2296):
-        # the removal guard now catches it, because the last release
-        # published both and nothing records their removal as deliberate.
-        with mock.patch.object(swiftgen, "EXTRA_PROPERTIES", {}):
-            with self.assertRaisesRegex(ValueError, "LogEvent.conversationID shipped"):
-                swiftgen.Generator(copy.deepcopy(self.contract)).render()
+
+        # #2297: these come from StreamLogEvent now, not EXTRA_PROPERTIES —
+        # confirm it is genuinely load-bearing rather than vestigial. `build()`
+        # alone, not `render()`, so this exercises field sourcing without also
+        # tripping the disappearance guard the next test is about.
+        without_agent_id = copy.deepcopy(self.contract)
+        del without_agent_id["schemas"]["StreamLogEvent"]["properties"]["agent_id"]
+        generator = swiftgen.Generator(without_agent_id)
+        generator.build()
+        keys = {key for key, _, _, _ in generator.models["LogEvent"]}
+        self.assertNotIn("agent_id", keys)
+        self.assertIn("conversation_id", keys)
+
+    def test_a_stream_field_disappearing_from_the_contract_is_caught(self):
+        # Emptying EXTRA_PROPERTIES used to drop both properties in silence
+        # (#2296). Now that they are ordinary contract-sourced fields,
+        # `compatibility_failures` — the disappearance guard every generated
+        # model already goes through — catches this with no table to empty
+        # at all: the last release published both, and nothing records
+        # removing either as deliberate.
+        contract = copy.deepcopy(self.contract)
+        del contract["schemas"]["StreamLogEvent"]["properties"]["conversation_id"]
+        with self.assertRaisesRegex(ValueError, "LogEvent.conversationID shipped"):
+            swiftgen.Generator(contract).render()
 
     def test_the_published_duration_spelling_is_preserved(self):
         # `duration_ms` published as `durationMS`, so `ms` joins the acronym

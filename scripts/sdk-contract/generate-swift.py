@@ -275,21 +275,16 @@ REMOVED_PROPERTIES = {
 # Properties this SDK publishes that the contract does not describe, each with
 # the reason it exists. Not a place to register ordinary API additions —
 # properties come from the contract, and an entry here is a claim that the
-# server sends a field the contract does not document. The SSE frame is that
-# case: all three stream operations declare `text/event-stream` with a bare
-# string schema, so the frame shape is documented in prose only. A ceiling test
-# holds the count, so a third entry means editing the number in the same diff.
-EXTRA_PROPERTIES = {
-    ('LogEvent', 'conversation_id'): (
-        {'type': 'string', 'required': False},
-        "The team and events streams carry the log events of more than one "
-        "conversation, so each frame names its own (events_controller.ex, "
-        "team_controller.ex). The REST row never carries it."),
-    ('LogEvent', 'agent_id'): (
-        {'type': 'string', 'required': False},
-        "The team stream alone adds it, mapping each event to the roster row "
-        "it belongs to (team_controller.ex)."),
-}
+# server sends a field the contract does not document. Empty since #2297: the
+# SSE frame used to be this table's only tenant, both entries pointing at
+# `LogEvent.conversation_id`/`agent_id`, because all three stream operations
+# declared `text/event-stream` with a bare string schema and the frame shape
+# was documented in prose only. Describing the frame as `StreamLogEvent`
+# retired both — `fields()`'s `owner == "LogEvent"` branch reads their type
+# from that schema now, so the contract is still the one source. A ceiling
+# test holds the count at 0, so a new entry means editing the number in the
+# same diff.
+EXTRA_PROPERTIES = {}
 
 INPUT_ORDERS = {
     'VaultUpdate': ['name', 'description', 'metadata'],
@@ -540,6 +535,26 @@ class Generator:
                           and other.get(key, {}).get("required", False))
                 for key, value in {**props, **other}.items()
             }
+        if owner == "LogEvent":
+            # #2297: the SSE frame's stream-only fields are described on the
+            # sibling schema StreamLogEvent, never on LogEvent itself — the
+            # REST row genuinely never carries them, and adding them to
+            # LogEvent would promise a shape `GET /api/conversations/:id/events`
+            # never returns (the #1418 defect class, see #2298). One public
+            # LogEvent still decodes both shapes, so it reads their type here
+            # instead of carrying them in EXTRA_PROPERTIES: the contract does
+            # describe them now, just under a different schema name.
+            #
+            # `self.schemas` here is whichever contract this Generator was
+            # built against, including the released one `released_requiredness`
+            # rebuilds as its baseline (`baseline=True`) — a contract from
+            # before #2297 has no StreamLogEvent at all, and that absence is
+            # itself the correct history: neither field was contract-described
+            # then, only carried by hand in EXTRA_PROPERTIES.
+            stream_props = self.schemas.get("StreamLogEvent", {}).get("properties", {})
+            for key in ("conversation_id", "agent_id"):
+                if key in stream_props:
+                    props[key] = dict(stream_props[key], required=False)
         if owner == "TurnUsage":
             # Usage is the public superset used for both a turn and a total.
             # New total fields must propagate too; incompatible shared names

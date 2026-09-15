@@ -130,7 +130,13 @@ defmodule FountainWeb.EventsStreamTest do
       [payload] =
         Regex.run(~r/data: (\{[^\n]*from-a[^\n]*\})/, conn.resp_body, capture: :all_but_first)
 
-      assert Jason.decode!(payload)["conversation_id"] == a.id
+      decoded = Jason.decode!(payload)
+      assert decoded["conversation_id"] == a.id
+
+      # #2297: the frame this stream actually sends matches the schema the
+      # operation now declares, not just the bare string it used to.
+      assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded) ==
+               :ok
     end
 
     test "Last-Event-ID replays what was missed across conversations", %{user: user, raw_key: key} do
@@ -175,6 +181,22 @@ defmodule FountainWeb.EventsStreamTest do
       conn = Task.await(task, 6_000)
       assert length(Regex.scan(~r/event: conversations\n/, conn.resp_body)) == 1
       assert conn.resp_body =~ "from-new"
+
+      # #2297: the `conversations` frame is a StreamSignal, not a StreamLogEvent
+      # — it carries no `kind`/`ts`, which the operation's declared response
+      # union now has to account for.
+      [payload] =
+        Regex.run(~r/event: conversations\ndata: (\{[^\n]*\})/, conn.resp_body,
+          capture: :all_but_first
+        )
+
+      decoded = Jason.decode!(payload)
+
+      assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamSignal, decoded) ==
+               :ok
+
+      assert {:error, _} =
+               FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded)
     end
 
     @tag :filtered_cursor_regression

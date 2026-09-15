@@ -2254,7 +2254,7 @@
       "responses": {
         "200": {
           "text/event-stream": {
-            "type": "string"
+            "ref": "StreamLogEvent"
           }
         },
         "401": {
@@ -2558,7 +2558,14 @@
       "responses": {
         "200": {
           "text/event-stream": {
-            "type": "string"
+            "oneOf": [
+              {
+                "ref": "StreamLogEvent"
+              },
+              {
+                "ref": "StreamSignal"
+              }
+            ]
           }
         },
         "401": {
@@ -3448,7 +3455,14 @@
       "responses": {
         "200": {
           "text/event-stream": {
-            "type": "string"
+            "oneOf": [
+              {
+                "ref": "StreamLogEvent"
+              },
+              {
+                "ref": "StreamSignal"
+              }
+            ]
           }
         },
         "401": {
@@ -12393,6 +12407,88 @@
         "data": {
           "ref": "Secret",
           "required": true
+        }
+      },
+      "type": "object"
+    },
+    "StreamLogEvent": {
+      "properties": {
+        "agent_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "ref": "Block"
+          },
+          "required": false,
+          "type": "array"
+        },
+        "conversation_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        },
+        "data": {
+          "required": false,
+          "type": "string"
+        },
+        "duration_ms": {
+          "nullable": true,
+          "required": false,
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "output",
+            "stage"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "stage": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "done",
+            "failed",
+            "interrupted",
+            "started"
+          ],
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "stream": {
+          "required": false,
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "required": true,
+          "type": "string"
+        },
+        "turn_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "StreamSignal": {
+      "properties": {
+        "reason": {
+          "enum": [
+            "changed"
+          ],
+          "required": true,
+          "type": "string"
         }
       },
       "type": "object"
