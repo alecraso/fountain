@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 #
 # The local gate behind `mix precommit`: CI's Elixir static job, the sobelow
-# scan, a prod release assemble and the test suite, in that order, as one
-# command whose exit status is the verdict.
+# scan and a prod release assemble, in that order, as one command whose exit
+# status is the verdict. The test suite is a stage too, but not a default
+# one: CI runs the whole suite on every PR and again in the merge queue, so
+# locally it is opt-in.
 #
-#   mix precommit                 every stage
+#   mix precommit                 every stage but the suite
+#   mix precommit --full          every stage, the suite last
 #   mix precommit credo test      only those stages, in the canonical order
 #   mix precommit --list          the stage names and what each runs
 #   scripts/precommit.sh          the same thing without the alias
@@ -40,8 +43,14 @@ STAGES=(
   "dialyzer|MIX_ENV=dev mix dialyzer"
   "sobelow|scripts/sobelow.sh"
   "release|MIX_ENV=prod mix deps.get && mix release fountain_server --overwrite"
-  "test|MIX_ENV=test mix test"
+  "test|MIX_ENV=test mix test (with --full or by name; CI runs it on every plan)"
 )
+
+# Stages that run only with --full or when named. The suite is here because
+# CI runs it on every PR and again in the merge queue, and a local run of
+# 6,000 tests before every push at this merge rate bought little that the
+# six-minute CI run did not.
+OPT_IN_STAGES=(test)
 
 stage_toolchain() {
   # The formatter, credo and dialyzer all change output between Elixir
@@ -112,6 +121,7 @@ stage_release() {
 }
 
 # From the umbrella root: core, ee/test and every sibling app in one run.
+# Opt-in (OPT_IN_STAGES): `--full` or `mix precommit test`.
 stage_test() { mix_in test test; }
 
 # ── the runner ────────────────────────────────────────────────────────────
@@ -131,22 +141,30 @@ selected_has() {
   return 1
 }
 
+is_opt_in() {
+  local s
+  for s in "${OPT_IN_STAGES[@]}"; do [[ "$s" == "$1" ]] && return 0; done
+  return 1
+}
+
 list_stages() {
   local s
   for s in "${STAGES[@]}"; do printf '  %-17s %s\n' "${s%%|*}" "${s#*|}"; done
 }
 
 usage() {
-  echo "usage: scripts/precommit.sh [--list] [stage ...]"
+  echo "usage: scripts/precommit.sh [--list] [--full] [stage ...]"
   echo
-  echo "stages, in the order they run:"
+  echo "stages, in the order they run (${OPT_IN_STAGES[*]}: only with --full or by name):"
   list_stages
 }
 
 selected=()
+full=0
 for arg in "$@"; do
   case "$arg" in
     --list) usage; exit 0 ;;
+    --full) full=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "precommit: unknown option $arg" >&2; usage >&2; exit 64 ;;
     *)
@@ -158,10 +176,16 @@ for arg in "$@"; do
   esac
 done
 
+# No names: every stage, minus the opt-in ones unless --full. Names win
+# over --full, so `mix precommit credo test` runs exactly those two.
 run_list=()
 for s in "${STAGES[@]}"; do
   name="${s%%|*}"
-  if [[ ${#selected[@]} -eq 0 ]] || selected_has "$name"; then
+  if [[ ${#selected[@]} -eq 0 ]]; then
+    if [[ $full -eq 1 ]] || ! is_opt_in "$name"; then
+      run_list+=("$name")
+    fi
+  elif selected_has "$name"; then
     run_list+=("$name")
   fi
 done

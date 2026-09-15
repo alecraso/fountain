@@ -8,8 +8,8 @@ subset must run in the canonical order and stop, with the failing stage's
 status, at the first failure.
 
 A stub `mix` on PATH records what it was asked to run, so no Elixir is
-needed. Stages that shell out to anything else (toolchain, conflict-markers,
-sobelow) are not selected here.
+needed. The two default-selection tests run the whole default plan through
+that stub with toolchain drift allowed; the others select subsets.
 """
 
 import os
@@ -82,7 +82,28 @@ class PrecommitScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         listed = [line.split()[0] for line in result.stdout.splitlines() if line.startswith("  ")]
         self.assertEqual(listed, STAGES)
+        self.assertIn("test: only with --full or by name", result.stdout)
         self.assertEqual(self.mix_calls(), [])
+
+    def test_the_default_plan_runs_every_stage_but_the_suite(self):
+        result = self.run_script(PRECOMMIT_ALLOW_TOOLCHAIN_DRIFT="1")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.mix_calls()
+        self.assertNotIn("test test", calls)
+        self.assertEqual(calls[-1], "prod release fountain_server --overwrite")
+        self.assertIn("precommit: PASSED (9 stages", result.stdout)
+
+    def test_full_adds_the_suite_last(self):
+        result = self.run_script("--full", PRECOMMIT_ALLOW_TOOLCHAIN_DRIFT="1")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.mix_calls()[-1], "test test")
+        self.assertIn("precommit: PASSED (10 stages", result.stdout)
+
+    def test_named_stages_win_over_full(self):
+        result = self.run_script("--full", "credo", "test")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.mix_calls(), ["test credo --strict", "test test"])
+        self.assertIn("precommit: PASSED (2 stages", result.stdout)
 
     def test_a_pattern_shaped_name_is_rejected_and_never_passes(self):
         for name in ["te.t", ".*", "test$", "^credo", "[t]est"]:

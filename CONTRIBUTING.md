@@ -58,15 +58,18 @@ for `git commit`; use `-s`, or install a `commit-msg` hook.
 During iteration, run checks for the files you changed. Documentation-only
 changes use the focused commands in [contributing/docs.md](contributing/docs.md);
 contributor-only Markdown needs no Elixir suite. For code, build configuration,
-CI policy or mixed changes, run the full local gate:
+CI policy or mixed changes, run the local gate:
 
 ```bash
 mix precommit
 ```
 
-That runs `scripts/precommit.sh`: CI's Elixir static job, the sobelow scan, a
-prod release assemble and the test suite, each stage its own process, in
-this order:
+That runs `scripts/precommit.sh`: CI's Elixir static job, the sobelow scan and
+a prod release assemble, each stage its own process, in this order. The test
+suite is the last stage and is opt-in, `mix precommit --full` or
+`mix precommit test`: CI runs the whole suite on every PR and again in the
+merge queue, so the local run is for when you want its answer before pushing,
+such as a change to `test/support`, a factory, a migration or `config/`.
 
 | Stage | Runs |
 |---|---|
@@ -79,7 +82,7 @@ this order:
 | `dialyzer` | `MIX_ENV=dev mix dialyzer` |
 | `sobelow` | `scripts/sobelow.sh`, core with `ee/lib` overlaid |
 | `release` | `MIX_ENV=prod mix deps.get && mix release fountain_server --overwrite` |
-| `test` | `mix test` from the umbrella root: core, `ee/test` and every sibling app |
+| `test` | `mix test` from the umbrella root: core, `ee/test` and every sibling app. Only with `--full` or by name |
 
 **The exit status is the verdict.** The run stops at the first failing stage,
 names it, and exits with that stage's status; the last line is always
@@ -87,7 +90,7 @@ names it, and exits with that stage's status; the last line is always
 script cannot see past is a pipe: `mix precommit | tee log` reports `tee`'s
 status unless the shell has `pipefail` on. `mix precommit --list` prints the
 stages, and `mix precommit credo test` runs only those, in the canonical
-order, after a fix.
+order, after a fix; naming a stage always runs it, `--full` or not.
 
 The release stage is the only one that builds `MIX_ENV=prod`. It is there
 because everything else is blind to a prod-only dependency graph: the
@@ -102,7 +105,7 @@ OpenAPI validation, the SDK jobs and the docs gates;
 [`scripts/ci/README.md`](scripts/ci/README.md) lists every job. If you
 touched `docs/` or an extension's manual, read
 [`contributing/docs.md`](contributing/docs.md): the structural checks are in
-the suite and `mix precommit` runs them.
+the suite, and `bash scripts/test-docs.sh` runs just those.
 
 ### If a test went red and then green
 
