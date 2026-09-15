@@ -6,7 +6,7 @@ defmodule Fountain.Conversations.InterruptDeadReconcilesTest do
 
   alias Fountain.Audit
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Interruption, Sandbox, Turn}
+  alias Fountain.Conversations.{Interruption, Sandbox, Turn, Wake}
   alias Fountain.Repo
 
   # #2175 open decision 1 (Jake, 2026-09-15): interrupting a conversation
@@ -78,7 +78,7 @@ defmodule Fountain.Conversations.InterruptDeadReconcilesTest do
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
     end)
 
-    assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+    assert {:ok, woken} = Wake.wake_conversation(conv.id)
     assert_received :start_child_called
     assert woken.sandbox_id != sandbox.id
   end
