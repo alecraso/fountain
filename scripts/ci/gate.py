@@ -36,7 +36,7 @@ def _reuse(needs):
 
 def _classification(needs):
     outputs = needs["changes"].get("outputs", {})
-    if any(outputs.get(key) not in {"true", "false"} for key in ("docs_only", "cli_docs")):
+    if any(outputs.get(key) not in ("true", "false") for key in ("docs_only", "manual_docs", "cli_docs")):
         raise ValueError("change classification is missing or invalid")
     tree = outputs.get("tree")
     if not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree):
@@ -48,7 +48,9 @@ def _classification(needs):
             raise ValueError("SDK classification is missing or invalid")
         if value == "true":
             selected.add(job)
-    return outputs["docs_only"] == "true", selected
+    if outputs["cli_docs"] == "true" and outputs["manual_docs"] != "true":
+        raise ValueError("CLI documentation requires manual checks")
+    return outputs["docs_only"] == "true", outputs["manual_docs"] == "true", selected
 
 
 def _expected_plan(event, needs, jobs):
@@ -62,8 +64,8 @@ def _expected_plan(event, needs, jobs):
         expected[probe] = "success"
 
     reuse = _reuse(needs) if "already-tested" in PROBES[event] else False
-    docs_only, sdks = (
-        _classification(needs) if "changes" in PROBES[event] else (False, SDK_JOBS)
+    docs_only, manual_docs, sdks = (
+        _classification(needs) if "changes" in PROBES[event] else (False, True, SDK_JOBS)
     )
     if event == "workflow_dispatch" and (docs_only or sdks != SDK_JOBS):
         raise ValueError("manual CI must select the complete plan")
@@ -71,16 +73,16 @@ def _expected_plan(event, needs, jobs):
     if not reuse:
         expected.update(dict.fromkeys(sdks, "success"))
 
-    return expected, not reuse and not docs_only, docs_only, reuse
+    return expected, not reuse and not docs_only, docs_only and manual_docs, reuse
 
 
 def validate(event, needs):
-    expected, full, docs_only, reuse = _expected_plan(event, needs, JOBS)
+    expected, full, manual, reuse = _expected_plan(event, needs, JOBS)
     expected["workflow-checks"] = "success"
     expected["sdk-checks"] = "success"
-    # Docs-only still owes docs. Reused trees skip the workload jobs, while
-    # both aggregate checks validate that the selected plan was followed.
-    if docs_only and not reuse:
+    # Published manuals owe docs; contributor-only text does not. Reused trees
+    # skip workload jobs; both aggregates still validate the selected plan.
+    if manual and not reuse:
         expected["docs"] = "success"
     if full:
         expected.update(dict.fromkeys(FULL_JOBS - SDK_JOBS, "success"))

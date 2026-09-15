@@ -5,7 +5,7 @@ import re
 import unittest
 
 from gate import SDK_GATE_JOBS, SDK_JOBS, validate, validate_sdks
-from sdk_changes import classify
+from changes import classify_sdks
 from test_gate import plan
 
 
@@ -63,7 +63,7 @@ class SDKRoutingTest(unittest.TestCase):
                  (["apps/fountain/lib/fountain_web/router.ex"], False, SDK_JOBS),
                  (["unregistered/path"], False, SDK_JOBS)]
         for paths, docs, expected in cases:
-            selected = {language + "-sdk" for language in classify(paths)}
+            selected = {language + "-sdk" for language in classify_sdks(paths)}
             self.assertEqual(selected, expected)
             for event in ("pull_request", "merge_group"):
                 self.check_both(event, plan(event, docs=docs, sdks=selected))

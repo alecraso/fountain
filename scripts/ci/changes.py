@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select SDKs from a Git diff; unknown paths or unreadable diffs select all."""
+"""Select documentation and SDK checks from one conservative, NUL-delimited diff."""
 
 import re
 import subprocess
@@ -35,28 +35,63 @@ UNRELATED_FILES = {
 }
 
 
-def classify(paths):
+# Only these extension manuals have registered documentation suites.
+MANUAL_EXTENSIONS = ("fountain_buzz", "fountain_google", "fountain_microsoft", "fountain_slack")
+CONTRIBUTOR_FILES = {"CLAUDE.md", "CONTRIBUTING.md", "SETUP.md", "scripts/ci/README.md"}
+
+
+def contributor_doc(path):
+    return path in CONTRIBUTOR_FILES or (
+        path.endswith(".md") and path.startswith(("contributing/", "standards/"))
+    )
+
+
+def manual_doc(path):
+    # README's diagram alt text is checked by Fountain.DocsTest.
+    return path == "README.md" or path.startswith(
+        ("docs/", *(f"apps/{app}/docs/" for app in MANUAL_EXTENSIONS))
+    )
+
+
+def valid_paths(paths):
+    return bool(paths) and all(
+        path and not path.startswith("/") and not re.search(r"[\x00-\x1f\x7f]", path)
+        and not any(part in {"", ".", ".."} for part in path.split("/"))
+        for path in paths
+    )
+
+
+def classify_docs(paths):
+    if not valid_paths(paths):
+        return {"docs_only": False, "manual_docs": True, "cli_docs": False}
+    sdk_readmes = {f"sdk/{language}/README.md" for language in LANGUAGES}
+    return {
+        "docs_only": all(contributor_doc(p) or manual_doc(p) or p in sdk_readmes for p in paths),
+        "manual_docs": any(manual_doc(p) for p in paths),
+        "cli_docs": any(p == "docs/cli.md" or p.startswith("docs/cli/") for p in paths),
+    }
+
+
+def classify_sdks(paths):
     selected = set()
-    if not paths:
+    if not valid_paths(paths):
         return LANGUAGES
     for path in paths:
-        if (not path or path.startswith("/") or re.search(r"[\x00-\x1f\x7f]", path)
-                or any(part in {"", ".", ".."} for part in path.split("/"))):
-            return LANGUAGES
         owner = next((language for language in LANGUAGES
                       if path.startswith(f"sdk/{language}/") or path in OWNED_FILES[language]), None)
         if owner:
             selected.add(owner)
-        elif path not in UNRELATED_FILES and not path.startswith(UNRELATED_PREFIXES):
+        elif not (contributor_doc(path) or manual_doc(path) or path in UNRELATED_FILES
+                  or path.startswith(UNRELATED_PREFIXES)):
             # Shared contract/conformance, API implementation, build config,
             # CI policy and every unregistered path require every SDK.
             return LANGUAGES
     return frozenset(selected)
 
 
-def from_git(base):
+def changed_paths(base):
     if not re.fullmatch(r"[0-9a-f]{40}", base):
-        return LANGUAGES
+        return []
     try:
         result = subprocess.run(
             ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
@@ -64,14 +99,18 @@ def from_git(base):
             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         ).stdout
         if not result or not result.endswith(b"\0"):
-            return LANGUAGES
-        return classify(result[:-1].decode("utf-8").split("\0"))
+            return []
+        paths = result[:-1].decode("utf-8").split("\0")
+        return paths if valid_paths(paths) else []
     except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
-        return LANGUAGES
+        return []
 
 
 if __name__ == "__main__":
-    selected = from_git(sys.argv[1]) if len(sys.argv) == 2 else LANGUAGES
-    # Only fixed keys and boolean values reach GITHUB_OUTPUT, never file names.
-    for language in sorted(LANGUAGES):
-        print(f"sdk_{language}={str(language in selected).lower()}")
+    paths = changed_paths(sys.argv[1]) if len(sys.argv) == 2 else []
+    outputs = classify_docs(paths)
+    selected = classify_sdks(paths)
+    outputs.update({f"sdk_{language}": language in selected for language in sorted(LANGUAGES)})
+    # Never write paths or other diff-controlled text to GITHUB_OUTPUT.
+    for key, value in outputs.items():
+        print(f"{key}={str(value).lower()}")

@@ -132,10 +132,10 @@ spec:
       3. Read CONTRIBUTING.md, and decisions/index.md if the change is
          architectural.
 
-    Before you push: run `mix precommit` in the foreground. Its exit status
-    is the verdict; the final line names success or the failing stage.
-    If you touched docs/, the structural checks and optional writing guidance
-    are in `contributing/docs.md`.
+    Before you push: documentation-only changes use the focused checks in
+    `contributing/docs.md`. For code, CI policy or mixed changes, run
+    `mix precommit` in the foreground. Its exit status is the verdict; the
+    final line names success or the failing stage.
 
     Never end a turn with work pending. "I'll push once the suite passes" is
     a turn that pushed nothing: the turn that did the work is the turn that

@@ -28,7 +28,7 @@ class DispatchTest(unittest.TestCase):
             fake_git.write_text('#!/bin/sh\ntouch "$GIT_CALLED"\nexit 97\n')
             fake_git.chmod(0o755)
             output = root / "outputs"
-            result = subprocess.run(["bash", "-e", "-c", script], cwd=root, capture_output=True, text=True,
+            result = subprocess.run(["bash", "-e", "-c", script], cwd=ROOT, capture_output=True, text=True,
                                     env=dict(os.environ, GITHUB_EVENT_NAME="workflow_dispatch",
                                              GITHUB_OUTPUT=str(output), GITHUB_BASE_REF="",
                                              MERGE_GROUP_BASE_SHA="", GIT_CALLED=str(root / "called"),
@@ -37,11 +37,8 @@ class DispatchTest(unittest.TestCase):
             self.assertFalse((root / "called").exists())
             values = dict(line.split("=", 1) for line in output.read_text().splitlines())
             self.assertEqual(values, {"diff_base": "", "docs_only": "false",
-                                      "cli_docs": "false"})
-            sdks = subprocess.check_output([sys.executable, str(ROOT / "scripts/ci/sdk_changes.py"),
-                                            values["diff_base"]], cwd=root, text=True)
-            self.assertEqual(set(sdks.splitlines()),
-                             {"sdk_" + job.removesuffix("-sdk") + "=true" for job in SDK_JOBS})
+                                      "manual_docs": "true", "cli_docs": "false",
+                                      **{f"sdk_{job.removesuffix('-sdk')}": "true" for job in SDK_JOBS}})
 
     def test_both_gates_reject_partial_manual_plans(self):
         original = plan("workflow_dispatch")

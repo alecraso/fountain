@@ -41,7 +41,7 @@ mise install                        # Erlang/OTP 28 + Elixir 1.19.2, from .tool-
 mix deps.get && mix setup           # dev DB: create + migrate
 MIX_ENV=test mix ecto.create && MIX_ENV=test mix ecto.migrate
 mix test                            # core, ee/test and every sibling app
-mix precommit                       # the local gate; exit status is the verdict
+mix precommit                       # full local gate for code, CI policy and mixed changes
 mix precommit --list                # its stages; `mix precommit credo test` runs a subset
 gh pr merge <N> --squash --auto     # queue a reviewed PR; never --admin
 ```
@@ -244,6 +244,9 @@ by the release. The mechanics and the CI job list are in
 
 ## Docs and decisions
 
+- For documentation-only changes, use the focused checks in
+  [contributing/docs.md](contributing/docs.md); contributor-only Markdown
+  needs no Elixir suite.
 - `docs/` is published at `/docs` only. A page not in `docs/nav.yml` fails the
   suite, as does a dead internal link or anchor. The structural rules and
   writing guidance are in [contributing/docs.md](contributing/docs.md).

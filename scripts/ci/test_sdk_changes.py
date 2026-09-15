@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from sdk_changes import LANGUAGES, OWNED_FILES, classify, from_git
+from changes import LANGUAGES, OWNED_FILES, classify_sdks, changed_paths
 
 
-SCRIPT = Path(__file__).with_name("sdk_changes.py").resolve()
+SCRIPT = Path(__file__).with_name("changes.py").resolve()
 
 
 class SDKChangesTest(unittest.TestCase):
@@ -18,7 +18,7 @@ class SDKChangesTest(unittest.TestCase):
             for path in {f"sdk/{language}/src/client", f"sdk/{language}/README.md",
                          f"sdk/{language}/new-tool"} | OWNED_FILES[language]:
                 with self.subTest(path=path):
-                    self.assertEqual(classify([path]), {language})
+                    self.assertEqual(classify_sdks([path]), {language})
 
     def test_public_contract_shared_fixtures_and_uncertainty_fan_out(self):
         for path in (
@@ -32,46 +32,48 @@ class SDKChangesTest(unittest.TestCase):
             "apps/fountain/lib/fountain/agents.ex", "config/config.exs", "mix.lock",
             "ee/lib/fountain_web/controllers/api/credits_controller.ex",
             "apps/fountain_buzz/lib/fountain_buzz_web/router.ex",
-            ".github/workflows/ci.yml", "scripts/ci/sdk_changes.py", "sdk/new-language/client",
-            "new-directory/unknown", "README.md",
+            ".github/workflows/ci.yml", "scripts/ci/changes.py", "sdk/new-language/client",
+            "new-directory/unknown",
         ):
             with self.subTest(path=path):
-                self.assertEqual(classify(["docs/index.md", path]), LANGUAGES)
+                self.assertEqual(classify_sdks(["docs/index.md", path]), LANGUAGES)
 
     def test_unrelated_paths_and_mixed_sdk_changes(self):
-        paths = ["docs/index.md", "decisions/0001-template.md", "assets/css/tokens.css",
+        paths = ["README.md", "CLAUDE.md", "CONTRIBUTING.md", "SETUP.md",
+                 "contributing/docs.md", "standards/catalog-template.md", "scripts/ci/README.md",
+                 "apps/fountain_buzz/docs/nav.yml", "docs/index.md", "decisions/0001-template.md", "assets/css/tokens.css",
                  "apps/fountain/lib/fountain_web/live/dashboard_live/index.ex",
                  "apps/fountain/lib/fountain_web/components/core_components.ex",
                  "apps/fountain/lib/fountain/telemetry_tick.ex",
                  "apps/fountain/test/fountain/agents_test.exs",
                  "ee/test/fountain/credits_enforcement_test.exs"]
-        self.assertEqual(classify(paths), set())
-        self.assertEqual(classify(paths + ["sdk/python/test.py", "sdk/swift/README.md"]),
+        self.assertEqual(classify_sdks(paths), set())
+        self.assertEqual(classify_sdks(paths + ["sdk/python/test.py", "sdk/swift/README.md"]),
                          {"python", "swift"})
-        self.assertEqual(classify(["docs/sdk.md"]), {"typescript"})
+        self.assertEqual(classify_sdks(["docs/sdk.md"]), {"typescript"})
 
     def test_ee_lib_fans_out_but_ee_tests_do_not(self):
         # ee/lib/fountain_web/ can move the OpenAPI document, so it must select
         # every SDK. Only ee/test/ is unrelated.
-        self.assertEqual(classify(["ee/test/fountain/credits_test.exs"]), set())
-        self.assertEqual(classify(["ee/lib/fountain_web/controllers/billing_controller.ex"]),
+        self.assertEqual(classify_sdks(["ee/test/fountain/credits_test.exs"]), set())
+        self.assertEqual(classify_sdks(["ee/lib/fountain_web/controllers/billing_controller.ex"]),
                          LANGUAGES)
-        self.assertEqual(classify(["ee/lib/fountain/credits.ex"]), LANGUAGES)
+        self.assertEqual(classify_sdks(["ee/lib/fountain/credits.ex"]), LANGUAGES)
 
     def test_empty_and_ambiguous_paths_select_all(self):
-        self.assertEqual(classify([]), LANGUAGES)
+        self.assertEqual(classify_sdks([]), LANGUAGES)
         for path in ("", "/docs/index.md", "docs/../config/config.exs", "docs//index.md",
                      "docs/./index.md", "docs/file\nname", "docs/file\rname", "docs/file\x7f"):
             with self.subTest(path=path):
-                self.assertEqual(classify([path]), LANGUAGES)
+                self.assertEqual(classify_sdks([path]), LANGUAGES)
 
     def test_unreadable_diff_selects_all(self):
         for output in (b"", b"docs/index.md", b"docs/\xff\0"):
-            with self.subTest(output=output), patch("sdk_changes.subprocess.run") as run:
+            with self.subTest(output=output), patch("changes.subprocess.run") as run:
                 run.return_value.stdout = output
-                self.assertEqual(from_git("a" * 40), LANGUAGES)
-        with patch("sdk_changes.subprocess.run", side_effect=OSError):
-            self.assertEqual(from_git("a" * 40), LANGUAGES)
+                self.assertEqual(changed_paths("a" * 40), [])
+        with patch("changes.subprocess.run", side_effect=OSError):
+            self.assertEqual(changed_paths("a" * 40), [])
 
     def test_actual_git_diff_handles_deletions_renames_and_output_safety(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -90,7 +92,8 @@ class SDKChangesTest(unittest.TestCase):
             def selection(base):
                 result = subprocess.check_output([sys.executable, str(SCRIPT), base], cwd=root).decode()
                 values = dict(line.split("=") for line in result.splitlines())
-                self.assertEqual(set(values), {f"sdk_{language}" for language in LANGUAGES})
+                self.assertEqual(set(values), {"docs_only", "manual_docs", "cli_docs"}
+                                 | {f"sdk_{language}" for language in LANGUAGES})
                 self.assertLessEqual(set(values.values()), {"true", "false"})
                 return {language for language in LANGUAGES if values[f"sdk_{language}"] == "true"}
             git("init", "-q")
@@ -120,7 +123,6 @@ class SDKChangesTest(unittest.TestCase):
         workflow = (SCRIPT.parents[2] / ".github/workflows/ci.yml").read_text()
         changes = workflow.split("\n  changes:\n", 1)[1].split("\n  test:\n", 1)[0]
         for language in LANGUAGES:
-            self.assertIn(f"sdk_{language}: ${{{{ steps.sdks.outputs.sdk_{language} }}}}", changes)
+            self.assertIn(f"sdk_{language}: ${{{{ steps.filter.outputs.sdk_{language} }}}}", changes)
         self.assertIn('echo "diff_base=${base:-}"', changes)
-        self.assertIn("DIFF_BASE: ${{ steps.filter.outputs.diff_base }}", changes)
-        self.assertIn('python3 scripts/ci/sdk_changes.py "$DIFF_BASE" >> "$GITHUB_OUTPUT"', changes)
+        self.assertIn('python3 scripts/ci/changes.py "${base:-}" >> "$GITHUB_OUTPUT"', changes)

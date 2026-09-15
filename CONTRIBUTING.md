@@ -55,6 +55,11 @@ for `git commit`; use `-s`, or install a `commit-msg` hook.
 
 ## Before you push
 
+During iteration, run checks for the files you changed. Documentation-only
+changes use the focused commands in [contributing/docs.md](contributing/docs.md);
+contributor-only Markdown needs no Elixir suite. For code, build configuration,
+CI policy or mixed changes, run the full local gate:
+
 ```bash
 mix precommit
 ```
