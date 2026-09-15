@@ -19,7 +19,7 @@ defmodule Fountain.Conversations.Wake do
 
   alias Fountain.Agents
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Conversation, ConversationServer, MachineEvents, Sandbox}
+  alias Fountain.Conversations.{Conversation, ConversationServer, Launch, MachineEvents, Sandbox}
   alias Fountain.Repo
 
   # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
@@ -192,12 +192,7 @@ defmodule Fountain.Conversations.Wake do
     with {:ok, pid} <-
            Horde.DynamicSupervisor.start_child(
              Fountain.ConversationSupervisor,
-             {ConversationServer,
-              [
-                conversation_id: conv.id,
-                sandbox_id: sandbox_id,
-                runtime_module: runtime_module
-              ]}
+             Launch.child_spec(conv.id, sandbox_id, runtime_module)
            ) do
       if is_binary(initial_prompt) and initial_prompt != "" do
         ConversationServer.queue_initial_prompt(pid, initial_prompt)
