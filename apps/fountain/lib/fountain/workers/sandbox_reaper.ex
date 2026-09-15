@@ -52,7 +52,7 @@ defmodule Fountain.Workers.SandboxReaper do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{ConversationServer, Lifecycle, Sandbox, Turn}
+  alias Fountain.Conversations.{Lifecycle, Sandbox, Turn}
   alias Fountain.Repo
 
   # Long enough to clear the slowest legitimate provision: package installs get
@@ -126,7 +126,7 @@ defmodule Fountain.Workers.SandboxReaper do
     )
     |> Repo.all()
     |> Repo.preload(:conversations)
-    |> Enum.reject(&server_alive?/1)
+    |> Enum.reject(&Lifecycle.any_server_alive?/1)
     |> Enum.map(fn sandbox ->
       was = sandbox.status
 
@@ -153,7 +153,9 @@ defmodule Fountain.Workers.SandboxReaper do
 
   # A live ConversationServer means provisioning is still in flight somewhere in
   # the cluster, however long it has taken. Horde's registry is cluster-wide, so
-  # this is not just a local check.
+  # this is not just a local check — `Lifecycle.any_server_alive?/1` is the one
+  # scan for it (#2255 decision 2), shared with `Termination.reap_sandbox/1`,
+  # which used to scan for the same thing itself.
   # A sandbox the tenant did not stop, ending for a reason only the reaper
   # knows. Attributed to the worker so "my agent's sandbox vanished" has an
   # answer in the tenant's own trail rather than only in the server log —
@@ -173,18 +175,14 @@ defmodule Fountain.Workers.SandboxReaper do
     })
   end
 
-  defp server_alive?(%Sandbox{conversations: conversations}) do
-    Enum.any?(conversations, fn conv -> ConversationServer.whereis(conv.id) != nil end)
-  end
-
   # ── pass 1b: ready sandboxes nobody is holding ────────────────────────────
 
   # A `ready` row whose server died mid-wake looks identical to an abandoned
   # one until the new server registers in Horde — whose registry is an async
-  # CRDT, so `server_alive?/1` can briefly miss a live server on another node.
-  # The wake path touches `updated_at` when it flips `suspended → ready`, so a
-  # grace period on `updated_at` makes a just-woken row untouchable for far
-  # longer than registry propagation takes.
+  # CRDT, so `Lifecycle.any_server_alive?/1` can briefly miss a live server on
+  # another node. The wake path touches `updated_at` when it flips
+  # `suspended → ready`, so a grace period on `updated_at` makes a just-woken
+  # row untouchable for far longer than registry propagation takes.
   @abandoned_grace_minutes 15
 
   @doc """
@@ -229,7 +227,7 @@ defmodule Fountain.Workers.SandboxReaper do
         )
         |> Repo.all()
         |> Repo.preload(:conversations)
-        |> Enum.reject(&server_alive?/1)
+        |> Enum.reject(&Lifecycle.any_server_alive?/1)
         |> Enum.map(&{&1, check_bounds(&1, now)})
 
       {parked, expired} =

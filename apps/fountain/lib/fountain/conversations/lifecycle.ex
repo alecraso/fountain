@@ -78,7 +78,7 @@ defmodule Fountain.Conversations.Lifecycle do
   alias Fountain.Conversations.MachineEvents
   alias Fountain.Conversations.Egress
   alias Fountain.Conversations.HomeCheckpoint
-  alias Fountain.Conversations.{Conversation, Sandbox}
+  alias Fountain.Conversations.{Conversation, ConversationServer, Sandbox}
   alias Fountain.Repo
   alias Managoat.Sandbox.Handle
 
@@ -556,6 +556,36 @@ defmodule Fountain.Conversations.Lifecycle do
     sandbox_id
     |> Conversations._unsafe_list_cotenant_ids(conversation_id)
     |> MachineEvents.tell_cotenants(sandbox_id, event, reason, message)
+  end
+
+  # Liveness (#2255 decision 2): "is any server alive on this machine" is one
+  # question, asked by two callers that each used to scan for it themselves —
+  # `Termination.reap_sandbox/1` and `Workers.SandboxReaper`'s own
+  # `server_alive?/1`. One scan, exposed in the two shapes those callers need:
+  # the conversation ids for the one that acts on them, the boolean for the
+  # one that only decides.
+  @doc """
+  Conversation ids on `sandbox` with a live, registered `ConversationServer`.
+
+  `sandbox.conversations` must already be preloaded — every caller already
+  carries it from the query that fetched the sandbox (a reap target, or the
+  reaper's own stuck/abandoned scan), so this runs no query of its own.
+  """
+  @spec live_conversation_ids(Sandbox.t()) :: [String.t()]
+  def live_conversation_ids(%Sandbox{conversations: conversations}) when is_list(conversations) do
+    conversations
+    |> Enum.filter(&(ConversationServer.whereis(&1.id) != nil))
+    |> Enum.map(& &1.id)
+  end
+
+  @doc """
+  Whether any conversation on `sandbox` has a live, registered
+  `ConversationServer` — the same scan as `live_conversation_ids/1`, for a
+  caller that only needs yes or no.
+  """
+  @spec any_server_alive?(Sandbox.t()) :: boolean()
+  def any_server_alive?(%Sandbox{} = sandbox) do
+    live_conversation_ids(sandbox) != []
   end
 
   # Teardown fence (#2258): the machine-policy rule an admin reap, a
