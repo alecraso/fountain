@@ -195,4 +195,36 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       assert event.actor == "system:sandbox_reaper"
     end
   end
+
+  describe "admin.sandbox.reaped (#2255 decision 4)" do
+    test "reap_sandbox/2 with an admin_user_id leaves exactly one admin event", %{user: user} do
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      admin = insert_verified_user()
+
+      assert {:ok, :released} = Termination.reap_sandbox(sandbox.id, admin_user_id: admin.id)
+
+      admin_events =
+        Enum.filter(
+          Audit._unsafe_list_recent_admin(50),
+          &(&1.event_type == "admin.sandbox.reaped" and &1.metadata["sandbox_id"] == sandbox.id)
+        )
+
+      assert [event] = admin_events
+      assert event.actor_user_id == admin.id
+      assert is_nil(event.target_user_id)
+      assert event.metadata["outcome"] == "released"
+    end
+
+    test "reap_sandbox/1 with no admin_user_id leaves no admin event", %{user: user} do
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:ok, :released} = Termination.reap_sandbox(sandbox.id)
+
+      refute Enum.any?(
+               Audit._unsafe_list_recent_admin(50),
+               &(&1.event_type == "admin.sandbox.reaped" and
+                   &1.metadata["sandbox_id"] == sandbox.id)
+             )
+    end
+  end
 end

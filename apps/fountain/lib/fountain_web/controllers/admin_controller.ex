@@ -370,15 +370,10 @@ defmodule FountainWeb.AdminController do
 
     # ownership: admin surface — :require_admin_api gated this request. Reaping
     # is cross-tenant by nature; the sandbox is identified by id alone.
-    case Termination.reap_sandbox(id) do
+    # Termination.reap_sandbox/2 records admin.sandbox.reaped itself (#2255
+    # decision 4).
+    case Termination.reap_sandbox(id, admin_user_id: admin.id) do
       {:ok, outcome} ->
-        Audit.record_admin(%{
-          actor_user_id: admin.id,
-          target_user_id: nil,
-          event_type: "admin.sandbox.reaped",
-          metadata: %{"sandbox_id" => id, "outcome" => to_string(outcome)}
-        })
-
         json(conn, %{data: %{sandbox_id: id, outcome: to_string(outcome)}})
 
       {:error, :not_found} ->
