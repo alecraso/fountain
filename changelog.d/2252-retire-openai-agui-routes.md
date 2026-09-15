@@ -10,4 +10,7 @@
   five schemas leave the OpenAPI contract. Native conversations — creation,
   prompts, `/events`, `/stream`, permissions and the SDKs over them — are
   unchanged, as are OpenAI and Codex inference, credentials and runtimes,
-  which share nothing with the retired dialects but the vendor's name (#2252).
+  which share nothing with the retired dialects but the vendor's name. A
+  conversation that still carries request-defined tools from the old bridge no
+  longer offers them to its agent, because the controllers that could have
+  answered such a call are what this change removes (#2252).

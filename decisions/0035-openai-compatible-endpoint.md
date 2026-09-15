@@ -3,9 +3,9 @@ type: ADR
 title: "An OpenAI-compatible /v1/chat/completions where the model is an agent"
 description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else user, else safety_identifier, never a per-message sandbox. Built in the PR that adds this file. Amended 2026-08-25 (#1202): caller-defined tools are emitted as tool_calls; the sandbox's own tool use still is not. Amended 2026-09-03: safety_identifier is the third thread key."
 tags: [api, integrations, openai, dialect]
-status: stable
+status: deprecated
 adr: "0035"
-adr_status: "Accepted"
+adr_status: "Superseded by 0057"
 date: 2026-08-25
 generated: { by: human:jhgaylor, at: 2026-08-25T23:30:00-04:00 }
 verified: { by: human:jhgaylor, at: 2026-08-25T23:30:00-04:00 }
@@ -13,8 +13,14 @@ verified: { by: human:jhgaylor, at: 2026-08-25T23:30:00-04:00 }
 
 # 0035 — An OpenAI-compatible `/v1/chat/completions` where the model is an agent
 
-**Status:** Accepted, built in the PR that adds this file (#1198). Nothing
-described here is unbuilt. Shipped as **alpha behind the `openai_compat`
+**Status:** **Superseded by [ADR 0057](0057-retire-public-compatibility-protocols.md)**,
+which retires this dialect. The endpoints described below no longer exist:
+`/v1/chat/completions` and the two model reads are removed, and `/v1` answers
+404. The rest of this file is kept unedited as the record of what was built and
+why — read it as history, not as a description of the server.
+
+Accepted and built in the PR that added this file (#1198). Nothing described
+here was unbuilt. Shipped as **alpha behind the `openai_compat`
 feature flag** (off by default on the hosted platform, 404 when off), the
 same way `team_comms` shipped: the dialect's edges may move until the
 gateway and client smokes below have run.

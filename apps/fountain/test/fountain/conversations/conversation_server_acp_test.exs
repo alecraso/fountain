@@ -2575,7 +2575,13 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       |> Enum.map(&Jason.decode!(&1.data))
     end
 
-    test "the caller server rides in session/new only when tools are registered" do
+    # ADR 0057 (#2252). This test used to assert the opposite: that a row with
+    # registered tools got a `fountain-caller` server in session/new. Removing
+    # the two dialect controllers removed the only parties that could answer
+    # such a call, so a legacy row must stop being offered them in the same
+    # change — a tool the agent can select but nobody can answer parks until
+    # the permission deadline fails it.
+    test "a legacy row's caller tools do not ride in session/new" do
       user = insert_verified_user()
       {pid, ref} = start_acp_turn(bridged_conv(user))
       %{"id" => init_id} = next_write()
@@ -2583,10 +2589,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       %{"method" => "session/new", "params" => params} = next_write()
 
-      assert [%{"name" => "fountain-caller", "type" => "http", "url" => url}] =
-               params["mcpServers"]
-
-      assert String.contains?(url, "/api/mcp/caller/")
+      assert params["mcpServers"] == []
 
       plain = insert_conversation(user_id: user.id, agent: acp_agent(user))
       {pid2, ref2} = start_acp_turn(plain)
