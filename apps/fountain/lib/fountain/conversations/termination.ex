@@ -12,8 +12,10 @@ defmodule Fountain.Conversations.Termination do
   function over a conversation id, the registry and rows.
 
   The row writes stay in `Fountain.Conversations`
-  (`_unsafe_release_conversation/2`, `_unsafe_finish_conversation_termination/2`,
-  `_unsafe_fence_sandbox_for_teardown/2`).
+  (`_unsafe_release_conversation/2`, `_unsafe_finish_conversation_termination/2`).
+  The machine fence a forced teardown refuses or commits against is
+  `Fountain.Conversations.Lifecycle`'s (#2258) — a rule about the sandbox,
+  not a conversation verb; this module calls it, it does not own it.
 
   Tenant scoping is the caller's job: every public function here is reached
   after a tenant-scoped fetch established ownership at the controller,
