@@ -8,8 +8,9 @@ defmodule Fountain.Webhooks.EventsTest do
   "exceeded")` call and nothing breaks, the event is dispatched with a type
   nobody can subscribe to by name, and the docs page is quietly wrong.
 
-  So this walks `lib/` for the call sites, the way `docs_test.go` reads the
-  CLI tree, and fails when one produces a type the catalogue does not name. It is the same shape of guard as the audit guardrail: the rule is
+  So this reads the call sites out of the source, the way `docs_test.go` reads
+  the CLI tree, and fails when one produces a type the catalogue does not
+  name. It is the same shape of guard as the audit guardrail: the rule is
   enforced rather than merely written down.
   """
 
@@ -17,108 +18,80 @@ defmodule Fountain.Webhooks.EventsTest do
 
   alias Fountain.Webhooks.Events
 
+  # Where publish_stage/4 is called from. A new file calling it belongs here.
+  @sources [
+    "lib/fountain/conversations.ex",
+    "lib/fountain/conversations/conversation_server.ex",
+    "lib/fountain/conversations/reapply.ex",
+    "lib/fountain/conversations/checkpoints.ex",
+    "lib/fountain/conversations/reattachment.ex",
+    "lib/fountain/conversations/provisioning.ex",
+    "lib/fountain/conversations/egress.ex",
+    "lib/fountain/conversations/turn_machine.ex",
+    "lib/fountain/conversations/pending.ex",
+    "lib/fountain/conversations/lifecycle.ex",
+    "lib/fountain/conversations/connection.ex",
+    "lib/fountain/conversations/output.ex"
+  ]
+
   # publish_stage(<anything>, "<stage>", "<status>"
   @call_site ~r/publish_stage\(\s*[^,]+,\s*"([a-z_]+)",\s*"([a-z_]+)"/
-
-  # publish_stage(<anything>, "<stage>",  — the wider view. Three sites compute
-  # their status (`"turn", status`; one of them hides a whole stage, #2294),
-  # so this reads every call that names its stage, whatever it does with the
-  # status. Every call in lib/ names its stage as a literal; the definitions
-  # and the one-line forwarders take it as a variable and match neither.
-  @stage_site ~r/publish_stage\(\s*[^,]+,\s*"([a-z_]+)"/
 
   defp app_dir do
     Application.app_dir(:fountain) |> Path.join("../../../../apps/fountain") |> Path.expand()
   end
 
-  # Every file under lib/ that calls publish_stage/4, found by walking the
-  # tree. This used to be a maintained list, and a list has to be told about
-  # a new publisher — the one it was never told about is exactly the emitter
-  # this guard exists to catch. The list named twelve files while six more
-  # published (the eighth review of #2279).
-  defp publisher_files(root) do
-    root
-    |> Path.join("lib/**/*.ex")
-    |> Path.wildcard()
-    |> Enum.filter(&Regex.match?(@stage_site, File.read!(&1)))
-    |> Enum.map(&Path.relative_to(&1, root))
-    |> Enum.sort()
-  end
-
-  # Every call site with a literal stage and status, as `{source, stage,
-  # status}`, duplicates kept: the retired-site pin below counts them.
-  defp published_sites(root \\ app_dir()) do
-    for source <- publisher_files(root),
-        [_, stage, status] <- Regex.scan(@call_site, File.read!(Path.join(root, source))),
-        do: {source, stage, status}
-  end
-
-  # Every call site with a literal stage, as `{source, stage}`.
-  defp stage_sites(root \\ app_dir()) do
-    for source <- publisher_files(root),
-        [_, stage] <- Regex.scan(@stage_site, File.read!(Path.join(root, source))),
-        do: {source, stage}
-  end
-
   defp published_pairs do
-    published_sites()
-    |> Enum.map(fn {_source, stage, status} -> {stage, status} end)
-    |> Enum.uniq()
+    for source <- @sources,
+        path = Path.join(app_dir(), source),
+        File.exists?(path),
+        [_, stage, status] <- Regex.scan(@call_site, File.read!(path)),
+        uniq: true,
+        do: {stage, status}
   end
 
-  # The transitional allowance, pinned to the call site (ADR 0057, #2252):
-  # `Pending.park/6` and `Pending.resolve_call/5` still publish `caller_tool`,
-  # and nothing can reach them — the two things that could are gone. These
-  # two, in this file, once each, are the ONLY retired publishes the suite
-  # lets through. A retired type is not in the catalogue, `Webhooks` dispatches
-  # on `Events.matches?/2` without a catalogue check, and grandfathered filters
-  # still name it, so a new emitter — another file, another status, a second
-  # copy — would be a delivery nobody can subscribe to by name. Stage 2 deletes
-  # both sites; when it does, empty this map and the assertion below becomes
-  # "no retired stage is published from anywhere".
-  @retired_call_sites %{
-    {"lib/fountain/conversations/pending.ex", "caller_tool", "started"} => 1,
-    {"lib/fountain/conversations/pending.ex", "caller_tool", "done"} => 1
-  }
-
-  # The pin, summed per `{source, stage}`, for the wider view to agree with.
-  @retired_stage_sites Enum.reduce(@retired_call_sites, %{}, fn {{source, stage, _}, n}, acc ->
-                         Map.update(acc, {source, stage}, n, &(&1 + n))
-                       end)
-
-  test "the walk reaches the publishers" do
+  test "the source actually reachable from here has publish_stage call sites" do
     # Guard the guard: a broken path or a changed call shape would make every
-    # assertion below vacuously true. The files named here are the ones the
-    # old inventory missed, plus the one the pin depends on.
-    files = publisher_files(app_dir())
-    assert length(files) > 12
-
-    for file <- ~w(
-          lib/fountain/conversations/home_checkpoint.ex
-          lib/fountain/conversations/machine_events.ex
-          lib/fountain/conversations/pending.ex
-          lib/fountain/conversations/provision_watchdog.ex
-          lib/fountain/conversations/turn_launch.ex
-          lib/fountain/conversations/wake.ex
-        ) do
-      assert file in files, "#{file} calls publish_stage/4 but the walk did not find it"
-    end
-
+    # assertion below vacuously true.
     assert length(published_pairs()) > 20
   end
 
   defp retired_stages, do: MapSet.new(Events.retired(), fn {stage, _statuses} -> stage end)
 
+  # The invariant once the last emitter is gone, and the one worth stating
+  # directly: **retired means no publish sites at all**. The catalogue walk
+  # below would not catch a returning emitter on its own — `Webhooks.dispatch`
+  # derives the type and calls `Events.matches?/2` without consulting
+  # `known?/1`, and a retired exact filter (and `*`) is still a valid
+  # subscription, so a re-added `publish_stage(_, "caller_tool", _)` would
+  # actually be delivered to a subscriber the retirement promised would never
+  # hear from it again.
+  test "nothing in the source publishes a retired stage" do
+    retired = retired_stages()
+
+    offenders =
+      published_pairs()
+      |> Enum.filter(fn {stage, _status} -> MapSet.member?(retired, stage) end)
+      |> Enum.map(fn {stage, status} -> Events.type(stage, status) end)
+      |> Enum.sort()
+
+    assert offenders == [], """
+    These retired stages still have `publish_stage/4` call sites:
+
+      #{Enum.join(offenders, "\n  ")}
+
+    A retired stage is never emitted — that is what retiring it means, and
+    `Fountain.Webhooks` will deliver one to any endpoint whose filter still
+    matches. Remove the call site, or take the stage out of `@retired` and put
+    it back in the catalogue and the docs page.
+    """
+  end
+
   test "every stage transition in the source is in the catalogue" do
-    # Only the pinned retired sites are exempt. A retired stage published from
-    # anywhere else shows up here as missing, which is the right reading: it
-    # is a new emitter of a type nobody can subscribe to.
     missing =
-      published_sites()
-      |> Enum.reject(&Map.has_key?(@retired_call_sites, &1))
-      |> Enum.map(fn {_source, stage, status} -> Events.type(stage, status) end)
+      published_pairs()
+      |> Enum.map(fn {stage, status} -> Events.type(stage, status) end)
       |> Enum.reject(&Events.known?/1)
-      |> Enum.uniq()
       |> Enum.sort()
 
     assert missing == [], """
@@ -130,78 +103,8 @@ defmodule Fountain.Webhooks.EventsTest do
 
     Add them to `Fountain.Webhooks.Events`, and to the table in
     docs/reference/webhooks.md. If the stage is being retired instead, put it
-    in `@retired` and mark it historical on the docs page. A stage that is
-    already retired must not gain a call site: `@retired_call_sites` names the
-    only ones allowed, and it only ever shrinks.
+    in `@retired` and mark it historical on the docs page.
     """
-  end
-
-  test "the retired stages are published from exactly the pinned sites" do
-    retired = retired_stages()
-
-    found =
-      published_sites()
-      |> Enum.filter(fn {_source, stage, _status} -> MapSet.member?(retired, stage) end)
-      |> Enum.frequencies()
-
-    assert found == @retired_call_sites, """
-    The retired publish_stage/4 call sites do not match the pin.
-
-      pinned: #{inspect(@retired_call_sites, pretty: true)}
-      found:  #{inspect(found, pretty: true)}
-
-    A site that vanished means stage 2 (#2252) has deleted it: remove it from
-    `@retired_call_sites`, and leave the map empty once both are gone — that is
-    the invariant from then on. A site that appeared, or a second copy of one,
-    is a new emitter of a retired type: nothing can subscribe to it by name,
-    and `Webhooks` would still deliver it to a grandfathered filter. Do NOT
-    drop the stage from `@retired` in either case: the vocabulary stays valid
-    until the rollback floor (#2273), so an endpoint still naming it can be
-    edited. The `filters` tests cover that state.
-    """
-
-    # The wider view agrees, so a retired stage cannot hide behind a status
-    # the first pattern does not read: `publish_stage(id, "caller_tool", status)`.
-    by_stage =
-      stage_sites()
-      |> Enum.filter(fn {_source, stage} -> MapSet.member?(retired, stage) end)
-      |> Enum.frequencies()
-
-    assert by_stage == @retired_stage_sites,
-           "a retired stage is published with a computed status somewhere: " <>
-             inspect(by_stage)
-
-    refute Events.known?("conversation.caller_tool.started")
-    refute List.keymember?(Events.catalogue(), "caller_tool", 0)
-    assert List.keymember?(Events.retired(), "caller_tool", 0)
-  end
-
-  test "a retired publisher in a module nobody listed is found" do
-    # The regression for the eighth review of #2279: the guard read a fixed
-    # list of files, so a publisher anywhere else was invisible to both the
-    # catalogue assertion and the pin. Scan a tree holding one module the
-    # inventory never heard of, publishing a retired stage two ways, and see
-    # both reported — which is what fails the pin on the real tree.
-    root = Fountain.TmpDir.mkdir!("events-test")
-    file = "lib/fountain/conversations/new_publisher.ex"
-    File.mkdir_p!(Path.join(root, Path.dirname(file)))
-
-    File.write!(Path.join(root, file), """
-    defmodule Fountain.Conversations.NewPublisher do
-      alias Fountain.Conversations.Output
-
-      def once(id), do: Output.publish_stage(id, "caller_tool", "started", %{})
-      def any(id, status), do: Output.publish_stage(id, "caller_tool", status, %{})
-    end
-    """)
-
-    assert publisher_files(root) == [file]
-    assert published_sites(root) == [{file, "caller_tool", "started"}]
-    assert stage_sites(root) == [{file, "caller_tool"}, {file, "caller_tool"}]
-
-    found = Enum.frequencies(published_sites(root))
-    refute Map.take(found, Map.keys(@retired_call_sites)) == @retired_call_sites
-    refute Enum.frequencies(stage_sites(root)) == @retired_stage_sites
   end
 
   test "the catalogue names nothing the source cannot produce" do

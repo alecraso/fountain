@@ -56,47 +56,22 @@ curl -H "Authorization: Bearer ftn_..." \
   "https://your-fountain/api/conversations/<id>"
 ```
 
-The show route reads what Fountain last recorded. It does not contact the
-sandbox provider, so `data.sandbox` says what the machine was, not whether it
-is still there. Rule a candidate out when either of these holds:
+Prompt a candidate only if all of this holds:
 
-- `data.sandbox` is null, or its `status` is `terminated` or `failed`. The
-  machine is gone, and a prompt provisions a fresh one.
-- `data.agent_id`, `data.environment_id` or `data.vault_id` is not the
-  identity the work was done under. That is a different configuration, not
-  your thread.
+- `data.sandbox` is **not null**, and its `status` is not `terminated` or
+  `failed`. An `idle` conversation can still point at a dead sandbox; prompting
+  that one provisions a fresh machine, which is the outcome this whole section
+  exists to avoid.
+- `data.agent_id`, `data.environment_id` and `data.vault_id` are the identity
+  the work was done under.
 
 If several candidates come back, the thread key was reused across
 configurations — pick by that identity, not by recency, and expect some of them
-to have terminal sandboxes. If none survives, there is nothing to continue and
-a fresh conversation is the right answer.
-
-What the row cannot rule out is a `ready` or `suspended` sandbox the provider
-has since lost. Fountain checks that when you prompt: the prompt probes the
-provider first, and if the machine is gone it provisions a fresh one rather
-than failing. The conversation keeps its id, title and transcript. The disk
-and the runtime session on it go with the machine, so the agent starts that
-turn with no memory of the work. How much you can know beforehand depends on
-`data.sandbox.status`:
-
-- `ready`: one read-only call proves the machine answers.
-  `GET /api/sandboxes/<sandbox_id>/git-status`, with `data.sandbox_id`, runs
-  on the machine without changing it. `200` means it is there.
-  `503 sandbox_unreachable` means it did not answer, and a prompt now either
-  reprovisions or fails retryably. `/files` and `/diff` on the same prefix
-  serve as well; the [API reference](../api.md) lists them.
-- `suspended`: no read-only check exists. A parked machine is not woken for a
-  read (`409 sandbox_not_ready`), and the wake a prompt performs is the probe.
-
-So the prompt below continues the thread on a best-effort basis. Afterwards,
-two things say whether it kept the machine: `data.sandbox_id` on the show
-route is unchanged, and the event feed, `GET /api/conversations/<id>/events`,
-has no `session` stage event whose `data.reason` is `fresh_sandbox`. If either
-says the machine was replaced, treat the thread as new from that turn on.
+to have terminal sandboxes. If none survives both checks, there is nothing to
+continue and a fresh conversation is the right answer.
 
 ```bash
-# 3. Prompt it by id. Same conversation, and the same machine while the
-#    provider still has it — see above for how to tell.
+# 3. Prompt it by id. Same sandbox, same history.
 curl -X POST -H "Authorization: Bearer ftn_..." -H "Content-Type: application/json" \
   -d '{"prompt":"..."}' \
   "https://your-fountain/api/conversations/<id>/prompts"

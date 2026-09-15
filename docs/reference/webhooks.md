@@ -92,15 +92,12 @@ bridge is retired with the OpenAI-compatible and AG-UI APIs
 ([ADR 0057](https://github.com/managoat/fountain/blob/main/decisions/0057-retire-public-compatibility-protocols.md)),
 and Fountain never sends either event now.
 
-If an endpoint of yours already names one, nothing breaks and nothing
-arrives. Fountain keeps that value on the row on purpose: an endpoint saved
-before the retirement stays editable, so changing its URL is not refused over
-a subscription that a removal on our side made obsolete. That is the whole
-allowance, and it covers only a value already stored on an existing endpoint.
-A new endpoint cannot subscribe to `conversation.caller_tool.started`,
-`conversation.caller_tool.done` or `conversation.caller_tool.*`, and an
-existing one cannot add one: the save fails with `unknown event`, as it does
-for a typo. Drop them from `event_types` whenever it suits you.
+If an endpoint of yours still subscribes to one, nothing breaks and nothing
+arrives. Fountain keeps accepting those two types, and
+`conversation.caller_tool.*`, as filters on purpose: rejecting them would mean
+refusing to save your endpoint the next time you changed its URL, over a
+subscription that a removal on our side made obsolete. Drop them from
+`event_types` whenever it suits you.
 
 Tools you configure **on an agent** are a different mechanism and are not
 retired. They run as MCP servers, and their activity appears in the `turn`

@@ -93,7 +93,6 @@ defmodule Fountain.AuditGuardrailTest do
     {"conversation interrupt", &__MODULE__.do_conv_interrupt/1, "conversation.interrupted"},
     {"conversation terminate", &__MODULE__.do_conv_terminate/1, "conversation.terminated"},
     {"conversation release", &__MODULE__.do_conv_release/1, "conversation.released"},
-    {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
     {"conversation configuration reapply", &__MODULE__.do_conv_reapply/1,
      "conversation.configuration_reapplied"},
     {"conversation labels", &__MODULE__.do_labels/1, "conversation.labels_set"},
@@ -585,16 +584,6 @@ defmodule Fountain.AuditGuardrailTest do
     |> Repo.insert!()
 
     {:ok, _} = Conversations.narrow_execution_allowance(conv.id, user.id, %{max_model_turns: 2})
-  end
-
-  def do_caller_tools(user) do
-    agent = insert_agent(user_id: user.id)
-    conv = insert_conversation(user_id: user.id, agent: agent)
-
-    {:ok, _} =
-      Conversations.set_caller_tools(conv, [
-        %{"name" => "lookup", "description" => "", "parameters" => %{}}
-      ])
   end
 
   def do_labels(user) do

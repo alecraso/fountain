@@ -61,8 +61,9 @@ defmodule Fountain.Conversations.Conversation do
     # tightens this conversation too. The widening case is rejected at the door
     # in `start_conversation/2` rather than silently clamped.
     field :permission_policy, :map
-    # The caller-defined tools of the bridge (#1202, `Fountain.CallerTools`).
-    field :caller_tools, {:array, :map}, default: []
+    # `caller_tools` was the retired tool bridge's registry (#1202). The field
+    # is gone with the bridge (ADR 0057, #2252); the column stays until #2273
+    # drops it, so this server is a non-reader while older ones still write it.
     # Free-form `key => value` strings (#1637). Set at launch, merged by the
     # labels route and by the agent's own `_fountain/labels` ACP notification,
     # and filtered on with jsonb containment. `Conversations.Labels` owns the
@@ -142,7 +143,6 @@ defmodule Fountain.Conversations.Conversation do
       :inference_credential_id,
       :channel_id,
       :permission_policy,
-      :caller_tools,
       :labels
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])

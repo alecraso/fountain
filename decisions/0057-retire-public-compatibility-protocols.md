@@ -33,13 +33,15 @@ Built so far, in the change that carries this status line:
   their URLs, their cross-links, the three runnable examples deleted, and the
   operator flag guidance. The approved inventory requires the source-removal
   change to carry the migration guide, so it is here rather than later.
+- `Fountain.CallerTools` itself, the registration write, and the parked-call
+  plumbing in `ConversationServer` and `Pending` — all unreachable since the
+  route went, and now gone. Nothing publishes a `caller_tool` stage any more,
+  so the retired event vocabulary is the only trace left of the bridge.
 
-Not yet built, each in a later change of the same stack: deleting
-`Fountain.CallerTools` itself, the registration write and the parked-call
-plumbing in `ConversationServer` and `Pending`, all of which are now
-unreachable; and removing the `openai_compat` flag, which still exists here and
-gates nothing. **This section is updated by each of those**, so it always
-describes the tree it is merged into.
+Not yet built, in the next change of the same stack: removing the
+`openai_compat` flag, which still exists here and gates nothing. **This section
+is updated by each of those**, so it always describes the tree it is merged
+into.
 
 Outside the stack entirely, with their own gates: the physical
 `conversations.caller_tools` column, which

@@ -31,17 +31,16 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   only fails at the moment the last one lands.
   """
 
-  # 2549 → 2364. The #2175 stack (one owner per conversation lifecycle
-  # verb) moved the client halves out of the server: terminate, release and
-  # the lifecycle audit to `Fountain.Conversations.Termination` (#2223),
-  # interrupt and `interrupt_dead` to `Fountain.Conversations.Interruption`
-  # (#2244), with `defdelegate`s left behind so no caller moved. The file is
-  # 2354 lines on `main` after #2244 and #2245, the last two of the stack.
+  # 2364 → 2223. Retiring the tool bridge (ADR 0057, #2252) took the four
+  # parked-call entry points, their `handle_call` clauses, the deadline
+  # handler and the `caller_calls` field out of the server; `Pending` lost
+  # the other half in the same change. The file is 2213 lines on this branch.
   #
-  # 2364 is that 2354 plus 10 lines, the same headroom the previous pin kept
-  # for review rounds. Nothing is in flight below this file now; the next
-  # move lowers it again.
-  @pin 2364
+  # 2223 is that 2213 plus 10 lines, the same headroom every previous pin
+  # kept for review rounds. This is a deletion, not a move, so nothing is in
+  # flight below the file — but if stage 3 of the retirement lands after
+  # this, it lowers the pin again.
+  @pin 2223
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"
 

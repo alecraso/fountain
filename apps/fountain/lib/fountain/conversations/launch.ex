@@ -142,7 +142,6 @@ defmodule Fountain.Conversations.Launch do
                title: attrs["title"],
                sandbox_api_access: api_access,
                permission_policy: perm_policy,
-               caller_tools: attrs["caller_tools"] || [],
                labels: attrs["labels"] || %{}
              },
              attrs["execution_limits"],
@@ -414,9 +413,6 @@ defmodule Fountain.Conversations.Launch do
                channel_id: attrs["channel_id"],
                title: attrs["title"],
                permission_policy: perm_policy,
-               # The bridge's tools (#1202) ride on both create paths: this
-               # one is what a home sandbox's second conversation takes.
-               caller_tools: attrs["caller_tools"] || [],
                labels: attrs["labels"] || %{}
              },
              attrs["execution_limits"],
@@ -1077,11 +1073,19 @@ defmodule Fountain.Conversations.Launch do
   # disk wakes back up with the workspace on it.
   @doc """
   The conversation a channel binding resumes, resolved exactly as
-  `start_or_resume_conversation/2` resolves it (same vault/environment/set selection),
-  without opening one when there is none. For a request that must land on an
-  existing conversation or fail — a tool answer on the bridge (#1202) — where
-  opening a sandbox for a thread that has no parked call would be the wrong
-  side effect. Tenant-scoped through `attrs["user_id"]`.
+  `start_or_resume_conversation/2` resolves it (same vault/environment/set
+  selection), without opening one when there is none. For a request that must
+  land on an existing conversation or fail, where provisioning a sandbox would
+  be the wrong side effect. Tenant-scoped through `attrs["user_id"]`.
+
+  **No production caller since ADR 0057 (#2252).** The one it was written for
+  was the retired tool bridge answering a parked call on a thread, which had
+  exactly that requirement. It is kept rather than deleted because it is the
+  only read-only door onto the channel resolution
+  `start_or_resume_conversation/2` performs — duplicating that resolution is
+  how the two drift — and `saved_allowance_channel_test.exs` still pins that
+  the two agree, including for a foreign tenant. Remove it with its test if
+  nothing has claimed it by the time the retirement releases.
   """
   @spec channel_conversation(map()) :: Conversation.t() | nil
   def channel_conversation(

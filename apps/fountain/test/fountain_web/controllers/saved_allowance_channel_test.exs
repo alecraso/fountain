@@ -20,7 +20,6 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     end)
 
     owner = self()
-    stub(ConversationServer, :pending_caller_calls, fn _ -> [] end)
     stub(ConversationServer, :queue_initial_prompt, fn _, _ -> send(owner, :queued) end)
 
     stub(Horde.DynamicSupervisor, :start_child, fn _, _ ->
@@ -32,10 +31,9 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
   end
 
   for malformed <- [false, true] do
-    test "native refuses malformed=#{malformed} policy before changing caller tools", ctx do
+    test "native refuses a malformed=#{malformed} policy before admitting the channel", ctx do
       channel = channel(:native)
       conv = bound(ctx, channel)
-      {:ok, conv} = Conversations.set_caller_tools(conv, [tool("original")])
       allowance = save(conv, %{max_model_turns: 2})
 
       error =
@@ -50,7 +48,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
         end
 
       # Model the downstream prompt guard: it already refuses, but that is
-      # too late if channel admission let the controller replace tools first.
+      # too late if channel admission let the request touch the row first.
       owner = self()
 
       stub(ConversationServer, :send_prompt, fn _, _, _, _ ->
@@ -187,13 +185,6 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
 
   defp save(conv, limits),
     do: conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert!()
-
-  defp tool(name),
-    do: %{
-      "name" => name,
-      "description" => name,
-      "parameters" => %{"type" => "object", "properties" => %{}}
-    }
 
   defp channel(:native), do: "native-thread"
 

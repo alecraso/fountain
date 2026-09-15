@@ -193,69 +193,6 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  ## ─── The tool bridge (#1202, `Fountain.CallerTools`) ─────────────────────
-
-  @doc """
-  Park a caller-tool call the agent just made. The call gets an id, a
-  `caller_tool`/`started` stage event goes out (which is what closes the
-  client's completion with `tool_calls`), and a deadline is armed. `waiter`
-  receives `{:caller_tool_result, id, result}` when the call resolves.
-
-  `{:error, :no_turn}` when nothing is running: a call needs a turn to belong
-  to, and the client following that turn is the only party that can answer.
-  """
-  @spec park_caller_tool(binary(), String.t(), map(), pid()) ::
-          {:ok, String.t()} | {:error, :not_running | :no_turn}
-  def park_caller_tool(conv_id, name, arguments, waiter) do
-    case whereis(conv_id) do
-      nil -> {:error, :not_running}
-      pid -> call_server(pid, {:park_caller_tool, name, arguments, waiter})
-    end
-  end
-
-  @doc """
-  Re-attach `waiter` to a parked call (the MCP handler's in-request wait ran
-  out and the agent is asking again). `{:ok, result}` at once if it resolved
-  meanwhile — a result is kept until the turn ends, so an answer that landed
-  between two waits is not lost.
-  """
-  @spec await_caller_tool(binary(), String.t(), pid()) ::
-          {:ok, {:ok, String.t()} | {:error, String.t()}}
-          | :pending
-          | {:error, :unknown_call | :not_running}
-  def await_caller_tool(conv_id, call_id, waiter) do
-    case whereis(conv_id) do
-      nil -> {:error, :not_running}
-      pid -> call_server(pid, {:await_caller_tool, call_id, waiter})
-    end
-  end
-
-  @doc "The calls parked and unanswered, oldest first: `%{id, name, arguments, turn_id}`."
-  @spec pending_caller_calls(binary()) :: [map()]
-  def pending_caller_calls(conv_id) do
-    case whereis(conv_id) do
-      nil -> []
-      pid -> call_server(pid, :pending_caller_calls)
-    end
-  end
-
-  @doc """
-  Resolve parked calls with the client's answers, `%{call_id => content}`.
-  Ids that match nothing are ignored; if none match, `{:error, :no_pending_calls}`
-  and nothing changes. Returns the turn the calls belong to and whatever is
-  still parked, so the controller can emit the remainder at once instead of
-  waiting for a stage event that is already behind its cursor.
-  """
-  @spec answer_caller_tools(binary(), %{String.t() => String.t()}) ::
-          {:ok, %{turn_id: binary() | nil, remaining: [map()]}}
-          | {:error, :no_pending_calls | :not_running}
-  def answer_caller_tools(conv_id, answers) when is_map(answers) do
-    case whereis(conv_id) do
-      nil -> {:error, :not_running}
-      pid -> call_server(pid, {:answer_caller_tools, answers})
-    end
-  end
-
   @doc """
   Apply the conversation's current selection to the machine it is running on.
 
@@ -373,10 +310,6 @@ defmodule Fountain.Conversations.ConversationServer do
       # `DetachedRequest.request_line/2` reads it (#1635): the ask that follows
       # carries no params, and the per-request timeout is in theirs.
       acp_request_params: nil,
-      # Caller-tool calls parked on the turn (#1202): id => %{name, arguments,
-      # turn_id, waiter, timer, result}. `result` is nil while parked and the
-      # answer once resolved; entries are dropped when the turn ends.
-      caller_calls: %{},
       acp_peer_mon: nil,
       # Timer closing an autonomous turn that went quiet without a
       # `cycle_end` (#817) — an adapter too old to mark its origin must not
@@ -1165,44 +1098,6 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # A call needs a turn to belong to, and the client following that turn is
-  # the only party that can answer.
-  def handle_call({:park_caller_tool, name, arguments, waiter}, _from, state) do
-    case state.current_turn do
-      nil ->
-        {:reply, {:error, :no_turn}, state}
-
-      turn ->
-        {call_id, pending} =
-          Pending.park(
-            Pending.from_state(state),
-            state.conversation_id,
-            turn,
-            name,
-            arguments,
-            waiter
-          )
-
-        {:reply, {:ok, call_id}, Pending.into_state(state, pending)}
-    end
-  end
-
-  def handle_call({:await_caller_tool, call_id, waiter}, _from, state) do
-    {reply, pending} = Pending.await(Pending.from_state(state), call_id, waiter)
-    {:reply, reply, Pending.into_state(state, pending)}
-  end
-
-  def handle_call(:pending_caller_calls, _from, state) do
-    {:reply, Pending.calls(Pending.from_state(state)), state}
-  end
-
-  def handle_call({:answer_caller_tools, answers}, _from, state) do
-    {reply, pending} =
-      Pending.answer_calls(Pending.from_state(state), state.conversation_id, answers)
-
-    {:reply, reply, Pending.into_state(state, pending)}
-  end
-
   def handle_call({:terminate_conv, opts}, _from, state) when is_list(opts) do
     case prepare_termination(state, opts) do
       {:ok, sandbox} -> terminate_machine(state, sandbox)
@@ -1416,21 +1311,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp handle_execution_info({:permission_timeout, request_id}, state) do
     {:noreply, Pending.resolve_if_held(state, request_id, "timeout", nil)}
-  end
-
-  # The caller never answered a parked tool call (#1202). The agent gets an
-  # error result and carries on; the stream records the outcome.
-  defp handle_execution_info({:caller_tool_timeout, call_id}, state) do
-    pending =
-      Pending.resolve_call(
-        Pending.from_state(state),
-        state.conversation_id,
-        call_id,
-        "timeout",
-        {:error, "the caller did not answer within the deadline"}
-      )
-
-    {:noreply, Pending.into_state(state, pending)}
   end
 
   # #655: the org has refused this account's Claude OAuth token. The machine
@@ -2120,7 +2000,6 @@ defmodule Fountain.Conversations.ConversationServer do
         do: state,
         else: Pending.resolve_held(state, "turn_ended")
 
-    state = Pending.drop(state, "turn_ended")
     state = cancel_autonomous_quiet(state)
 
     turn = TurnMachine.finish(TurnMachine.from_state(state), status, span_attrs, stage_meta)
