@@ -6,6 +6,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
   alias Fountain.Conversations.Wake
 
   setup do
@@ -290,7 +291,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     end
 
     test "an operator reaps the row, which releases the slot", ctx do
-      assert {:ok, :released} = Conversations._unsafe_reap_sandbox(ctx.home.id)
+      assert {:ok, :released} = Termination.reap_sandbox(ctx.home.id)
       assert Repo.reload!(ctx.home).status == "terminated"
       assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 0
     end

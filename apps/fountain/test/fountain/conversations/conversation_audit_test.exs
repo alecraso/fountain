@@ -188,7 +188,7 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       {:ok, conv} =
         Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
-      {:ok, :terminated} = Conversations._unsafe_reap_sandbox(conv.sandbox_id)
+      {:ok, :terminated} = Termination.reap_sandbox(conv.sandbox_id)
 
       event = find_action(user.id, "conversation.terminated")
       assert event, "a reclaimed sandbox ends conversations the tenant did not stop"

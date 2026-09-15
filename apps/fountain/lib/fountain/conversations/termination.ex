@@ -32,7 +32,7 @@ defmodule Fountain.Conversations.Termination do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Conversation, Sandbox}
+  alias Fountain.Conversations.{Conversation, Lifecycle, Sandbox}
   alias Fountain.Repo
 
   @doc """
@@ -146,7 +146,7 @@ defmodule Fountain.Conversations.Termination do
 
       sandbox ->
         # ownership: the authorized conversation supplies this sandbox; the fence rechecks binding.
-        case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+        case Lifecycle.fence_sandbox_for_teardown(sandbox, opts) do
           {:ok, %{status: status}} when status in ["terminated", "failed"] ->
             :ok
 
@@ -212,7 +212,7 @@ defmodule Fountain.Conversations.Termination do
       # ownership: this sandbox belongs to the agent whose deletion is in
       # progress — established by destroy_homes_for_agent/2's own scoped
       # query above, or by a test's scoped fetch before calling here directly.
-      with {:ok, fenced} <- Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+      with {:ok, fenced} <- Lifecycle.fence_sandbox_for_teardown(sandbox, opts) do
         fenced = Fountain.Repo.preload(fenced, :conversations)
 
         # A remote self-call (not a bare local call): Mimic's copy renames the
@@ -263,8 +263,7 @@ defmodule Fountain.Conversations.Termination do
 
   @doc """
   Support teardown of any tenant's sandbox, from the admin panel. Moved from
-  `Fountain.Conversations._unsafe_reap_sandbox/1` in #2257 (#2255, tranche 2);
-  the old name still calls in.
+  `Fountain.Conversations._unsafe_reap_sandbox/1` in #2257 (#2255, tranche 2).
 
   A conversation with a live `ConversationServer` is terminated through the
   server, which destroys the sprite and ends the conversation — that is what
@@ -316,9 +315,9 @@ defmodule Fountain.Conversations.Termination do
   @doc """
   Reap every active sandbox belonging to `user_id` — the suspension path
   (#287). Moved from `Fountain.Conversations._unsafe_reap_all_for_user/1` in
-  #2257 (#2255, tranche 2); the old name still calls in. Unscoped by the same
-  contract as the `_unsafe_` prefix it left behind: legitimate callers are
-  admin-driven (`Accounts.suspend_user/1` behind `require_admin`).
+  #2257 (#2255, tranche 2). Unscoped by the same contract as the `_unsafe_`
+  prefix it left behind: legitimate callers are admin-driven
+  (`Accounts.suspend_user/1` behind `require_admin`).
 
   Best-effort by design: each sandbox reaps independently and a failure moves
   on — suspension must not be blocked by one wedged sprite; `SandboxReaper`

@@ -1,8 +1,8 @@
 defmodule Fountain.Conversations.TerminationBindingIsolationTest do
   use Fountain.DataCase, async: false
 
-  alias Fountain.Conversations
   alias Fountain.Conversations.Conversation
+  alias Fountain.Conversations.Termination
 
   test "a termination write waiting on reassignment rechecks the committed binding" do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
@@ -34,7 +34,7 @@ defmodule Fountain.Conversations.TerminationBindingIsolationTest do
         terminate =
           independent(fn ->
             # Ownership: this test created the actor's conversation and sandbox.
-            Conversations._unsafe_finish_conversation_termination(conv.id, old.id)
+            Termination._unsafe_finish_conversation_termination(conv.id, old.id)
           end)
 
         try do

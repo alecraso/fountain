@@ -70,6 +70,7 @@ defmodule Fountain.Conversations.Reapply do
     Conversation,
     InferenceBinding,
     InferenceResolution,
+    Lifecycle,
     Sandbox,
     Turn
   }
@@ -553,7 +554,7 @@ defmodule Fountain.Conversations.Reapply do
   defp assert_not_shared(nil, _conv, _target), do: :ok
 
   defp assert_not_shared(%Sandbox{} = sandbox, conv, target) do
-    if Conversations._unsafe_sandbox_held_by_other?(sandbox.id, conv.id) and
+    if Lifecycle._unsafe_sandbox_held_by_other?(sandbox.id, conv.id) and
          {sandbox.agent_id, sandbox.environment_id, sandbox.vault_id} != target do
       {:error, {:rebuild_required, :shared_sandbox}}
     else
