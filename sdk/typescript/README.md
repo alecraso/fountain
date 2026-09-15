@@ -478,3 +478,7 @@ options are a separate argument. It does not combine raw fields with the
 name-based options of `run(prompt, config)`; existing `run` calls still work.
 A run needs a non-empty prompt and cannot queue (`queue: true` is refused
 before HTTP). Use `client.api.request` for promptless or queued creation.
+
+With `channel_id`, `runRequest` follows turn 1 when the server creates a
+conversation, including fresh launches. When the server resumes a channel,
+it submits the prompt and images to that conversation and follows the next turn.

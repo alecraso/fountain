@@ -180,11 +180,24 @@ export class Fountain {
     const body = { ...request };
     return new Run(this.api, {
       start: async () => {
-        const conversation = await this.api.data<ConversationRecord>(
-          "POST", "/api/conversations", { body },
-        );
-        const turnNumber = body.channel_id ? await this.nextTurnNumber(conversation.id) : 1;
-        return { conversation, turnNumber, after: 0 };
+        const response = await this.api.request<{
+          data: ConversationRecord;
+          meta?: { resumed?: boolean };
+        }>("POST", "/api/conversations", { body });
+        const conversation = response.data;
+        if (response.meta?.resumed === true) {
+          // Resume only binds the channel; it does not submit the launch prompt.
+          // Capture history before sending, so fast turns cannot be skipped.
+          const after = await this.resume(conversation.id).cursor();
+          const turnNumber = await this.nextTurnNumber(conversation.id);
+          const promptBody: Record<string, unknown> = { prompt: body.prompt };
+          if (body.images !== undefined) promptBody.images = body.images;
+          await this.api.request("POST", `/api/conversations/${conversation.id}/prompts`, {
+            body: promptBody,
+          });
+          return { conversation, turnNumber, after };
+        }
+        return { conversation, turnNumber: 1, after: 0 };
       },
     }, options);
   }
