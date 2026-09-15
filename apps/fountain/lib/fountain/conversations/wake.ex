@@ -11,6 +11,15 @@ defmodule Fountain.Conversations.Wake do
   module reads comes from that already-scoped conversation row, so leaves are
   documented as relying on that ownership rather than re-justifying it on
   their own.
+
+  The two purposes diverge on a dead or stranded sandbox — a probe that
+  answers `:create_new`, or a `pending`/`starting` row whose server never
+  turns up before the registry-settle wait gives up: `:work` still
+  provisions a fresh one either way, but `:interrupt` never does (decided
+  2026-09-15, #2175 open decision 1) — there is no turn a new sprite could
+  continue, so it reconciles the orphaned row instead of paying for compute
+  nothing will use (`reconcile_dead_interrupt/1`, fenced to the sandbox this
+  wake actually probed).
   """
 
   import Ecto.Query
@@ -19,7 +28,16 @@ defmodule Fountain.Conversations.Wake do
 
   alias Fountain.Agents
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Conversation, ConversationServer, Launch, MachineEvents, Sandbox}
+
+  alias Fountain.Conversations.{
+    Conversation,
+    ConversationServer,
+    Launch,
+    MachineEvents,
+    Reattachment,
+    Sandbox
+  }
+
   alias Fountain.Repo
 
   # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
@@ -312,8 +330,30 @@ defmodule Fountain.Conversations.Wake do
               {:ok, Conversations._unsafe_get_conversation!(conv.id)}
 
             :timeout ->
-              create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+              # The provision died with its BEAM and nothing ever came up on
+              # this sandbox either. An interrupt has nothing to provision
+              # for here any more than it does on a flat :create_new
+              # (immediately below) — same no-provision rule, same reconcile
+              # helper, same fence.
+              if purpose == :interrupt do
+                reconcile_dead_interrupt(conv)
+              else
+                create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+              end
           end
+
+        # An interrupt with no live server and no sandbox worth reusing has
+        # nothing to provision for: there is no turn a fresh sprite could
+        # continue, only a row to reconcile (Jake, 2026-09-15, #2175 open
+        # decision 1). Provisioning here used to run anyway, and the
+        # `:interrupt` call to the new server then queued behind
+        # `handle_continue(:provision)` and timed out to `{:error,
+        # :provisioning}` — a paying wake for an interrupt that could not
+        # reach anything. `purpose: :work` is untouched: a prompt on a dead
+        # or stranded sandbox still provisions fresh, here and in the
+        # `:timeout` arm above.
+        :create_new when purpose == :interrupt ->
+          reconcile_dead_interrupt(conv)
 
         :create_new ->
           create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
@@ -329,6 +369,43 @@ defmodule Fountain.Conversations.Wake do
 
   defp check_saved_inference(conv, agent) do
     with {:ok, _source} <- Conversations.resolve_saved_inference(conv, agent), do: :ok
+  end
+
+  # No server, no reusable sandbox, and this wake is only for an interrupt:
+  # reconcile whatever the dead incarnation left running instead of paying to
+  # provision a machine nobody asked to keep working. `find_running_turn/1`
+  # and `_unsafe_orphan_turn/2` are the same door the reattach path uses for
+  # the same shape of loss (a turn the row still calls `running` with no
+  # process left to finish it) — this is that path's decision, reached from a
+  # different trigger, not a new writer of the turn or conversation row.
+  #
+  # The probe that produced :create_new (or the registry timeout on a
+  # provisioning row) ran outside any lock, against conv.sandbox_id as read
+  # before this wake started. A concurrent :work wake can rebind the
+  # conversation to a replacement sandbox and admit a successor turn while
+  # that probe is still in flight, so `find_running_turn/1` — reading with no
+  # lock of its own — can hand back the successor's turn instead of the dead
+  # incarnation's. `expected_sandbox_id: conv.sandbox_id` fences the write to
+  # the sandbox this wake actually probed: `_unsafe_orphan_turn/3` re-locks
+  # the parent and rejects a changed binding as `{:error, :ownership_changed}`,
+  # writing nothing. Either way this answers :not_running — the interrupt was
+  # for the dead incarnation, and a successor found live is somebody else's
+  # turn to finish, not this wake's to touch.
+  #
+  # ownership: conv is the caller's own tenant-scoped row, established by
+  # wake_conversation_for/3 above.
+  defp reconcile_dead_interrupt(conv) do
+    case Reattachment.find_running_turn(conv.id) do
+      nil ->
+        :ok
+
+      turn ->
+        Conversations._unsafe_orphan_turn(turn, "interrupt_dead_sandbox",
+          expected_sandbox_id: conv.sandbox_id
+        )
+    end
+
+    {:error, :not_running}
   end
 
   defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do
