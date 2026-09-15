@@ -11,6 +11,12 @@ defmodule Fountain.Conversations.Wake do
   module reads comes from that already-scoped conversation row, so leaves are
   documented as relying on that ownership rather than re-justifying it on
   their own.
+
+  The two purposes diverge on a dead sandbox: `:work` still provisions a
+  fresh one, but `:interrupt` never does (decided 2026-09-15, #2175 open
+  decision 1) — there is no turn a new sprite could continue, so it
+  reconciles the orphaned row instead of paying for compute nothing will
+  use.
   """
 
   import Ecto.Query
@@ -19,7 +25,16 @@ defmodule Fountain.Conversations.Wake do
 
   alias Fountain.Agents
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Conversation, ConversationServer, Launch, MachineEvents, Sandbox}
+
+  alias Fountain.Conversations.{
+    Conversation,
+    ConversationServer,
+    Launch,
+    MachineEvents,
+    Reattachment,
+    Sandbox
+  }
+
   alias Fountain.Repo
 
   # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
@@ -315,6 +330,18 @@ defmodule Fountain.Conversations.Wake do
               create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
           end
 
+        # An interrupt with no live server and no sandbox worth reusing has
+        # nothing to provision for: there is no turn a fresh sprite could
+        # continue, only a row to reconcile (Jake, 2026-09-15, #2175 open
+        # decision 1). Provisioning here used to run anyway, and the
+        # `:interrupt` call to the new server then queued behind
+        # `handle_continue(:provision)` and timed out to `{:error,
+        # :provisioning}` — a paying wake for an interrupt that could not
+        # reach anything. `purpose: :work` is untouched: a prompt on a dead
+        # sandbox still provisions fresh below.
+        :create_new when purpose == :interrupt ->
+          reconcile_dead_interrupt(conv)
+
         :create_new ->
           create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
 
@@ -329,6 +356,25 @@ defmodule Fountain.Conversations.Wake do
 
   defp check_saved_inference(conv, agent) do
     with {:ok, _source} <- Conversations.resolve_saved_inference(conv, agent), do: :ok
+  end
+
+  # No server, no reusable sandbox, and this wake is only for an interrupt:
+  # reconcile whatever the dead incarnation left running instead of paying to
+  # provision a machine nobody asked to keep working. `find_running_turn/1`
+  # and `_unsafe_orphan_turn/2` are the same door the reattach path uses for
+  # the same shape of loss (a turn the row still calls `running` with no
+  # process left to finish it) — this is that path's decision, reached from a
+  # different trigger, not a new writer of the turn or conversation row.
+  #
+  # ownership: conv is the caller's own tenant-scoped row, established by
+  # wake_conversation_for/3 above.
+  defp reconcile_dead_interrupt(conv) do
+    case Reattachment.find_running_turn(conv.id) do
+      nil -> :ok
+      turn -> Conversations._unsafe_orphan_turn(turn, "interrupt_dead_sandbox")
+    end
+
+    {:error, :not_running}
   end
 
   defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do

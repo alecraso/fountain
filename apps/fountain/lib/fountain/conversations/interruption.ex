@@ -87,10 +87,13 @@ defmodule Fountain.Conversations.Interruption do
   A missing server does not mean there is nothing to interrupt: the process
   can have exited (deploy, Horde rebalance, a plain `{:stop, :normal, _}`)
   while a turn was still marked `running`. Waking reattaches to a live sprite
-  session if one exists, or reconciles the orphaned turn itself when none
-  does. Only a row that says `running` is worth a wake — an idle, terminated
-  or unknown conversation has nothing running regardless, and must not pay
-  for one it does not need.
+  session if one exists. If the sandbox is gone or was never provisioned,
+  this does **not** provision a fresh one on an interrupt's behalf — there is
+  no turn a new sprite could continue — it reconciles the orphaned turn in
+  place instead (`Wake.reconcile_dead_interrupt/1`, decided 2026-09-15, #2175
+  open decision 1) and answers `:not_running`. Only a row that says `running`
+  is worth a wake — an idle, terminated or unknown conversation has nothing
+  running regardless, and must not pay for one it does not need.
 
   The two misses are different answers, and #1179 is what conflating them
   looked like from a client. `:not_found` is no such conversation row.
