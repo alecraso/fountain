@@ -48,7 +48,7 @@ In dev and test, Fountain derives a deterministic key from a fixed phrase.
 Production refuses to boot without a true one.
 
 If the shape feels familiar, HashiCorp Vault uses the same one. The unseal key
-wraps the root key, which wraps the keyring, which wraps the data. <!-- vale disable-line STE.IngForms -->
+wraps the root key, which wraps the keyring, which wraps the data.
 That analogy holds here. Almost nothing else about the word "vault" does. Read
 [About vaults](vault.md).
 
@@ -274,7 +274,6 @@ redaction that a new caller will one day forget.
     sandbox in the clear, and the bindings page and routes are absent. On your own instance, read
     [Feature status](../reference/feature-status.md).
 
-<!-- vale STE.IngForms = NO -->
 On a hosted account with the egress credential broker on, a secret can have
 one or more **bindings**. A binding names a host. By default the broker
 replaces the secret's placeholder wherever it appears in a request to that
@@ -319,7 +318,6 @@ The page and the routes are only
 there when the deployment runs a broker. A binding is about the name of
 a secret. So it applies to every environment and vault that holds a secret
 of that name.
-<!-- vale STE.IngForms = YES -->
 
 ## Where to go next
 

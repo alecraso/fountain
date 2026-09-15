@@ -2,8 +2,7 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   @moduledoc """
   What the schema guard is allowed to find today, and why.
 
-  The ratchet this repository already uses for the docs prose gates
-  (`scripts/docs-style-allow.txt`) and for the omissions list in
+  The ratchet this repository already uses for the omissions list in
   `sdk/contract`: write down what is wrong now, forbid anything new, and let
   the list only shrink. Every entry is one `{operation, status}` pair — never a
   pattern — so a second operation with the same defect fails until somebody

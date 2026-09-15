@@ -28,8 +28,8 @@ permissions:
 #
 # CI required verifies the selected plan, including intentional skips. A green
 # PR publishes the actual checkout tree; main may reuse that proof, otherwise
-# it runs the complete suite. Wording advice is nonblocking; docs compilation,
-# links, snippets, anchors and CLI reference parity remain blocking.
+# it runs the complete suite. Docs compilation, internal links, snippets,
+# anchors and CLI reference parity remain blocking.
 #
 # The one Postgres pin. Jobs start it in the background before they need it.
 env:
@@ -89,7 +89,6 @@ jobs:
 
     outputs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
-      docs_touched: ${{ steps.filter.outputs.docs_touched }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
       tree: ${{ steps.tree.outputs.tree }}
       sdk_elixir: ${{ steps.sdks.outputs.sdk_elixir }}
@@ -132,7 +131,6 @@ jobs:
               echo "diff_base=${base:-}"
               echo "docs_only=$1"
               echo "cli_docs=$2"
-              echo "docs_touched=$3"
             } >> "$GITHUB_OUTPUT"
             exit 0
           }
@@ -140,7 +138,7 @@ jobs:
           # A manual run requests complete validation, without a diff or
           # tree-reuse shortcut. An empty base selects every SDK too.
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            decide false false true
+            decide false false
           fi
 
           # A merge group already knows the commit it was stacked onto, and
@@ -150,26 +148,26 @@ jobs:
             base="${MERGE_GROUP_BASE_SHA}"
             if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
               echo "merge group base ${base:0:7} is not in this checkout — running the full CI"
-              decide false false true
+              decide false false
             fi
           else
             if ! git fetch --no-tags --quiet origin \
                  "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" 2>/dev/null; then
               echo "could not fetch base ${GITHUB_BASE_REF} — running the full CI"
-              decide false false true
+              decide false false
             fi
 
             base="$(git merge-base "refs/remotes/origin/${GITHUB_BASE_REF}" HEAD 2>/dev/null || true)"
             if [ -z "${base}" ]; then
               echo "no merge base with ${GITHUB_BASE_REF} — running the full CI"
-              decide false false true
+              decide false false
             fi
           fi
 
           changed="$(git diff --name-only "${base}" HEAD 2>/dev/null || true)"
           if [ -z "${changed}" ]; then
             echo "empty diff against ${base:0:7} — running the full CI"
-            decide false false true
+            decide false false
           fi
 
           echo "changed against ${base:0:7}:"
@@ -184,28 +182,15 @@ jobs:
             cli_docs=true
           fi
 
-          # Whether ANY docs path moved, independent of whether the diff is
-          # docs-ONLY. A mixed PR takes the `checks` path, which carried no
-          # docs gate at all before, so prose errors surfaced on main after
-          # the merge.
-          #
-          # docs/nav.yml is under docs/ and so is covered by both greps here
-          # without a special case — it used to be mkdocs.yml at the repo root,
-          # which needed naming twice (#1008).
-          docs_touched=false
-          if printf '%s\n' "${changed}" | grep -qE '^docs/|^apps/[^/]+/docs/|^scripts/(docs-style|destink/|ci/(prose-advice\.sh|check_external_links\.py|test_external_links\.py)$)|^CLAUDE\.md$|^\.vale|^\.github/workflows/ci\.yml$'; then
-            docs_touched=true
-          fi
-
           # grep -qv succeeds when ANY line falls outside the allowlist, so
           # the negation is "every changed path is a docs path".
           if printf '%s\n' "${changed}" | grep -qvE '^docs/'; then
             echo "non-docs paths changed — running the full CI"
-            decide false "${cli_docs}" "${docs_touched}"
+            decide false "${cli_docs}"
           fi
 
           echo "docs-only — running the docs job instead of the Elixir suite"
-          decide true "${cli_docs}" false
+          decide true "${cli_docs}"
 
       - name: Select SDKs from the same diff
         id: sdks
@@ -1177,113 +1162,6 @@ jobs:
       - name: Deployed-instance runner tests
         run: node --test deployed/test/*.test.mjs
 
-  docs-prose:
-    name: Docs prose gates
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [already-tested, changes]
-    # The complement of the `docs` job. That job carries the prose gates for a
-    # docs-ONLY diff; this carries them for a diff that touches docs AND code,
-    # which took neither branch before and so went unchecked until docs.yml ran
-    # on main. The two are mutually exclusive by the same docs_only gate.
-    #
-    # The structural half -- every page the nav names, every page on disk,
-    # every internal /docs link and every anchor -- lives in docs_test.exs and
-    # runs in the Elixir suite, so it needs nothing here. That is what
-    # `mkdocs build --strict` used to carry, and the test is the stronger of
-    # the two: MkDocs never checked anchors (#1008).
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true'
-         && (github.event_name == 'push' || needs.changes.outputs.docs_touched == 'true') }}
-
-    permissions:
-      contents: read
-
-    steps:
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
-
-      # The complement of the `docs` job. That job carries the prose gates for
-      # a docs-ONLY diff; this carries them for a diff that touches docs AND
-      # code, which took neither branch before and so went unchecked until
-      # docs.yml ran on main. The two jobs are mutually exclusive by the same
-      # docs_only gate.
-      #
-      # The structural half of the gate — every page the nav names, every page
-      # on disk, every internal /docs link and every anchor — lives in
-      # docs_test.exs and runs in the Elixir suite, so it needs nothing here.
-      # That is what `mkdocs build --strict` used to carry, and the test is the
-      # stronger of the two: MkDocs never checked anchors (#1008).
-      - name: Check public GitHub documentation links
-        run: python3 scripts/ci/check_external_links.py
-
-      - name: Docs style
-        run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
-
-      # A pinned release binary, not `go install`. In the job this was split
-      # out of, the reason was that Go came from cli/go.mod with
-      # GOTOOLCHAIN=local and so could not fetch the newer toolchain the
-      # linter's module requires. Here the reason is simpler and stronger:
-      # this job installs no Go at all, because nothing else in it needs one.
-      # Either way the tarball needs no toolchain, and it is verified against
-      # its published SHA256.
-      - name: Install the STE linter
-        run: |
-          curl -fsSL -o "${RUNNER_TEMP}/vale.tar.gz" \
-            https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
-          echo "c6b85fd4da8ca2b0f631b17556c3f38bc3f30e9ce636517c00ad507c522c2a5c  ${RUNNER_TEMP}/vale.tar.gz" \
-            | sha256sum -c -
-          mkdir -p "${RUNNER_TEMP}/vale"
-          tar -xzf "${RUNNER_TEMP}/vale.tar.gz" -C "${RUNNER_TEMP}/vale" vale
-          "${RUNNER_TEMP}/vale/vale" version
-          echo "${RUNNER_TEMP}/vale" >> "$GITHUB_PATH"
-
-      - name: Docs Simplified Technical English
-        # Plus each extension's slice of the same manual (ADR 0043, #1510).
-        # Two halves, each silent without the other: these path arguments
-        # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
-        # patterns decide what is linted among it. Naming the directory alone
-        # lints none of it, which is measured in that file's comment. The
-        # glob is empty and harmless when no extension has docs.
-        run: |
-          shopt -s nullglob
-          bash scripts/ci/prose-advice.sh ste vale lint docs apps/*/docs
-
-      # AI-writing tells, the third prose gate beside the style sheet and STE.
-      # The engine is the published `sentences` package (lex00/sentences, MIT);
-      # scripts/destink/destink.mjs holds the rule set, with the count each
-      # enabled and disabled rule produced over docs/.
-      #
-      # Its own setup-node, unlike the copy this job was split out of: that one
-      # inherited Node 24 from the SDK steps beside it and deliberately did NOT
-      # call setup-node again, because a second call would have re-pointed the
-      # npm cache at a different lockfile for the rest of the job. Here there
-      # are no SDK steps, so the gate installs the Node it needs and points the
-      # cache at its own lockfile -- the same shape the docs-only `docs` job
-      # uses.
-      - name: Set up Node for the de-stink gate
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: scripts/destink/package-lock.json
-
-      # `--no-audit --no-fund`: see the typescript-sdk job. The audit request
-      # stalls for minutes from a runner and can only ever print.
-      - name: Install the prose checker
-        run: npm ci --prefix scripts/destink --no-audit --no-fund
-
-      - name: Docs de-stink
-        run: bash scripts/ci/prose-advice.sh destink node scripts/destink/destink.mjs
-
-      - name: Upload wording advice
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: prose-advice
-          path: ${{ runner.temp }}/prose-advice
-          retention-days: 7
-
   swift-sdk:
     name: Swift SDK (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -1784,72 +1662,6 @@ jobs:
       - name: Docs tests
         run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
 
-      # The style sheet in standards/voice-and-style.md, as wording advice. It
-      # skips the backlog in scripts/docs-style-allow.txt, so a file NOT on
-      # that list is checked and every new page is covered by default.
-      - name: Check public GitHub documentation links
-        run: python3 scripts/ci/check_external_links.py
-
-      - name: Docs style
-        run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
-
-      # ASD-STE100 Simplified Technical English, the standard in
-      # standards/simplified-technical-english.md. Config in
-      # .vale-ste.yml, backlog in .valeignore, and the backlog only shrinks.
-      # A pinned release binary, not `go install`. This job pins Go from
-      # cli/go.mod with GOTOOLCHAIN=local, so it cannot fetch the newer
-      # toolchain the linter's module requires, and `go install` fails before
-      # the linter ever runs. The tarball needs no toolchain and is verified
-      # against its published SHA256.
-      - name: Install the STE linter
-        run: |
-          curl -fsSL -o "${RUNNER_TEMP}/vale.tar.gz" \
-            https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
-          echo "c6b85fd4da8ca2b0f631b17556c3f38bc3f30e9ce636517c00ad507c522c2a5c  ${RUNNER_TEMP}/vale.tar.gz" \
-            | sha256sum -c -
-          mkdir -p "${RUNNER_TEMP}/vale"
-          tar -xzf "${RUNNER_TEMP}/vale.tar.gz" -C "${RUNNER_TEMP}/vale" vale
-          "${RUNNER_TEMP}/vale/vale" version
-          echo "${RUNNER_TEMP}/vale" >> "$GITHUB_PATH"
-
-      - name: Docs Simplified Technical English
-        # Plus each extension's slice of the same manual (ADR 0043, #1510).
-        # Two halves, each silent without the other: these path arguments
-        # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
-        # patterns decide what is linted among it. Naming the directory alone
-        # lints none of it, which is measured in that file's comment. The
-        # glob is empty and harmless when no extension has docs.
-        run: |
-          shopt -s nullglob
-          bash scripts/ci/prose-advice.sh ste vale lint docs apps/*/docs
-
-      # AI-writing tells, the third prose gate beside the style sheet and STE.
-      # The engine is the published `sentences` package (lex00/sentences, MIT);
-      # scripts/destink/destink.mjs holds the rule set, with the count each
-      # enabled and disabled rule produced over docs/.
-      - name: Set up Node for the de-stink gate
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: scripts/destink/package-lock.json
-
-      # `--no-audit --no-fund`: see the SDK install step in `checks`. The audit
-      # request stalls for minutes from a runner and can only ever print.
-      - name: Install the prose checker
-        run: npm ci --prefix scripts/destink --no-audit --no-fund
-
-      - name: Docs de-stink
-        run: bash scripts/ci/prose-advice.sh destink node scripts/destink/destink.mjs
-
-      - name: Upload wording advice
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: prose-advice
-          path: ${{ runner.temp }}/prose-advice
-          retention-days: 7
-
       - name: Set up Go
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -2011,7 +1823,6 @@ jobs:
       - compose-fresh-clone
       - compose-pinned-image-boot
       - docs
-      - docs-prose
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:

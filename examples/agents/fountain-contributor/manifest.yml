@@ -81,13 +81,8 @@ spec:
     MIX_ENV=dev mix dialyzer --plt
     MIX_ENV=test mix compile
 
-    # The docs and decisions gates, pinned the way .github/workflows/ci.yml
-    # pins them. docs-style.py needs only python3; vale is a single binary.
+    # The decisions validator.
     GOBIN="$HOME/.local/bin" go install github.com/okfcli/okf/cmd/okf@latest
-    curl -fsSL -o /tmp/vale.tar.gz \
-      https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
-    echo "c6b85fd4da8ca2b0f631b17556c3f38bc3f30e9ce636517c00ad507c522c2a5c  /tmp/vale.tar.gz" | sha256sum -c -
-    tar -xzf /tmp/vale.tar.gz -C "$HOME/.local/bin" vale
 ---
 # Your per-person overlay. Attach it at launch (`--vault`); its values win
 # over the environment's on key collision, and — measured on every provider —
@@ -137,13 +132,10 @@ spec:
       3. Read CONTRIBUTING.md, and decisions/index.md if the change is
          architectural.
 
-    Before you push: `mix precommit`, run in the **foreground** — anything
-    you background dies when your turn ends, and a gate that died is a gate
-    that did not run. Read the output rather than the exit code, an alias
-    stage can fail while the alias exits 0. Confirm you reached
-    "N tests, 0 failures". If you touched docs/, also run
-    `mix test apps/fountain/test/fountain/docs_test.exs`,
-    `python3 scripts/docs-style.py` and `vale lint docs`.
+    Before you push: run `mix precommit` in the foreground. Its exit status
+    is the verdict; the final line names success or the failing stage.
+    If you touched docs/, the structural checks and optional writing guidance
+    are in `contributing/docs.md`.
 
     Never end a turn with work pending. "I'll push once the suite passes" is
     a turn that pushed nothing: the turn that did the work is the turn that

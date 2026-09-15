@@ -4,7 +4,6 @@
      CREDITS_ENABLED flag and the Elixir context carry it. STE exempts a
      Technical Name from Rule 3.4, and the linter has no vocabulary hook for
      that rule, so the exemption is declared for the page. -->
-<!-- vale STE.IngForms = NO -->
 
 **Optional.** Stripe is the till: it takes the payment for a credit pack and
 tells Fountain about refunds and disputes. Nothing else. Billing is off by
@@ -69,5 +68,3 @@ The delivery log for the webhook endpoint in the Stripe dashboard must show
 - [Start billing](../guides/operate/billing.md), the operator guide.
 - [Prices](../guides/operate/plans-and-prices.md).
 - [Services Fountain uses](index.md).
-
-<!-- vale STE.IngForms = YES -->

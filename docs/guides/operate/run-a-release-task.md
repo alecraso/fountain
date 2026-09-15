@@ -200,6 +200,6 @@ to reverse a whole release's migrations on production data.
 ## Related
 
 - [Upgrade an instance](upgrade.md).
-- [Start billing](billing.md). <!-- vale disable-line STE.IngForms -->
+- [Start billing](billing.md).
 - [Nobody can log in](../../troubleshooting/nobody-can-log-in.md), which is
   where `verify_email/1` matters.

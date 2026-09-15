@@ -10,10 +10,10 @@ the files it points at.
 | Workstation setup, toolchain pins | [SETUP.md](SETUP.md) |
 | Licensing, DCO, the local gate, flakes, API changes, PRs | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | CI jobs, the merge queue mechanics, coverage, partitions | [scripts/ci/README.md](scripts/ci/README.md) |
-| Writing manual pages and the prose linters | [contributing/docs.md](contributing/docs.md) |
+| Writing and checking manual pages | [contributing/docs.md](contributing/docs.md) |
 | Component libraries (extraction is paused) | [contributing/component-libraries.md](contributing/component-libraries.md) |
 | Why things are the way they are | [decisions/index.md](decisions/index.md) |
-| Standards: voice, Simplified Technical English, GitHub labels | [standards/](standards/) |
+| Reference templates and GitHub labels | [standards/](standards/) |
 | Configuration reference | [docs/configuration.md](docs/configuration.md), `.env.example` |
 
 ## Product and goal
@@ -249,8 +249,8 @@ by the release. The mechanics and the CI job list are in
 ## Docs and decisions
 
 - `docs/` is published at `/docs` only. A page not in `docs/nav.yml` fails the
-  suite, as does a dead internal link or anchor. The rules and the three
-  advisory prose linters are in [contributing/docs.md](contributing/docs.md).
+  suite, as does a dead internal link or anchor. The structural rules and
+  writing guidance are in [contributing/docs.md](contributing/docs.md).
 - Architecturally significant choices are ADRs in `decisions/`, an OKF
   bundle: copy `decisions/0001-template.md`, then run
   `scripts/decisions-index.sh` and `okf validate decisions` in the same PR.

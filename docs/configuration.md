@@ -133,7 +133,6 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 <!-- "billing" is a Technical Name here: CREDITS_ENABLED is the flag, and the
      Elixir context carries the word. STE exempts a Technical Name from Rule
      3.4, and the linter has no vocabulary hook for that rule. -->
-<!-- vale STE.IngForms = NO -->
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
@@ -157,7 +156,6 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
 | `CREDIT_PACKS_CENTS` | `1000,2500,10000` | No. | The credit packs a tenant can buy, in cents, as a list. |
 
-<!-- vale STE.IngForms = YES -->
 
 The rate variables are different from every other price here. They are what
 **you pay**, not what a tenant pays, and no other part of Fountain knows them.
@@ -352,7 +350,7 @@ money must publish terms.
 ## Clustering
 
 You need this for more than one replica, and for nothing else. Read
-[Clustering](architecture.md#clustering) for what breaks without it. <!-- vale disable-line STE.IngForms -->
+[Clustering](architecture.md#clustering) for what breaks without it.
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|

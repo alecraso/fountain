@@ -24,7 +24,7 @@ runs. The Conversation picks an Agent. It can override that Agent's
 Environment, and it can attach a Vault. It does all three at launch, and not at
 configuration time.
 
-That is what lets one Agent serve staging and production. It lets one <!-- vale disable-line STE.IngForms -->
+That is what lets one Agent serve staging and production. It lets one
 Environment serve twenty agents. It lets any of them borrow one Vault.
 
 ## How it works

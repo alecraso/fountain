@@ -23,7 +23,7 @@ name in a red build says which toolchain to look at:
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
-| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `docs_touched`, `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/sdk_changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
+| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/sdk_changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
 | **already-tested** | `Skip the re-run when a PR already tested this exact tree`: `scripts/ci/already-tested.sh` compares the checkout tree with a successful run's `tested-tree` artifact. Runs only on `push` and `merge_group`. Missing or expired artifacts and API failures leave `skip=false` |
 | **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
 | **python-sdk** (×2) | The Python SDK on 3.9 and 3.13, conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
@@ -34,8 +34,7 @@ name in a red build says which toolchain to look at:
 | **compose-fresh-clone** | `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file |
 | **compose-pinned-image-boot** | `scripts/compose-boot-check.sh` exercises the Compose quick start against its pinned release image. An unpublished pin that matches the version in `mix.exs` defers the boot check to `release.yml`; any other missing pin fails |
 | **sdk-checks** | A stable aggregate over the four SDK jobs. A selected SDK must succeed even on a docs-only server plan, because an SDK's own docs page selects it. Legs skip only for a reused tree or an unselected language |
-| **docs** | Compiles the embedded manual, runs `docs_test.exs` and `docs_controller_test.exs`, checks public GitHub documentation links, retains the advisory prose reports, and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` is true; skipped on `push` |
-| **docs-prose** | Advisory wording reports when docs, prose configuration or the workflow changes, and on a full main run |
+| **docs** | Compiles the embedded manual, runs `docs_test.exs` and `docs_controller_test.exs` and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` is true; skipped on `push` |
 | **gate** | `CI required`: validates every expected job result and records a successful PR checkout tree |
 
 `mix hex.audit` is not one of these: `scripts/hex-audit-gate.exs` fails the
@@ -171,7 +170,7 @@ gh pr merge <N> --squash --auto     # queue it; the queue merges when green
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
-PR runs 26 jobs; a full merge group runs 27 because both probes run. The
+PR runs 25 jobs; a full merge group runs 26 because both probes run. The
 documented limit is 20 concurrent runners. The queue builds one group at a
 time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
@@ -209,7 +208,7 @@ tests. Swift retains its separate conformance test step.
 `CI required` requires every selected SDK job. A failed, cancelled or
 unexpectedly skipped job fails the gate. Main runs all SDKs unless a verified
 tested tree authorizes reuse. Manual workflow dispatch always selects every
-SDK and the full server plan, including prose checks. Both gates reject a
+SDK and the full server plan. Both gates reject a
 manual classification that attempts to skip part of that plan.
 
 `SDK checks` reports the SDK result even when docs-only classification or a
@@ -298,13 +297,12 @@ The core release uses a separate cache of compiled production modules. The
 assembled release is rebuilt each time, including the check that toggles from
 the core distribution to the bundled distribution.
 
-## Wording reports
+## Manual public-link check
 
-Style, STE and de-stink reports are advisory. Logs show the first 60 lines;
-the `prose-advice` artifact retains complete output for seven days. A linter
-failure is also reported as a warning. Tool installation failures still fail
-the job. Compilation, links, anchors, snippets, nav and CLI docs parity remain
-blocking checks in the Elixir and Go suites.
+`python3 scripts/ci/check_external_links.py` checks public GitHub documentation
+links on demand. It is not part of merge CI. The manual's compilation, internal
+links, anchors, snippets, nav and CLI docs parity remain blocking checks in the
+Elixir and Go suites. See [the manual contribution guide](../../contributing/docs.md).
 
 ## Issue and PR citations
 

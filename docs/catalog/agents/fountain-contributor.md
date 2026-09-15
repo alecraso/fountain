@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Manifest | [`examples/agents/fountain-contributor/`](https://github.com/managoat/fountain/tree/main/examples/agents/fountain-contributor) | <!-- vale disable-line STE.SentenceLength -->
+| Manifest | [`examples/agents/fountain-contributor/`](https://github.com/managoat/fountain/tree/main/examples/agents/fountain-contributor) |
 | Runtime | claude, model `anthropic/claude-opus-5` |
 | Resources | one Environment, one Vault, one Agent |
 | First run | about 15 minutes to provision (measured), paid one time into a checkpoint |

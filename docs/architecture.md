@@ -135,7 +135,7 @@ a state of `started`, `done`, `failed` or `interrupted`.
    The vault must be on the agent's allowlist. The credit gate applies when
    `CREDITS_ENABLED` is on, and answers `402` at a zero balance. The quota for
    concurrent sandboxes applies. The balance funds it, between a floor of 2
-   and a ceiling of 20 for each user by default. <!-- vale disable-line STE.IngForms -->
+   and a ceiling of 20 for each user by default.
 2. **`provision`.** Fountain creates the sandbox and conversation rows, as
    `pending`, then starts a conversation server. That server creates the
    sprite, mounts the skills, and mints a scoped API key that expires. The

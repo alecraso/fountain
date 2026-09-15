@@ -41,7 +41,7 @@ count, how many accounts are behind it, and the idle hours inside that total.
 The idle figure turns amber above 50%. Below the cards, **Who it belongs to**
 names the accounts with the most hours, each with its own idle share.
 
-The panel is there whether or not you turn billing on. A self-hosted instance <!-- vale disable-line STE.IngForms -->
+The panel is there whether or not you turn billing on. A self-hosted instance
 still pays a provider.
 
 The list under the cards is also `GET /api/admin/sandboxes`, for a script.
@@ -103,7 +103,7 @@ See [Configure observability](observability.md) for how to scrape the endpoint.
 
 Fountain writes a sandbox row synchronously, and cannot lose it. The suspend
 and resume records that mark parked time are different. Fountain writes those
-best-effort on purpose, because a metering problem must not fail somebody's <!-- vale disable-line STE.IngForms -->
+best-effort on purpose, because a metering problem must not fail somebody's
 conversation. A database problem can drop one.
 
 A dropped suspend record makes parked time look like run time, and Fountain
@@ -122,7 +122,7 @@ credentials and never reaches a Fountain invoice.
 
 ## Related
 
-- [Start billing](billing.md), to charge for what you measure here. <!-- vale disable-line STE.IngForms -->
+- [Start billing](billing.md), to charge for what you measure here.
 - [Change sandbox lifetimes](sandbox-lifetime.md), the main lever on the total.
 - [About sandboxes](../../concepts/sandboxes.md), for what a sandbox is.
 - [Configure observability](observability.md), for the metrics endpoint.

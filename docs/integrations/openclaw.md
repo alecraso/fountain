@@ -115,7 +115,7 @@ OpenClaw runs on Node, and needs **Node ≥ 22.22.3**, or ≥ 24.15, or ≥ 25.9
 4. Give OpenClaw an agent of its own that runs on that entry. The block above
    is acpx's *harness alias*. OpenClaw's routes, its `sessions_spawn` and its
    channel bindings address an **OpenClaw agent id**. `runtime.type: "acp"`
-   ties the two together. The same name in both places keeps it readable. <!-- vale disable-line STE.IngForms -->
+   ties the two together. The same name in both places keeps it readable.
 
     ```json5
     acp: { enabled: true, backend: "acpx" },
@@ -157,7 +157,7 @@ OpenClaw runs on Node, and needs **Node ≥ 22.22.3**, or ≥ 24.15, or ≥ 25.9
     `openclaw agent --agent fountain`. Both need OpenClaw's model provider
     configured, and the harness never does.
 
-    To bind a thread, you also need the channel's thread bindings on. That is <!-- vale disable-line STE.IngForms -->
+    To bind a thread, you also need the channel's thread bindings on. That is
     `session.threadBindings`, and the setting for each adapter, such as
     `channels.discord.threadBindings.spawnSessions`. OpenClaw's
     [ACP agents](https://docs.openclaw.ai/tools/acp-agents) page holds the
@@ -214,7 +214,7 @@ environments can stand in for its own, with `allowed_environment_ids`.
   `ask` policy through OpenClaw yet. An unanswered prompt blocks the tool for 5
   minutes, and Fountain then refuses it. Leave the default until somebody
   measures it.
-- **The model, and the thinking level, belong to the Fountain agent.** <!-- vale disable-line STE.IngForms -->
+- **The model, and the thinking level, belong to the Fountain agent.**
   Fountain accepts and ignores OpenClaw's `--model`, the `model` and
   `thinking` on `sessions_spawn`, and the `/acp` model controls. A Fountain
   agent carries its model on the agent, and each conversation it runs shares
