@@ -55,8 +55,9 @@ adding runners. Dialyzer can dominate cold runs; the core release has its own
 compiled-build cache.
 
 `mix precommit` (`scripts/precommit.sh`) is the local subset: the static
-job, sobelow, a release assemble and the suite. CONTRIBUTING.md, "Before you
-push", lists its stages.
+job, sobelow, a release assemble and the changed files' tests
+(`scripts/precommit-tests.py`; `--full` for the whole suite).
+CONTRIBUTING.md, "Before you push", lists its stages.
 
 ## Database setup stalls
 

@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
 #
 # The local gate behind `mix precommit`: CI's Elixir static job, the sobelow
-# scan, a prod release assemble and the test suite, in that order, as one
-# command whose exit status is the verdict.
+# scan, a prod release assemble and the tests, in that order, as one command
+# whose exit status is the verdict.
 #
-#   mix precommit                 every stage
+#   mix precommit                 every stage; the test stage runs the changed files' tests
+#   mix precommit --full          the same, with the whole suite in the test stage
 #   mix precommit credo test      only those stages, in the canonical order
 #   mix precommit --list          the stage names and what each runs
 #   scripts/precommit.sh          the same thing without the alias
+#
+# The test stage is scripts/precommit-tests.py by default: the test files the
+# branch changed, the mirror and same-stem tests of every changed lib file,
+# and the manual's tests for a docs change, selected against the merge base
+# with origin/main and run one `mix test` per app. A change to something
+# every test reads (mix.exs, mix.lock, config/, coverage.exs, test/support,
+# a test_helper, a migration) runs the whole suite instead, which is also
+# what --full does by hand. A lib file with no matching test file is named
+# in the output rather than silently skipped. CI runs the whole suite on
+# every plan, so a dependent the selection missed costs one CI round trip,
+# not a merged defect. (`mix test --stale` was measured first and rejected:
+# its closure follows runtime references, so one context-module edit
+# selected 5,516 of 5,963 core tests.)
 #
 # Every stage is its own OS process, so no stage can leave Mix state behind
 # for the next one, and the script never trusts a stage's output: a non-zero
@@ -40,7 +54,7 @@ STAGES=(
   "dialyzer|MIX_ENV=dev mix dialyzer"
   "sobelow|scripts/sobelow.sh"
   "release|MIX_ENV=prod mix deps.get && mix release fountain_server --overwrite"
-  "test|MIX_ENV=test mix test"
+  "test|python3 scripts/precommit-tests.py, the changed files' tests (--full: MIX_ENV=test mix test)"
 )
 
 stage_toolchain() {
@@ -111,8 +125,16 @@ stage_release() {
   mix_in prod deps.get && mix_in prod release fountain_server --overwrite
 }
 
-# From the umbrella root: core, ee/test and every sibling app in one run.
-stage_test() { mix_in test test; }
+# --full: from the umbrella root, core, ee/test and every sibling app in
+# one run. Default: the selector, which runs `mix test <files>` per app
+# with MIX_ENV=test itself.
+stage_test() {
+  if [[ $full -eq 1 ]]; then
+    mix_in test test
+  else
+    python3 scripts/precommit-tests.py
+  fi
+}
 
 # ── the runner ────────────────────────────────────────────────────────────
 
@@ -137,16 +159,20 @@ list_stages() {
 }
 
 usage() {
-  echo "usage: scripts/precommit.sh [--list] [stage ...]"
+  echo "usage: scripts/precommit.sh [--list] [--full] [stage ...]"
+  echo
+  echo "--full runs the whole suite in the test stage instead of the changed files' tests."
   echo
   echo "stages, in the order they run:"
   list_stages
 }
 
+full=0
 selected=()
 for arg in "$@"; do
   case "$arg" in
     --list) usage; exit 0 ;;
+    --full) full=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "precommit: unknown option $arg" >&2; usage >&2; exit 64 ;;
     *)

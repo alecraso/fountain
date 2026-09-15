@@ -65,8 +65,8 @@ mix precommit
 ```
 
 That runs `scripts/precommit.sh`: CI's Elixir static job, the sobelow scan, a
-prod release assemble and the test suite, each stage its own process, in
-this order:
+prod release assemble and the tests, each stage its own process, in this
+order:
 
 | Stage | Runs |
 |---|---|
@@ -79,7 +79,7 @@ this order:
 | `dialyzer` | `MIX_ENV=dev mix dialyzer` |
 | `sobelow` | `scripts/sobelow.sh`, core with `ee/lib` overlaid |
 | `release` | `MIX_ENV=prod mix deps.get && mix release fountain_server --overwrite` |
-| `test` | `mix test` from the umbrella root: core, `ee/test` and every sibling app |
+| `test` | `scripts/precommit-tests.py`, the changed files' tests, one `mix test` per app; `--full` runs the whole suite from the umbrella root instead |
 
 **The exit status is the verdict.** The run stops at the first failing stage,
 names it, and exits with that stage's status; the last line is always
@@ -88,6 +88,20 @@ script cannot see past is a pipe: `mix precommit | tee log` reports `tee`'s
 status unless the shell has `pipefail` on. `mix precommit --list` prints the
 stages, and `mix precommit credo test` runs only those, in the canonical
 order, after a fix.
+
+The test stage selects by what the branch changed, against its merge base
+with `origin/main` plus uncommitted and untracked files: a changed test file
+runs; a changed lib file runs its mirror test and every test in that app
+with the same stem (`search.ex` runs `search_test.exs` and
+`search_controller_test.exs`); a docs change runs the manual's tests. A
+change to something every test reads escalates to the whole suite on its
+own: `mix.exs`, `mix.lock`, `config/`, `coverage.exs`, a `test/support`
+tree, a `test_helper.exs`, a migration. A lib file with no matching test is
+named in the output rather than skipped in silence; give it one, or run
+`mix precommit --full`, which is also the answer whenever you want the whole
+suite's word. `python3 scripts/precommit-tests.py --print` shows the
+selection without running it. CI runs the whole suite on every plan, so a
+dependent the selection missed costs one CI round trip, not a merged defect.
 
 The release stage is the only one that builds `MIX_ENV=prod`. It is there
 because everything else is blind to a prod-only dependency graph: the

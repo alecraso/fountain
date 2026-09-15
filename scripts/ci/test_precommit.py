@@ -9,7 +9,10 @@ status, at the first failure.
 
 A stub `mix` on PATH records what it was asked to run, so no Elixir is
 needed. Stages that shell out to anything else (toolchain, conflict-markers,
-sobelow) are not selected here.
+sobelow) are not selected here. The default test stage is
+scripts/precommit-tests.py, which reads PRECOMMIT_CHANGED_FILES here instead
+of git so the selection is fixed; the selection rules themselves are
+test_precommit_tests.py.
 """
 
 import os
@@ -58,6 +61,10 @@ class PrecommitScript(unittest.TestCase):
             PRECOMMIT_TEST_LOG=str(self.log),
         )
         self.env.pop("PRECOMMIT_TEST_FAIL_CREDO", None)
+        # The default test stage selects against this list, not git.
+        self.changed = pathlib.Path(self.tmp.name) / "changed.txt"
+        self.changed.write_text("apps/fountain/test/fountain/brand_test.exs\n")
+        self.env["PRECOMMIT_CHANGED_FILES"] = str(self.changed)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -105,9 +112,50 @@ class PrecommitScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(
             self.mix_calls(),
-            ["test compile --warnings-as-errors", "test credo --strict", "test test"],
+            [
+                "test compile --warnings-as-errors",
+                "test credo --strict",
+                "test test test/fountain/brand_test.exs",
+            ],
         )
         self.assertIn("precommit: PASSED (3 stages", result.stdout)
+
+    def test_the_test_stage_runs_the_changed_files_tests_and_the_suite_with_full(self):
+        result = self.run_script("test")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.mix_calls(), ["test test test/fountain/brand_test.exs"])
+        self.assertIn("precommit-tests: apps/fountain: mix test test/fountain/brand_test.exs", result.stdout)
+
+        self.log.unlink()
+        self.changed.write_text("scripts/precommit.sh\n")
+        result = self.run_script("test")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.mix_calls(), [])
+        self.assertIn("0 test files selected", result.stdout)
+        self.assertIn("precommit: PASSED (1 stages", result.stdout)
+
+        self.changed.write_text("mix.lock\n")
+        result = self.run_script("test")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.mix_calls(), ["test test"])
+        self.assertIn("mix.lock is an input to every test", result.stdout)
+        self.log.unlink()
+
+        for args in [("--full", "test"), ("test", "--full"), ("--full", "credo", "test")]:
+            with self.subTest(args=args):
+                result = self.run_script(*args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.mix_calls()[-1], "test test")
+                self.assertNotIn("precommit-tests:", result.stdout)
+                self.log.unlink()
+
+    def test_list_says_what_the_test_stage_runs_in_each_mode(self):
+        result = self.run_script("--list")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("[--full]", result.stdout)
+        test_line = next(line for line in result.stdout.splitlines() if line.startswith("  test "))
+        self.assertIn("scripts/precommit-tests.py", test_line)
+        self.assertIn("--full", test_line)
 
     def test_a_failing_stage_stops_the_run_with_its_own_status(self):
         result = self.run_script("compile", "credo", "test", PRECOMMIT_TEST_FAIL_CREDO="23")
