@@ -116,6 +116,56 @@ class SwiftGeneration(unittest.TestCase):
                 fields = {field[0]: field[3] for field in generator.models[owner]}
                 self.assertIn(key, fields)
 
+    def test_removed_properties_entries_name_a_real_removal(self):
+        # The ratchet, the same shape as `test_optional_compat_pins_reach_a_live_property`
+        # for the other tables: an entry that stops naming a property the
+        # last release actually published, or one the current output still
+        # generates, would be dead weight this guard would need to explain
+        # rather than a caught regression, so it fails here instead of
+        # staying silent.
+        shipped = swiftgen.released_properties()
+        always_sent = swiftgen.released_requiredness()
+        generator = swiftgen.Generator(copy.deepcopy(self.contract))
+        generator.render()
+        for name, key in sorted(swiftgen.REMOVED_PROPERTIES):
+            with self.subTest(name=name, key=key):
+                self.assertIn((name, key), shipped,
+                               f"{name}.{key} was not published at {swiftgen.released_tag()}")
+                pruned = {k: v for k, v in swiftgen.REMOVED_PROPERTIES.items() if k != (name, key)}
+                with mock.patch.object(swiftgen, "REMOVED_PROPERTIES", pruned):
+                    reported = generator.compatibility_failures(shipped, always_sent)
+                self.assertTrue(
+                    any(f"{name}.{key} shipped in" in failure for failure in reported),
+                    f"{name}.{key} is not absent from the current output",
+                )
+
+    def test_a_vanished_property_fails_generation(self):
+        # The reproduction #2296 describes: a property stops being generated
+        # and nothing else catches it, because the two existing rules compare
+        # optionality rather than presence. `EXTRA_PROPERTIES` emptied is the
+        # issue's own repro, covered in `test_undescribed_properties_reach_the_output`;
+        # this is the ordinary path, a property the contract simply drops.
+        contract = copy.deepcopy(self.contract)
+        del contract["schemas"]["Agent"]["properties"]["description"]
+        with self.assertRaisesRegex(
+            ValueError, r"Agent\.description shipped in \S+ and is no longer generated"
+        ):
+            swiftgen.Generator(contract).render()
+
+    def test_a_recorded_removal_passes(self):
+        # The remedy: citing the removal in REMOVED_PROPERTIES clears the
+        # failure the previous test raises, the same shape as pinning a
+        # property in OPTIONAL_COMPAT or REQUIRED_BY_CONTRACT clears theirs.
+        contract = copy.deepcopy(self.contract)
+        del contract["schemas"]["Agent"]["properties"]["description"]
+        with mock.patch.object(
+            swiftgen, "REMOVED_PROPERTIES",
+            swiftgen.REMOVED_PROPERTIES | {("Agent", "description"): "test removal"},
+        ):
+            output = swiftgen.Generator(contract).render()
+        body = output.split("public struct Agent:", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("description", body)
+
     def test_a_newly_required_property_needs_a_pin_or_an_exemption(self):
         # The direction that breaks consumers, and the one the pin test above
         # cannot see. `Teammate` is the type that proved it (#2284): four public
@@ -396,10 +446,12 @@ class SwiftGeneration(unittest.TestCase):
         # neither, and only the team stream carries agent_id.
         self.assertIn("public var conversationID: String?", generated)
         self.assertIn("public var agentID: String?", generated)
+        # Emptying the table used to drop both properties in silence (#2296):
+        # the removal guard now catches it, because the last release
+        # published both and nothing records their removal as deliberate.
         with mock.patch.object(swiftgen, "EXTRA_PROPERTIES", {}):
-            bare = log_event(swiftgen.Generator(copy.deepcopy(self.contract)).render())
-        self.assertNotIn("conversationID", bare)
-        self.assertNotIn("agentID", bare)
+            with self.assertRaisesRegex(ValueError, "LogEvent.conversationID shipped"):
+                swiftgen.Generator(copy.deepcopy(self.contract)).render()
 
     def test_the_published_duration_spelling_is_preserved(self):
         # `duration_ms` published as `durationMS`, so `ms` joins the acronym

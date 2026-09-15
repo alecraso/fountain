@@ -244,6 +244,18 @@ OPTIONAL_COMPAT.update({
 # anyway, because a partial `first_request` was never possible.
 REQUIRED_BY_CONTRACT = set()
 
+# Properties the last release published that this SDK deliberately stops
+# generating. An entry is a claim that removal was intentional, citing the PR
+# and changelog fragment that made it, and it is pruned once the last release
+# no longer publishes the property — at that point `shipped` no longer carries
+# the key and an unpruned entry has nothing left to name.
+REMOVED_PROPERTIES = {
+    ("AuthMe", "onboardingState"): (
+        "#2269 finished #1393: the server dropped users.onboarding_state in "
+        "v0.16.0, so the key had decoded nil for two releases. See "
+        "changelog.d/2269-swift-authme-generated.md."),
+}
+
 # Properties this SDK publishes that the contract does not describe, each with
 # the reason it exists. Not a place to register ordinary API additions —
 # properties come from the contract, and an entry here is a claim that the
@@ -307,6 +319,22 @@ def public_properties(text, into):
     return into
 
 
+def _git(*command):
+    done = subprocess.run(["git", "-C", str(ROOT), *command], text=True, capture_output=True)
+    if done.returncode:
+        raise ValueError(
+            f"Cannot read the last release (git {' '.join(command)}): "
+            f"{done.stderr.strip()}. This needs the release tags: a shallow "
+            "checkout has to fetch them (fetch-tags with fetch-depth: 0).")
+    return done.stdout
+
+
+@functools.lru_cache(maxsize=None)
+def released_tag():
+    """The last release tag, the immutable point every baseline reads from."""
+    return _git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*").strip()
+
+
 def released(*args):
     """Read a path out of the last release, which is the only immutable record.
 
@@ -315,16 +343,8 @@ def released(*args):
     commits the regenerated file would offer its own candidate as the record of
     what shipped and authorize itself. A tag cannot move.
     """
-    def git(*command):
-        done = subprocess.run(["git", "-C", str(ROOT), *command], text=True, capture_output=True)
-        if done.returncode:
-            raise ValueError(
-                f"Cannot read the last release (git {' '.join(command)}): "
-                f"{done.stderr.strip()}. This needs the release tags: a shallow "
-                "checkout has to fetch them (fetch-tags with fetch-depth: 0).")
-        return done.stdout
-    tag = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*").strip()
-    return git(*[argument.replace("<tag>", tag) for argument in args])
+    tag = released_tag()
+    return _git(*[argument.replace("<tag>", tag) for argument in args])
 
 
 @functools.lru_cache(maxsize=None)
@@ -634,10 +654,38 @@ class Generator:
         satisfies the second. `test_optional_compat_pins_reach_a_live_property`
         only checks that pins still name a property, never that a property that
         needs one has it.
+
+        A third question, asked of `shipped` alone: for a type still generated,
+        is a property that release published still among its current
+        properties. Neither rule above notices a property disappearing
+        outright — both compare optionality, and a model that stops declaring
+        a key is accepted either way. `REMOVED_PROPERTIES` is the recorded
+        exception, the same shape as the other two tables: a removal that was
+        not a deliberate, cited retirement fails here instead of shipping
+        silently. A type no longer generated at all is out of scope, since
+        nothing here claims that type's absence was unintentional.
+
+        "Current properties" is read the same way `shipped` was: not just
+        `self.models`' own field tuples, but every `public var` a currently
+        generated type publishes, including a computed property this module
+        adds outside the field list (`permissionPolicy`, `Teammate.id`) and
+        one a handwritten extension elsewhere under `Models/` adds to a
+        generated type (`LogEvent.stageData`). Comparing only the field list
+        would report each of those as removed the moment this guard exists.
         """
         published = {owner for owner, _ in shipped}
         emitted = {owner for owner, _ in always_sent}
+        generated = {TYPE_NAMES.get(owner, owner) for owner in self.models}
+        current = public_properties(
+            "\n".join(self.model(owner, fields) for owner, fields in self.models.items()), {})
+        for path in sorted((ROOT / RELEASED_MODELS).glob("*.swift")):
+            if path != OUTPUT:
+                public_properties(path.read_text(), current)
         failures = []
+        for name, swift in shipped:
+            if name not in generated or (name, swift) in current or (name, swift) in REMOVED_PROPERTIES:
+                continue
+            failures.append(f"{name}.{swift} shipped in {released_tag()} and is no longer generated")
         for owner, fields in self.models.items():
             # An input-only model is encoded and never decoded, so no response
             # from an older server is in question. Pinning a request property
@@ -692,10 +740,13 @@ class Generator:
         failures = self.compatibility_failures(released_properties(), released_requiredness())
         if failures:
             raise ValueError(
-                "A response from a server older than this change would fail to decode: "
+                "A response from a server older than this change would fail to decode, "
+                "or a property that release published would vanish without a record: "
                 + "; ".join(sorted(failures))
-                + ". Pin each in OPTIONAL_COMPAT and add the omission that proves it, "
-                "or record in REQUIRED_BY_CONTRACT that no deployed server omits it.")
+                + ". Pin each newly-required property in OPTIONAL_COMPAT and add the "
+                "omission that proves it, or record in REQUIRED_BY_CONTRACT that no "
+                "deployed server omits it; record a property that is no longer generated "
+                "in REMOVED_PROPERTIES, citing the PR and changelog fragment that retired it.")
         pending = list(self.encodable)
         while pending:
             owner = pending.pop()
