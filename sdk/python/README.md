@@ -210,3 +210,7 @@ This path never resolves names or merges legacy `run` keywords; existing
 `run(prompt, agent=...)` calls retain their behavior. A non-empty prompt is
 required and queued starts are refused before HTTP. Use `client.request` for
 promptless or queued conversation creation.
+
+With `channel_id`, `run_request` follows turn 1 when the server creates a
+conversation, including fresh launches. When the server resumes a channel,
+it submits the prompt and images to that conversation and follows the next turn.

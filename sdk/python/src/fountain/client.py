@@ -103,12 +103,21 @@ class Fountain:
             raise ValueError("run_request does not support queued creation; use request")
 
         def plan() -> Any:
-            conversation = self.api.data("POST", "/api/conversations", body=body)
-            turn_number = (
-                self._next_turn_number(str(conversation["id"]))
-                if body.get("channel_id") else 1
-            )
-            return conversation, turn_number, 0
+            response = self.api.request("POST", "/api/conversations", body=body)
+            conversation = response["data"]
+            if response.get("meta", {}).get("resumed") is True:
+                # Resume binds the channel without submitting its prompt. Read
+                # history before sending so a fast next turn cannot be skipped.
+                conversation_id = str(conversation["id"])
+                after = self.resume(conversation_id).cursor()
+                turn_number = self._next_turn_number(conversation_id)
+                prompt_body = {key: body[key] for key in ("prompt", "images") if key in body}
+                self.api.request(
+                    "POST", "/api/conversations/%s/prompts" % conversation_id,
+                    body=prompt_body,
+                )
+                return conversation, turn_number, after
+            return conversation, 1, 0
 
         return Run(self.api, plan, timeout=timeout, collect_events=collect_events)
 
