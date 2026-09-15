@@ -1702,6 +1702,12 @@ jobs:
             git fetch --quiet --depth=1 origin "${BASE_SHA}"
           fi
           echo "PR_BASE_SHA=${BASE_SHA}" >> "$GITHUB_ENV"
+      - name: Every commit carries a DCO sign-off
+        # HEAD here is GitHub's merge commit of the PR onto its base, so
+        # base..HEAD with --no-merges is exactly the PR's own commits, none
+        # of main's (#2290).
+        if: ${{ github.event_name == 'pull_request' }}
+        run: python3 scripts/ci/dco.py --base "${PR_BASE_SHA}" --head HEAD
       - name: Changelog entries go through changelog.d/
         # A PR does not edit CHANGELOG.md: that file changes once per
         # release, in the release PR, which is what ended the changelog
