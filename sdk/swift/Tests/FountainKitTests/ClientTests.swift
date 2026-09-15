@@ -47,6 +47,33 @@ import Testing
     let url = try #require(transport.lastRequest?.url?.absoluteString)
     #expect(url == "https://fountain.test/api/conversations?roots_only=true")
   }
+
+  // The minimal Teammate payload the contract requires (see
+  // ResourceWireTests.payloadsFromAnOlderServerStillDecode's Teammate fixture),
+  // wrapped in the `{ "data": … }` envelope `rename` decodes.
+  private static let teammateEnvelopeJSON = #"""
+    {"data":{"agent":{"id":"a1","name":"agent","runtime":"acp"},"agent_id":"a1",
+     "conversation":{"id":"c1","runtime":"acp","status":"idle"},"name":"agent",
+     "presence":{"state":"online"},"unread":false}}
+    """#
+
+  @Test func renameSendsAnExplicitNullForANilNameRatherThanOmittingTheKey() async throws {
+    let transport = FakeTransport(json: Self.teammateEnvelopeJSON)
+    _ = try await FountainClient.fake(transport).team.rename("a1", name: nil)
+
+    let sent = try JSONDecoder().decode(
+      JSONValue.self, from: #require(transport.lastRequest?.httpBody))
+    #expect(sent == .object(["name": .null]))
+  }
+
+  @Test func renameSendsTheGivenNameWhenPresent() async throws {
+    let transport = FakeTransport(json: Self.teammateEnvelopeJSON)
+    _ = try await FountainClient.fake(transport).team.rename("a1", name: "Bob")
+
+    let sent = try JSONDecoder().decode(
+      JSONValue.self, from: #require(transport.lastRequest?.httpBody))
+    #expect(sent == .object(["name": .string("Bob")]))
+  }
 }
 
 @Suite struct DecodingTests {
