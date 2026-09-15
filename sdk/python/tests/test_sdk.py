@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from fountain import (  # noqa: E402
     AuthError,
     Fountain,
+    NotReadyError,
     QuotaExceededError,
     ResolutionError,
     TimeoutError,
@@ -535,6 +536,14 @@ class ClientTests(unittest.TestCase):
             self.assertTrue(caught.exception.retryable)
             self.assertEqual(caught.exception.retry_after, 3)
             self.assertEqual(caught.exception.active_sandboxes, 2)
+
+    def test_sandbox_parking_is_not_ready_and_retryable(self):
+        with FakeFountain() as fake:
+            fake.state.fail = (503, {"error": "sandbox_parking"})
+            with self.assertRaises(NotReadyError) as caught:
+                Fountain(base_url=fake.base_url, api_key="fk_test").sandboxes()
+            self.assertTrue(caught.exception.retryable)
+            self.assertEqual(caught.exception.retry_after, 3)
 
     def test_stream_reconnects_from_the_last_event(self):
         with FakeFountain() as fake:

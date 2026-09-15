@@ -226,6 +226,22 @@ defmodule Fountain.HttpSseTest do
     assert Agent.get(calls, & &1) == 1
   end
 
+  test "sandbox_parking maps to :not_ready and is retryable" do
+    server =
+      Fountain.TestServer.start(fn _request ->
+        {503, [{"content-type", "application/json"}, {"retry-after", "5"}],
+         Jason.encode!(%{"error" => "sandbox_parking"})}
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    http = HTTP.new(%Fountain.Config{base_url: server.url, api_key: "key", app_url: ""})
+
+    assert {:error, %Error{status: 503, kind: :not_ready, retry_after: 5.0} = error} =
+             HTTP.request(http, "GET", "/api/conversations/c1")
+
+    assert Error.retryable?(error)
+  end
+
   test "user agent version matches the package version" do
     assert HTTP.user_agent() == "fountain-sdk-elixir/#{Mix.Project.config()[:version]}"
   end

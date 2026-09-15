@@ -41,7 +41,7 @@ public struct FountainError: Error, CustomStringConvertible, LocalizedError, Sen
   public var retryable: Bool {
     [
       "conversation_busy", "provisioning", "sprite_probe_failed", "sandbox_quota_exceeded",
-      "sandbox_at_capacity", "rate_limited",
+      "sandbox_at_capacity", "rate_limited", "sandbox_parking",
     ].contains(code)
       || status == 429 || (500..<600).contains(status)
   }
@@ -70,7 +70,8 @@ func fountainError(
   let kind: FountainError.Kind
   switch code {
   case "conversation_busy": kind = .conversationBusy
-  case "provisioning", "sprite_probe_failed", "fleet_full", "sandbox_unavailable": kind = .notReady
+  case "provisioning", "sprite_probe_failed", "fleet_full", "sandbox_unavailable", "sandbox_parking":
+    kind = .notReady
   case "sandbox_quota_exceeded": kind = .quotaExceeded
   case "insufficient_credits": kind = .insufficientCredits
   default:

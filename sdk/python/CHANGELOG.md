@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- `sandbox_parking` joins `provisioning`, `sprite_probe_failed` and `fleet_full` in the codes that raise `NotReadyError`: the reaper holds a durable park claim on the sandbox mid-checkpoint or mid-provider-suspend-call, and the same call will work once it clears (#2291).
+
 ## 0.5.1
 
 ### Fixed

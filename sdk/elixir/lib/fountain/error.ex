@@ -27,7 +27,7 @@ defmodule Fountain.Error do
 
   @type t :: %__MODULE__{}
 
-  @retryable_codes ~w(conversation_busy provisioning sprite_probe_failed sandbox_quota_exceeded sandbox_at_capacity rate_limited)
+  @retryable_codes ~w(conversation_busy provisioning sprite_probe_failed sandbox_quota_exceeded sandbox_at_capacity rate_limited sandbox_parking)
   @hints %{
     400 => "bad request",
     401 => "unauthorized — check the API key",
@@ -85,7 +85,7 @@ defmodule Fountain.Error do
   defp kind("conversation_busy", _), do: :conversation_busy
 
   defp kind(code, _)
-       when code in ~w(provisioning sprite_probe_failed fleet_full sandbox_unavailable),
+       when code in ~w(provisioning sprite_probe_failed fleet_full sandbox_unavailable sandbox_parking),
        do: :not_ready
 
   defp kind("sandbox_quota_exceeded", _), do: :quota_exceeded

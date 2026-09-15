@@ -21,6 +21,7 @@ export type FountainErrorCode =
   | "sandbox_runtime_mismatch"
   | "insufficient_credits"
   | "fleet_full"
+  | "sandbox_parking"
   | "rate_limited"
   | "account_suspended"
   | "environment_not_allowed"
@@ -91,6 +92,7 @@ const RETRYABLE_CODES = new Set([
   // it clears when that turn ends.
   "sandbox_at_capacity",
   "rate_limited",
+  "sandbox_parking",
 ]);
 
 /** No API key, or the key was rejected (401). */
@@ -125,8 +127,9 @@ export class ConversationBusyError extends FountainError {}
 
 /**
  * The sandbox is not up yet, Fountain could not reach the provider to check
- * (`provisioning` / `sprite_probe_failed`), or the deployment is at its fleet
- * ceiling (`fleet_full`) — all 503 with a `Retry-After`. Nothing is wrong and
+ * (`provisioning` / `sprite_probe_failed`), the deployment is at its fleet
+ * ceiling (`fleet_full`), or the reaper has it parked mid-checkpoint
+ * (`sandbox_parking`) — all 503 with a `Retry-After`. Nothing is wrong and
  * nothing was changed; the same call will work shortly.
  */
 export class NotReadyError extends FountainError {}
@@ -219,6 +222,7 @@ export function errorForStatus(
     case "insufficient_credits":
       return new InsufficientCreditsError(message, init);
     case "fleet_full":
+    case "sandbox_parking":
       return new NotReadyError(message, init);
   }
 

@@ -188,6 +188,19 @@ describe("errors the apps branch on", () => {
     );
   });
 
+  test("a sandbox parked mid-checkpoint is retryable too", async () => {
+    fake.failNextWith = { status: 503, body: { error: "sandbox_parking" }, retryAfter: 5 };
+    await assert.rejects(
+      () => client().team.list(),
+      (error: unknown) => {
+        assert.ok(error instanceof NotReadyError);
+        assert.equal(error.retryAfter, 5);
+        assert.equal(error.retryable, true);
+        return true;
+      },
+    );
+  });
+
   test("a 422 exposes the field errors", async () => {
     fake.failNextWith = {
       status: 422,

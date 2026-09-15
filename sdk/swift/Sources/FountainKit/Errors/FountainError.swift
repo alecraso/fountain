@@ -77,6 +77,7 @@ extension APIErrorBody: Decodable {
 let retryableCodes: Set<String> = [
   "conversation_busy", "provisioning", "sprite_probe_failed",
   "sandbox_quota_exceeded", "sandbox_at_capacity", "rate_limited",
+  "sandbox_parking",
 ]
 
 /// Every failure FountainKit can produce. Branch on these — and for API
@@ -94,7 +95,7 @@ public enum FountainError: Error, Sendable {
   case unauthorized(APIErrorBody?)
   /// `conversation_busy` — queue the message locally, flush on turn/done.
   case conversationBusy(APIErrorBody)
-  /// `provisioning`, `sprite_probe_failed`, `fleet_full` — retry after `retryAfter` seconds.
+  /// `provisioning`, `sprite_probe_failed`, `fleet_full`, `sandbox_parking` — retry after `retryAfter` seconds.
   case notReady(APIErrorBody, retryAfter: Double?)
   /// `sandbox_quota_exceeded` (429) — carries active count and limit.
   case quotaExceeded(APIErrorBody)
@@ -188,7 +189,7 @@ extension FountainError {
       case "conversation_busy":
         return .conversationBusy(body)
       case "provisioning", "sprite_probe_failed", "sandbox_probe_failed",
-        "fleet_full", "runner_offline", "sandbox_unavailable":
+        "fleet_full", "runner_offline", "sandbox_unavailable", "sandbox_parking":
         return .notReady(body, retryAfter: retryAfter)
       case "sandbox_quota_exceeded":
         return .quotaExceeded(body)

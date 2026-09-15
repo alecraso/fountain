@@ -282,6 +282,25 @@ import Testing
     }
   }
 
+  @Test func notReadyForSandboxParking() async throws {
+    let transport = FakeTransport(
+      json: #"{"error":"sandbox_parking","message":"reaper mid-checkpoint"}"#,
+      status: 503,
+      headers: ["Retry-After": "5"]
+    )
+    do {
+      _ = try await FountainClient.fake(transport).team.message("a-1", "hi")
+      Issue.record("expected throw")
+    } catch let error as FountainError {
+      guard case .notReady(_, let retryAfter) = error else {
+        Issue.record("wrong case: \(error)")
+        return
+      }
+      #expect(retryAfter == 5)
+      #expect(error.isRetryable)
+    }
+  }
+
   @Test func validationErrorsMapIsDecoded() async throws {
     let transport = FakeTransport(
       json: #"{"errors":{"name":["can't be blank"],"cron":["is invalid"]}}"#, status: 422

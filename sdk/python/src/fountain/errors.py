@@ -10,6 +10,7 @@ _RETRYABLE_CODES = {
     "sandbox_quota_exceeded",
     "sandbox_at_capacity",
     "rate_limited",
+    "sandbox_parking",
 }
 
 
@@ -171,6 +172,7 @@ def error_for_status(
         "sprite_probe_failed": NotReadyError,
         "sandbox_unavailable": NotReadyError,
         "fleet_full": NotReadyError,
+        "sandbox_parking": NotReadyError,
         "sandbox_quota_exceeded": QuotaExceededError,
         "insufficient_credits": InsufficientCreditsError,
     }

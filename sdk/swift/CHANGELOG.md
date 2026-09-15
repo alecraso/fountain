@@ -5,6 +5,10 @@ Notable changes to the Fountain Swift SDK follow
 
 ## Unreleased
 
+### Added
+
+- `sandbox_parking` joins `provisioning`, `sprite_probe_failed` and `fleet_full` in the codes that map to `.notReady` in both products: the reaper holds a durable park claim on the sandbox mid-checkpoint or mid-provider-suspend-call, and the same call will work once it clears (#2291).
+
 ### Changed
 
 - Generate agent, environment/vault, connection, team, account/catalog/apply and admin resource wire models from the contract. Preserve public names and dynamic JSON APIs; agent inputs support numeric permission policies and explicit nullable fields. Contract fields missing from the handwritten models are exposed as optional properties, including `Catalog.firstRequest`, `Catalog.mcpServers` and `ConnectionProvider.kind`, `.platform`, `.redirectURI`, `.scopes` and `.tokenHosts`, so a response from a server older than these fields still decodes (#2251).
