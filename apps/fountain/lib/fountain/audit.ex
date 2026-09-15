@@ -28,6 +28,16 @@ defmodule Fountain.Audit do
   `api`, `sprite`, `admin`, `admin:<id>`, `system:<worker>`); this moduledoc
   keeps the mechanics.
 
+  The four conversation lifecycle events (`conversation.prompted`,
+  `interrupted`, `terminated`, `released`) follow the same rule from the
+  verb's owner: `Conversations.Termination.audit_lifecycle/5` records them
+  after the server reply and outside any transaction, called from
+  `Conversations.Termination`, `Conversations.Interruption` and the prompt
+  door on `ConversationServer` (#2175). The interrupted-turn row writes
+  (`Conversations.Interruption._unsafe_interrupt_turn/2` and
+  `_unsafe_idle_interrupted_turn/1`, still reachable by their old names on
+  `Conversations`) are conditional bookkeeping and record nothing themselves.
+
   ## Deliberately not audited
 
   High-volume machine state is not audit material, and recording it would bury

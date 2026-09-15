@@ -3762,8 +3762,8 @@ defmodule Fountain.Conversations do
 
   # Public (door for `Fountain.Conversations.Wake`, #2211): both callers
   # (`wake_conversation_for/3`, `create_fresh_sandbox_and_start/4`) moved
-  # there and call this remotely; `resolve_saved_inference/2` below stays
-  # private, since `resume_channel/4` still calls it locally.
+  # there and call this remotely. `resolve_saved_inference/2` below is a
+  # door too (#2216), for `Launch.resume_channel/4`.
   @doc false
   def check_saved_inference(conv, agent) do
     with {:ok, _source} <- resolve_saved_inference(conv, agent), do: :ok
