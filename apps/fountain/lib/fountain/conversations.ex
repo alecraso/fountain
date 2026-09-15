@@ -1185,22 +1185,15 @@ defmodule Fountain.Conversations do
     |> notify_parent_change()
   end
 
-  @doc "Terminate the owned conversation only when no turn or remote execution remains open."
-  def _unsafe_release_conversation(conversation_id, opts \\ []) do
-    # ownership: the lifecycle client/actor received an already-owned conversation.
-    Termination.release_journal(
-      conversation_id,
-      fn current ->
-        current |> Conversation.changeset(%{status: "terminated"}) |> Repo.update()
-      end,
-      opts
-    )
-    |> notify_parent_change()
-    |> case do
-      {:ok, _} -> :ok
-      error -> error
-    end
-  end
+  # Row write moved to `Fountain.Conversations.Termination` in #2268 (one
+  # owner per lifecycle verb, #2175), alongside `_unsafe_finish_conversation_termination/2`
+  # below; this keeps the name `ConversationServer` and the release fence
+  # tests call. `defdelegate` cannot carry the default `opts` value, so this
+  # is a one-line wrapper instead.
+  # ownership: unchanged from the caller's own ownership requirement on this
+  # function; the wrapper only renames the target module.
+  def _unsafe_release_conversation(conversation_id, opts \\ []),
+    do: Termination._unsafe_release_conversation(conversation_id, opts)
 
   defp write_turn_parent(turn, mode, attrs) do
     # ownership: the calling actor/recovery path already owns this exact turn.
@@ -1221,33 +1214,12 @@ defmodule Fountain.Conversations do
     result
   end
 
-  @doc """
-  Finish an actor's termination only while the conversation is still bound to
-  its sandbox. The binding check and status write are one database statement,
-  so a reassignment during provider cleanup cannot terminate the new binding.
-
-  The actor owns both IDs. This is internal lifecycle bookkeeping; the public
-  `Fountain.Conversations.Termination.terminate_conversation/2` records the action's audit once
-  after a successful reply. A missing or moved conversation returns a refusal.
-  """
-  def _unsafe_finish_conversation_termination(conversation_id, sandbox_id) do
-    query =
-      from(c in Conversation,
-        where: c.id == ^conversation_id and c.sandbox_id == ^sandbox_id,
-        select: c
-      )
-
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    case Repo.update_all(query, set: [status: "terminated", updated_at: now]) do
-      {1, [conv]} ->
-        broadcast_sidebar_update(conv.user_id)
-        {:ok, conv}
-
-      {0, _} ->
-        {:error, :sandbox_unavailable}
-    end
-  end
+  # Row write moved to `Fountain.Conversations.Termination` in #2268 (one
+  # owner per lifecycle verb, #2175); this keeps the name
+  # `ConversationServer.finish_termination/2` and the binding isolation test
+  # call.
+  defdelegate _unsafe_finish_conversation_termination(conversation_id, sandbox_id),
+    to: Termination
 
   # The lock turn admission takes, so a reapply and a turn start cannot
   # interleave on one machine. `nil` is a conversation whose machine has not
