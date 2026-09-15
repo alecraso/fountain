@@ -376,7 +376,10 @@ defmodule Fountain.Conversations do
   # sandbox looking like it was still running years later.
   #
   # Only fills a gap — a caller that passes its own `terminated_at` keeps it.
-  defp stamp_terminated_at(changeset) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def stamp_terminated_at(changeset) do
     status = Ecto.Changeset.get_field(changeset, :status)
 
     if status in @billable_terminal and
@@ -395,8 +398,11 @@ defmodule Fountain.Conversations do
   # in places, and double-counting a sandbox would overstate a bill. Provision
   # transitions only — a `suspended → ready` wake reattaches to a sprite whose
   # provision was already recorded, so re-emitting would double-count it.
-  defp record_sandbox_usage(was, %Sandbox{status: "ready"} = sandbox)
-       when was in ["pending", "starting"] do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def record_sandbox_usage(was, %Sandbox{status: "ready"} = sandbox)
+      when was in ["pending", "starting"] do
     Fountain.Billing.record_usage(
       sandbox.user_id,
       "sandbox_provisioned",
@@ -411,7 +417,7 @@ defmodule Fountain.Conversations do
   # sandbox parked (see above) — but the parked interval needs a start and an
   # end of its own so the duration roll-up can subtract it from
   # sandbox_terminated's duration_ms instead of billing parked time (#665).
-  defp record_sandbox_usage("suspended", %Sandbox{status: "ready"} = sandbox) do
+  def record_sandbox_usage("suspended", %Sandbox{status: "ready"} = sandbox) do
     Fountain.Billing.record_usage(
       sandbox.user_id,
       "sandbox_resumed",
@@ -425,8 +431,8 @@ defmodule Fountain.Conversations do
   # billing compute from here (0017). Paired with sandbox_resumed (or, for a
   # sandbox that never wakes again, with sandbox_terminated) so the duration
   # roll-up can tell parked time apart from run time (#665).
-  defp record_sandbox_usage(was, %Sandbox{status: "suspended"} = sandbox)
-       when was not in @billable_terminal do
+  def record_sandbox_usage(was, %Sandbox{status: "suspended"} = sandbox)
+      when was not in @billable_terminal do
     Fountain.Billing.record_usage(
       sandbox.user_id,
       "sandbox_suspended",
@@ -436,8 +442,8 @@ defmodule Fountain.Conversations do
     )
   end
 
-  defp record_sandbox_usage(was, %Sandbox{status: status} = sandbox)
-       when status in @billable_terminal and was not in @billable_terminal do
+  def record_sandbox_usage(was, %Sandbox{status: status} = sandbox)
+      when status in @billable_terminal and was not in @billable_terminal do
     # A sandbox that dies before reaching "ready" never emitted
     # sandbox_provisioned, but it is about to emit sandbox_terminated with a
     # duration — so the conversation count and the sandbox minutes on the
@@ -475,7 +481,7 @@ defmodule Fountain.Conversations do
     )
   end
 
-  defp record_sandbox_usage(_was, _sandbox), do: :ok
+  def record_sandbox_usage(_was, _sandbox), do: :ok
 
   defp sandbox_duration_ms(%Sandbox{inserted_at: nil}), do: 0
 
@@ -941,7 +947,10 @@ defmodule Fountain.Conversations do
   # transaction with the sandbox and the execution allowance, so it cannot
   # share `create_conversation/1` outright; keeping the insert itself in one
   # function is what stops the two shapes drifting.
-  defp insert_conversation_row(attrs) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def insert_conversation_row(attrs) do
     %Conversation{} |> Conversation.changeset(attrs) |> Repo.insert()
   end
 
@@ -954,7 +963,10 @@ defmodule Fountain.Conversations do
   # `reserve_initial_conversation/3` — and
   # `conversation_creation_seam_test.exs` drives each of them and fails if one
   # stops firing.
-  defp after_conversation_created(%Conversation{} = conv) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def after_conversation_created(%Conversation{} = conv) do
     Fountain.Activation.conversation_created(conv)
   end
 
@@ -1657,7 +1669,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  defp record_execution_allowance_created(allowance, user_id, opts) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def record_execution_allowance_created(allowance, user_id, opts) do
     Audit.record(%{
       user_id: user_id,
       action: "conversation.execution_allowance_created",
@@ -2847,7 +2862,10 @@ defmodule Fountain.Conversations do
     with {:ok, _limits} <- resolve_admission_limits(user_id, request), do: :ok
   end
 
-  defp resolve_admission_limits(user_id, request) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def resolve_admission_limits(user_id, request) do
     # Ownership: each caller just fetched the agent by this authenticated user.
     # Read the current account policy, never a request-supplied or cached map.
     case {Fountain.Accounts.get_user(user_id), ExecutionLimits.host_ceiling()} do
@@ -2885,344 +2903,20 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  Create a new sandbox + conversation pair, start a ConversationServer
-  to drive it, optionally seed with the first prompt. Returns the
-  persisted Conversation (preloaded).
-
-  ## Required attrs
-    - `agent_id`              — agent to run
-    - `prompt`                — optional first prompt (sends turn 1 immediately)
-    - `sprite_name`           — optional suffix for the sandbox name, which is always
-                                "fountain-<short-user-id>-<suffix>"; defaults to a random
-                                suffix. Refused with `sandbox_api_access: "none"`, and on
-                                the runner provider, whose names carry placement (#1632)
-    - `vault_id`              — optional vault whose secrets override the env's
-    - `environment_id`        — optional environment to provision from instead of the
-                                agent's own (#783); subject to `agent.allowed_environment_ids`
-    - `permission_policy`     — optional per-tool permission override (#939); may only
-                                narrow the agent's own policy, never widen it
-    - `sandbox_api_access`    — "owner" (default) or "none"; none requires a fresh ephemeral sandbox
-    - `source`                — optional; one of "ui", "api", "agent" (default "api")
-    - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
-    - `title`                 — optional display title (the team page names a teammate with it)
-    - `labels`                — optional `key => value` strings (#1637); see `Conversations.Labels`
+  Start a conversation: a fresh sandbox + conversation, or an attach onto one
+  the caller already has (`attrs["sandbox_id"]`, ADR 0023 gate 3).
+  See `Fountain.Conversations.Launch.start_conversation/2`.
   """
-  def start_conversation(attrs, opts \\ [])
+  def start_conversation(attrs, opts \\ []), do: Launch.start_conversation(attrs, opts)
 
-  # `sandbox_id`: attach to a machine the caller already has instead of
-  # provisioning one (ADR 0023 gate 3). Everything about the launch is
-  # resolved the same way; only the sandbox step differs.
-  def start_conversation(%{"sandbox_id" => sandbox_id} = attrs, opts)
-      when is_binary(sandbox_id) and sandbox_id != "" do
-    attach_conversation(sandbox_id, attrs, opts)
-  end
-
-  def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
-      when is_binary(user_id) do
-    with :ok <- require_provider_commit_boundary(),
-         :ok <- Fountain.Conversations.PromptInput.validate_initial(attrs),
-         %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
-         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
-         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
-         {:ok, cred_set_id} <-
-           resolve_inference_credential_id(attrs["inference_credential_id"], user_id, agent),
-         {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
-         {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
-         :ok <- check_sandbox_api_name(api_access, attrs["sprite_name"]),
-         {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
-         {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
-         :ok <- Fountain.Accounts.check_not_suspended(user_id),
-         :ok <- Fountain.Billing.check_spend(user_id),
-         {:ok, inference_source} <-
-           resolve_admission_inference(user_id, agent, env_id, vault_id, cred_set_id),
-         # A persistent launch lands on the identity's home when there is one
-         # (ADR 0023 gate 6): `{:home, sandbox}` leaves the `with` and attaches
-         # below. Only when there is none does a machine get provisioned, and
-         # it is stamped as the home.
-         :new <- home_or_new(mode, user_id, agent, env_id || agent.environment_id, vault_id),
-         {:ok, provider} <- resolve_sandbox_provider(agent),
-         {:ok, machine_name} <- mint_machine_name(provider, user_id, attrs["sprite_name"]),
-         {:ok, {sandbox, conv, allowance}} <-
-           reserve_initial_conversation(
-             %{
-               environment_id: env_id || agent.environment_id,
-               # The identity the disk is built from (ADR 0023); an attach
-               # later must name the same three.
-               agent_id: agent.id,
-               vault_id: vault_id,
-               mode: mode,
-               machine_name: machine_name,
-               status: "pending",
-               provider: Atom.to_string(provider),
-               user_id: user_id
-             },
-             %{
-               agent_id: agent.id,
-               # Ownership: agent came from the scoped get_agent above.
-               agent_version_id: Agents._unsafe_current_version_id(agent.id),
-               vault_id: vault_id,
-               environment_id: env_id,
-               inference_credential_id: inference_source.set_id,
-               inference_source: Source.dump(inference_source),
-               user_id: user_id,
-               runtime: agent.runtime,
-               status: "pending",
-               source: attrs["source"] || "api",
-               parent_conversation_id: parent_id,
-               channel_id: attrs["channel_id"],
-               title: attrs["title"],
-               sandbox_api_access: api_access,
-               permission_policy: perm_policy,
-               caller_tools: attrs["caller_tools"] || [],
-               labels: attrs["labels"] || %{}
-             },
-             attrs["execution_limits"],
-             opts
-           ) do
-      after_conversation_created(conv)
-      record_execution_allowance_created(allowance, user_id, opts)
-
-      # Recorded here rather than in either branch below: both of them return
-      # {:ok, conv}. The row exists and the sandbox reservation is spent even
-      # when the server fails to start, so "a conversation was created" is
-      # true either way, and a trail that only logged the happy path would
-      # under-report exactly the runs someone is trying to explain.
-      #
-      # The prompt is described, never quoted — see `send_prompt/4`.
-      Audit.record(%{
-        user_id: user_id,
-        action: "conversation.created",
-        resource_type: "conversation",
-        resource_id: conv.id,
-        actor: Keyword.get(opts, :actor, "self"),
-        request_ip: Keyword.get(opts, :request_ip),
-        metadata: %{
-          "agent_id" => agent.id,
-          "agent_name" => agent.name,
-          "source" => conv.source,
-          "with_prompt" => is_binary(attrs["prompt"]) and attrs["prompt"] != "",
-          "parent_conversation_id" => parent_id
-        }
-      })
-
-      # No prompt in the child spec — see Wake.start_conversation_server/4.
-      start_result =
-        Horde.DynamicSupervisor.start_child(
-          Fountain.ConversationSupervisor,
-          {ConversationServer,
-           [
-             conversation_id: conv.id,
-             sandbox_id: sandbox.id,
-             runtime_module: runtime_module
-           ]}
-        )
-
-      case start_result do
-        {:ok, pid} ->
-          if is_binary(attrs["prompt"]) and attrs["prompt"] != "" do
-            ConversationServer.queue_initial_prompt(
-              pid,
-              attrs["prompt"],
-              attrs["images"] || []
-            )
-          end
-
-          result = _unsafe_get_conversation!(conv.id)
-
-          if result.parent_conversation_id do
-            root_id = get_root_conversation_id(result.id)
-            broadcast_graph_update(root_id)
-          end
-
-          broadcast_sidebar_update(user_id)
-          {:ok, result}
-
-        {:error, reason} ->
-          # The conversation row was created successfully; mark it and its
-          # sandbox failed so the status is visible on the conversation page,
-          # then return it so callers (UI + API) navigate there rather than
-          # leaving the user stuck on the new-conversation form.
-          Logger.error(
-            "ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}"
-          )
-
-          if fail_initial_start(conv, sandbox) == :failed,
-            do: Launch.restore_rotated_channel(conv, opts)
-
-          case get_conversation(conv.id, user_id) do
-            nil ->
-              {:error, :not_found}
-
-            result ->
-              broadcast_sidebar_update(user_id)
-              {:ok, result}
-          end
-      end
-    else
-      nil ->
-        {:error, :not_found}
-
-      # The identity already has a home: this launch is a conversation on it.
-      {:home, %Sandbox{} = home} ->
-        attach_conversation(home.id, attrs, opts)
-
-      # Two persistent launches of one identity raced to create its home and
-      # this one lost at the unique index. The winner's row is the home now;
-      # land on it rather than fail a request that asked for nothing unusual.
-      {:error, %Ecto.Changeset{errors: errors}} = err ->
-        if Keyword.has_key?(errors, :home) do
-          with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id),
-               {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-               {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
-               %Sandbox{} = home <-
-                 _unsafe_find_home(user_id, agent.id, env_id || agent.environment_id, vault_id) do
-            attach_conversation(home.id, attrs, opts)
-          else
-            _ -> err
-          end
-        else
-          err
-        end
-
-      {:error, _} = err ->
-        err
-    end
-  end
-
-  # Tenant row waits happen here, before the fleet lock, and the reservation
-  # runs inside them. `with_sandbox_reservation/3` holds
-  # `pg_advisory_xact_lock(@fleet_lock_key)` — one lock shared by every tenant —
-  # so anything that can wait on another transaction must be settled before it
-  # is taken, or one account stalls provisioning for all of them.
-  #
-  # A delayed start error owns only its original, still-pending binding.
-  # Match turn admission's machine -> parent -> sandbox lock order. Status
-  # changes commit together; metering follows commit and provider I/O is absent.
-  defp fail_initial_start(conv, sandbox) do
-    {:ok, result} =
-      Repo.transaction(fn ->
-        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
-          @sandbox_lock_namespace,
-          :erlang.phash2(sandbox.id)
-        ])
-
-        parent = Repo.one(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
-        machine = Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE")
-
-        if pending_initial_binding?(parent, machine, conv, sandbox) and
-             _unsafe_running_turns_elsewhere(sandbox.id, nil) == 0 do
-          parent |> Conversation.changeset(%{status: "failed"}) |> Repo.update!()
-
-          machine
-          |> Sandbox.changeset(%{status: "failed"})
-          |> stamp_terminated_at()
-          |> Repo.update!()
-        else
-          :stale
-        end
-      end)
-
-    case result do
-      %Sandbox{} = failed ->
-        record_sandbox_usage("pending", failed)
-        :failed
-
-      :stale ->
-        :stale
-    end
-  end
-
-  defp pending_initial_binding?(%Conversation{} = parent, %Sandbox{} = machine, conv, sandbox) do
-    Map.take(parent, [:user_id, :sandbox_id, :status]) ==
-      %{user_id: conv.user_id, sandbox_id: sandbox.id, status: "pending"} and
-      Map.take(machine, [:user_id, :provider, :machine_name, :status]) ==
-        %{
-          user_id: conv.user_id,
-          provider: sandbox.provider,
-          machine_name: sandbox.machine_name,
-          status: "pending"
-        }
-  end
-
-  defp pending_initial_binding?(_, _, _, _), do: false
-
-  # An unlocked read was not enough: `create_sandbox/1` and the conversation
-  # insert take `KEY SHARE` on `users` through their foreign keys, and
-  # `Credits.insert_and_move/3` holds that row `FOR UPDATE` across a ledger
-  # insert, lot consumption and the balance move. Taking `FOR SHARE` out here
-  # both settles the wait outside the fleet lock and satisfies those foreign
-  # keys, so the inserts below cannot block on it. The rotation unbind is the
-  # same category of wait and joins them.
-  #
-  # This is one transaction: the nested `Repo.transaction` inside
-  # `with_sandbox_reservation/3` joins it rather than opening another, so the
-  # sandbox, conversation and allowance still commit or roll back together.
-  # That is also why the `case` below re-raises the inner rollback with its
-  # reason: a nested rollback the outer transaction does not re-raise reaches
-  # the caller as `{:error, :rollback}`, which would turn every credits, quota
-  # and fleet refusal into a 500 instead of a 402, 422 or 503.
-  #
-  # The wait does not disappear, it changes hands. This transaction holds
-  # `users FOR SHARE` for its whole life, the fleet-lock wait included, and
-  # `FOR SHARE` conflicts with `FOR UPDATE` — so this tenant's credit postings
-  # now queue behind its own in-flight launch, which may itself be queued
-  # behind every other tenant's. Turn burns, purchases, grants, expiry and
-  # refund clawbacks all post through `Credits.insert_and_move/3`. A
-  # tenant-scoped wait beats a fleet-wide one, which is why it is the right
-  # trade, but a slow credit posting starts here.
-  defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request, opts) do
-    Repo.transaction(fn ->
-      # Set/secret mutations take this same tenant lock. Take it before the
-      # fleet reservation so a source edit cannot stall every tenant's launch.
-      :ok = InferenceCredentials.lock_source(conversation_attrs.user_id)
-
-      Repo.one(
-        from u in Fountain.Accounts.User,
-          where: u.id == ^conversation_attrs.user_id,
-          select: u.id,
-          lock: "FOR SHARE"
-      ) || Repo.rollback(:not_found)
-
-      Repo.one(
-        from a in Agents.Agent,
-          where:
-            a.id == ^conversation_attrs.agent_id and a.user_id == ^conversation_attrs.user_id,
-          select: a.id,
-          lock: "FOR SHARE"
-      ) || Repo.rollback(:not_found)
-
-      case Launch.unbind_rotated_channel(conversation_attrs, opts) do
-        :ok -> :ok
-        {:error, reason} -> Repo.rollback(reason)
-      end
-
-      result =
-        Fountain.Quotas.with_sandbox_reservation(conversation_attrs.user_id, fn ->
-          with {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
-               {:ok, sandbox} <- create_sandbox(sandbox_attrs),
-               {:ok, conv} <-
-                 insert_conversation_row(Map.put(conversation_attrs, :sandbox_id, sandbox.id)),
-               :ok <- reserve_inference(conv),
-               {:ok, allowance} <-
-                 conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
-            {:ok, {sandbox, conv, allowance}}
-          end
-        end)
-
-      case result do
-        {:ok, reserved} -> reserved
-        {:error, reason} -> Repo.rollback(reason)
-      end
-    end)
-  end
-
-  defp resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
     do: {:ok, "owner"}
 
-  defp resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
-  defp resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
+  def resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
+  def resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
 
   # ADR 0045's machine isolation is a claim about a machine, not about a row:
   # a `none` conversation must be alone on a fresh one. `check_sandbox_api_attach/2`
@@ -3230,10 +2924,13 @@ defmodule Fountain.Conversations do
   # only see machines Fountain knows it is sharing. A caller-supplied name can
   # name a machine that already exists — the provider adopts it rather than
   # failing — so the two cannot be asked for together (#1632).
-  defp check_sandbox_api_name("none", name) when is_binary(name) and name != "",
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def check_sandbox_api_name("none", name) when is_binary(name) and name != "",
     do: {:error, :invalid_sandbox_api_access}
 
-  defp check_sandbox_api_name(_access, _name), do: :ok
+  def check_sandbox_api_name(_access, _name), do: :ok
 
   defp check_sandbox_api_attach(sandbox, access) do
     # A fresh none launch must never inherit another conversation's credential,
@@ -3253,29 +2950,17 @@ defmodule Fountain.Conversations do
   # The launch's sandbox mode: the agent's default unless the launch names
   # one (ADR 0023). Not an allowlisted override like `environment_id` — the
   # mode is not a security boundary; the tenant scope on the sandbox is.
-  defp resolve_sandbox_mode(mode, %Agents.Agent{sandbox_mode: default}) when mode in [nil, ""],
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def resolve_sandbox_mode(mode, %Agents.Agent{sandbox_mode: default}) when mode in [nil, ""],
     do: {:ok, default || "ephemeral"}
 
-  defp resolve_sandbox_mode(mode, _agent) when is_binary(mode) do
+  def resolve_sandbox_mode(mode, _agent) when is_binary(mode) do
     if mode in Sandbox.modes(), do: {:ok, mode}, else: {:error, :invalid_sandbox_mode}
   end
 
-  defp resolve_sandbox_mode(_mode, _agent), do: {:error, :invalid_sandbox_mode}
-
-  # `:new` when a machine has to be provisioned; `{:home, sandbox}` when the
-  # identity already has one to land on. A home still provisioning from its
-  # first launch cannot take a second conversation yet — its prompt would be
-  # handed to the wrong server — so it reads as `:provisioning`, the same
-  # retry-shortly answer a mid-provision conversation gives.
-  defp home_or_new("ephemeral", _user_id, _agent, _env_id, _vault_id), do: :new
-
-  defp home_or_new("persistent", user_id, %Agents.Agent{id: agent_id}, env_id, vault_id) do
-    case _unsafe_find_home(user_id, agent_id, env_id, vault_id) do
-      nil -> :new
-      %Sandbox{status: s} when s in ["pending", "starting"] -> {:error, :provisioning}
-      %Sandbox{} = home -> {:home, home}
-    end
-  end
+  def resolve_sandbox_mode(_mode, _agent), do: {:error, :invalid_sandbox_mode}
 
   @doc """
   The live home of an agent identity — the one persistent sandbox for
@@ -3925,12 +3610,16 @@ defmodule Fountain.Conversations do
   # path, so a `ready` machine reattaches and a `suspended` one resumes, and
   # if that delivery is refused the row is removed again so a refused request
   # creates nothing.
-  defp attach_conversation(
-         sandbox_id,
-         %{"agent_id" => agent_id, "user_id" => user_id} = attrs,
-         opts
-       )
-       when is_binary(user_id) do
+  # A door for `Fountain.Conversations.Launch` (#2217), whose fresh-start
+  # `start_conversation/2` clause calls it for the "sandbox_id" attach; not
+  # part of the context's public surface.
+  @doc false
+  def attach_conversation(
+        sandbox_id,
+        %{"agent_id" => agent_id, "user_id" => user_id} = attrs,
+        opts
+      )
+      when is_binary(user_id) do
     with :ok <- require_provider_commit_boundary(),
          :ok <- Fountain.Conversations.PromptInput.validate_initial(attrs),
          %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
@@ -3945,7 +3634,7 @@ defmodule Fountain.Conversations do
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
          {:ok, inference_source} <-
-           resolve_admission_inference(user_id, agent, env_id, vault_id, cred_set_id),
+           Launch.resolve_admission_inference(user_id, agent, env_id, vault_id, cred_set_id),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
          :ok <- check_sandbox_api_attach(sandbox, attrs["sandbox_api_access"]),
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
@@ -4067,7 +3756,8 @@ defmodule Fountain.Conversations do
 
   # A nested transaction does not commit: workers and provider calls must not
   # escape a caller's transaction that can still roll back the accepted rows.
-  # Public (door for `Fountain.Conversations.Wake`, #2211): `start_conversation/2`
+  # Public (door for `Fountain.Conversations.Wake`, #2211, and
+  # `Fountain.Conversations.Launch`, #2217): `start_conversation/2`
   # and `attach_conversation/3` below call it locally; `Wake.wake_conversation_for/3`
   # calls it as a remote door since that function moved out of this module.
   @doc false
@@ -4194,7 +3884,10 @@ defmodule Fountain.Conversations do
 
   # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
   # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
-  defp get_root_conversation_id(conversation_id) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def get_root_conversation_id(conversation_id) do
     sql = """
     WITH RECURSIVE ancestors(id, parent_conversation_id) AS (
       SELECT id, parent_conversation_id FROM conversations WHERE id = $1
@@ -4217,7 +3910,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  defp broadcast_graph_update(root_id) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def broadcast_graph_update(root_id) do
     Phoenix.PubSub.broadcast(
       Fountain.PubSub,
       "conversations:graph:#{root_id}",
@@ -4258,7 +3954,8 @@ defmodule Fountain.Conversations do
   # unique index makes that "cannot" rather than "will not". A name that
   # already carries the prefix — one an earlier launch handed back — is taken
   # as it stands.
-  # Public (door for `Fountain.Conversations.Wake`, #2211):
+  # Public (door for `Fountain.Conversations.Wake`, #2211, and
+  # `Fountain.Conversations.Launch`, #2217):
   # `create_fresh_sandbox_and_start/4` moved there and calls this remotely;
   # `start_conversation/2` below still calls it locally.
   @doc false
@@ -4307,10 +4004,13 @@ defmodule Fountain.Conversations do
   #
   # A legitimate spawn comes from inside a sprite holding that tenant's own
   # token, so ownership always matches; a mismatch is a bug or an attack.
-  defp resolve_parent_id(nil, _user_id), do: {:ok, nil}
-  defp resolve_parent_id("", _user_id), do: {:ok, nil}
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def resolve_parent_id(nil, _user_id), do: {:ok, nil}
+  def resolve_parent_id("", _user_id), do: {:ok, nil}
 
-  defp resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
+  def resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
     # A header that is not a uuid is not a conversation anyone owns.
     # `get_conversation/2` reads it as nil rather than raising (#1679), so this
     # stays the plain lookup it was.
@@ -4375,19 +4075,10 @@ defmodule Fountain.Conversations do
     if id in allowed, do: :ok, else: {:error, :environment_not_allowed}
   end
 
-  defp resolve_admission_inference(user_id, agent, env_id, vault_id, set_id) do
-    with {:ok, source, _credentials} <-
-           InferenceResolution.select(user_id, agent,
-             credential_set_id: set_id,
-             environment_id: env_id,
-             vault_id: vault_id
-           ),
-         :ok <- Fountain.PlatformInference.gate_source(source) do
-      {:ok, source}
-    end
-  end
-
-  defp reserve_inference(conv) do
+  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
+  # context's public surface.
+  @doc false
+  def reserve_inference(conv) do
     InferenceBinding.reserve(conv, Source.load(conv.inference_source))
   end
 
