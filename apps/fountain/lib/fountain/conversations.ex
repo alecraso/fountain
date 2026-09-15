@@ -2916,55 +2916,18 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  Tear down every home of `agent_id` — what deleting the agent does, since
-  the identity the homes were built for is gone (ADR 0023 step 5). Each live
-  conversation on a home is terminated (a home survives that on its own), then
-  the sprite is destroyed and the row terminated. Best-effort per machine; a
-  provider error is logged and the row still retires, so the reaper's sweep
-  sees a terminal row rather than a live one nobody can find. Returns the
-  number of homes torn down, or a fencing error. Refuses an enclosing database
-  transaction before any teardown. Admission is fenced before actor shutdown
-  and provider I/O; already admitted turns may be interrupted by this forced
-  operation. `_unsafe_`: the caller owns the agent.
+  Delegates to `Termination.destroy_homes_for_agent/2`, moved there in #2256.
   """
-  def _unsafe_destroy_homes_for_agent(agent_id, opts \\ []) when is_binary(agent_id) do
-    if Repo.in_transaction?() do
-      {:error, :provider_transaction_open}
-    else
-      from(s in Sandbox,
-        where:
-          s.agent_id == ^agent_id and s.mode == "persistent" and
-            s.status not in ["terminated", "failed"]
-      )
-      |> Repo.all()
-      |> Enum.reduce_while(0, fn home, count ->
-        case _unsafe_destroy_home(home, Keyword.put_new(opts, :reason, "agent_deleted")) do
-          :ok -> {:cont, count + 1}
-          # A home deleted since the query above is already gone. Keep this
-          # idempotence specific to agent deletion; other fence errors still stop it.
-          {:error, :not_found} -> {:cont, count}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
-    end
-  end
+  defdelegate _unsafe_destroy_homes_for_agent(agent_id, opts \\ []),
+    to: Termination,
+    as: :destroy_homes_for_agent
 
-  @doc false
-  def _unsafe_destroy_home(%Sandbox{} = sandbox, opts \\ []) do
-    if Repo.in_transaction?() do
-      {:error, :provider_transaction_open}
-    else
-      with {:ok, fenced} <- _unsafe_fence_sandbox_for_teardown(sandbox, opts) do
-        fenced = Repo.preload(fenced, :conversations)
-
-        fenced.conversations
-        |> Enum.reject(&(&1.status in ["terminated", "failed"]))
-        |> Enum.each(&Termination.terminate_conversation(&1.id, actor: "system:home_reset"))
-
-        _unsafe_retire_home(fenced)
-      end
-    end
-  end
+  @doc """
+  Delegates to `Termination.destroy_home/2`, moved there in #2256.
+  """
+  defdelegate _unsafe_destroy_home(sandbox, opts \\ []),
+    to: Termination,
+    as: :destroy_home
 
   @doc """
   Commit an admission fence before a caller tears down a sandbox. No provider
@@ -3079,36 +3042,6 @@ defmodule Fountain.Conversations do
         select: c.id,
         lock: "FOR UPDATE"
     ) || Repo.rollback(:sandbox_unavailable)
-  end
-
-  # Destroy the sprite behind a home and retire its row. Best-effort on the
-  # provider side: a destroy error is logged and the row still goes
-  # `terminated`, so the reaper's sweep sees a terminal row rather than a
-  # live one nobody can find. What happens to the conversations on the home
-  # is the caller's decision — agent delete terminates them, a reset keeps
-  # them.
-  #
-  # `terminated_at` is deliberately not passed. A caller that already retired
-  # the row under its machine lock — `do_reset_sandbox/2` does, so that a
-  # bounded registration cannot slip in behind the destroy — keeps the stamp it
-  # wrote, and `update_sandbox/2` sees no change to make. A caller that did not
-  # gets one from `stamp_terminated_at/1`. Passing `utc_now()` here instead
-  # moved the stamp to *after* the provider call, so it disagreed with the
-  # `duration_ms` on the `sandbox_terminated` usage row by the length of a
-  # destroy — and that row is what a provider bill is reconciled against.
-  defp _unsafe_retire_home(%Sandbox{} = sandbox) do
-    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.machine_name)
-
-    case Managoat.Sandbox.destroy(handle) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.warning("home #{sandbox.machine_name} destroy failed: #{inspect(reason)}")
-    end
-
-    {:ok, _} = update_sandbox(sandbox, %{status: "terminated"})
-    :ok
   end
 
   @doc """
