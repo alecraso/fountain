@@ -26,6 +26,7 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.Reapply
   alias Fountain.Conversations.Wake
   alias Fountain.Conversations.Interruption
+  alias Fountain.Conversations.Termination
   alias Fountain.Conversations.InferenceResolution
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
@@ -1193,7 +1194,7 @@ defmodule Fountain.Conversations do
   @doc "Terminate the owned conversation only when no turn or remote execution remains open."
   def _unsafe_release_conversation(conversation_id, opts \\ []) do
     # ownership: the lifecycle client/actor received an already-owned conversation.
-    ExecutionGuard._unsafe_release_parent(
+    Termination.release_journal(
       conversation_id,
       fn current ->
         current |> Conversation.changeset(%{status: "terminated"}) |> Repo.update()
@@ -1297,7 +1298,7 @@ defmodule Fountain.Conversations do
   def delete_conversation(%Conversation{} = conv, opts \\ []) do
     # ownership: conv is the caller's tenant-scoped row. Persist cleanup before
     # any potentially blocking termination and before deleting that parent.
-    with {:ok, _} <- ExecutionGuard._unsafe_interrupt(conv.id) do
+    with {:ok, _} <- Interruption.retire_journal_before_reattach(conv.id) do
       delete_after_retirement(conv, opts)
     end
   end
