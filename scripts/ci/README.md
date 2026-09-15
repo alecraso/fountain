@@ -19,7 +19,7 @@ name in a red build says which toolchain to look at:
 
 | Job | What it runs |
 |---|---|
-| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, the changelog guard, the issue-citation report (`scripts/ci/check_issue_refs.py`, advisory) and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Required even for docs-only changes and reused trees |
+| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, the changelog guard and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Required even for docs-only changes and reused trees |
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
@@ -305,51 +305,6 @@ the `prose-advice` artifact retains complete output for seven days. A linter
 failure is also reported as a warning. Tool installation failures still fail
 the job. Compilation, links, anchors, snippets, nav and CLI docs parity remain
 blocking checks in the Elixir and Go suites.
-
-## Issue and PR citations
-
-`scripts/ci/check_issue_refs.py` resolves every `#N` (and
-`github.com/managoat/fountain/issues/N` or `/pull/N` link) that a PR's diff
-adds and reports each one's state and title. It exists because #1006 was
-cited in 20 places as the tracker for retiring the MkDocs site, and was an
-unrelated open PR: nothing in CI resolved a citation, so the number
-survived three green runs and two merges (#1014).
-
-The rule is that a citation in code names history, so a newly added number
-should resolve **and already be closed or merged**. Existence alone catches
-nothing, because #1006 existed. The check is scoped to added lines: the
-tree holds 2,000-odd citations, and diff scope makes it a ratchet without
-an allowlist.
-
-It runs in `workflow-checks` on `pull_request` only, as stage 1: one
-comment per PR (updated on every run: the `<!-- check-issue-refs -->` marked
-comment left by `github-actions[bot]`, or by the token's user locally, on
-whichever page of the thread it sits) and a step summary, gating nothing.
-The marker alone is public, so a pasted copy by anyone else is never edited. A PR that adds no citation gets
-no comment. Stage 2 is `--strict`, which exits 1 on an open or missing
-citation: add it and remove `continue-on-error` from the step once the
-regex has held up over a few weeks. Under `--strict`, a PR that cites the
-issue it is fixing will fail, since that issue is open until the merge; that
-is the trade-off to settle before promoting it.
-
-The regex is the hard part, not the API call. `#111827` is a colour,
-`&#106;` is a numeric character reference and `106` is a plausible issue
-number. A match needs no `&`, `#` or word character before it, no leading
-zero, no `;` after it (`color: #666;`), and a value at or under the repo's
-newest issue-or-PR number, which the script reads from the API; stylesheets
-are skipped. Three-digit numeric colours in prose (`#333` outside CSS) can
-still match, which is why stage 1 comments rather than gates.
-
-Run it on a branch or on any PR's diff:
-
-```sh
-python3 scripts/ci/check_issue_refs.py --base origin/main
-gh pr diff 1008 | python3 scripts/ci/check_issue_refs.py --diff -
-```
-
-Without `GH_TOKEN` the public API allows 60 requests an hour. Usage and API
-failures exit 2; with `continue-on-error` the step reports them without
-blocking a merge.
 
 ## Check the CI policy locally
 

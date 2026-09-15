@@ -1876,17 +1876,14 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # The changelog guard reads the PR's labels; the citation check
-      # leaves one comment per PR (#1014). A fork's token stays read-only
-      # whatever this says, and the check tolerates that.
-      pull-requests: write
+      # The changelog guard reads the PR's labels.
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           persist-credentials: false
-          # The changelog guard and the citation check diff the PR's merge
-          # commit against its base, which is that commit's first parent:
-          # one level of history.
+          # The changelog guard diffs the PR's merge commit against its
+          # first parent, so it needs one level of history.
           fetch-depth: 2
       - name: Reject conflict markers
         run: python3 scripts/conflict-markers.py
@@ -1906,8 +1903,8 @@ jobs:
         # red this way within ten minutes of #2164 landing, and a re-run
         # cannot recover because the merge ref moves again. The first
         # parent is the base the merge was actually built against and is
-        # always present in a depth-2 checkout. Both diff-scoped steps
-        # below read PR_BASE_SHA.
+        # always present in a depth-2 checkout. The changelog guard
+        # below reads PR_BASE_SHA.
         if: ${{ github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -1944,22 +1941,6 @@ jobs:
             if [ -n "${label}" ]; then args+=(--label "${label}"); fi
           done < <(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name')
           python3 scripts/changelog.py guard --base "${PR_BASE_SHA}" --branch "${HEAD_REF}" "${args[@]}"
-      - name: Resolve the issue and PR numbers this PR cites
-        # A citation in code names history, so a newly added `#N` should
-        # resolve and already be closed or merged. #1006 was cited in 20
-        # places as the MkDocs-retirement tracker and was an unrelated open
-        # PR; nothing resolved it (#1014). Stage 1: the script lists every
-        # new citation with its state and title in one PR comment and in
-        # the step summary, and gates nothing. Promote it by adding
-        # --strict and dropping continue-on-error once the regex has held
-        # up. pull_request only: it needs the diff, a PR to comment on and
-        # the API.
-        if: ${{ github.event_name == 'pull_request' }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 scripts/ci/check_issue_refs.py --base "${PR_BASE_SHA}" --pr "${PR_NUMBER}" --comment
       # This job is required even for docs-only changes and reused trees.
       # The path-filtered Alert rules workflow alone cannot gate a merge.
       - name: Install the alert rule evaluator
