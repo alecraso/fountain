@@ -16,6 +16,7 @@ defmodule FountainWeb.EventsController do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.LogEvent
+  alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
 
@@ -61,7 +62,7 @@ defmodule FountainWeb.EventsController do
       ]
     ],
     responses: [
-      ok: {"SSE stream", "text/event-stream", %OpenApiSpex.Schema{type: :string}}
+      ok: {"SSE stream", "text/event-stream", Schemas.StreamLogEvent}
     ]
   )
 

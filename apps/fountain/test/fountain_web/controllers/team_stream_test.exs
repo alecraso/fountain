@@ -159,6 +159,11 @@ defmodule FountainWeb.TeamStreamTest do
     assert decoded["conversation_id"] == ada_conv.id
     assert decoded["agent_id"] == ada.id
     assert decoded["kind"] == "output"
+
+    # #2297: the frame this stream actually sends matches the schema the
+    # operation now declares, not just the bare string it used to.
+    assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded) ==
+             :ok
   end
 
   test "the first byte is a comment, sent before any event or heartbeat", %{

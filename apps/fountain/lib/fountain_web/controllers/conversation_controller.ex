@@ -1025,7 +1025,7 @@ defmodule FountainWeb.ConversationController do
       ]
     ],
     responses: [
-      ok: {"SSE stream", "text/event-stream", %OpenApiSpex.Schema{type: :string}},
+      ok: {"SSE stream", "text/event-stream", Schemas.StreamLogEvent},
       not_found: {"Not found", "application/json", Schemas.Error}
     ]
   )

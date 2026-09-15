@@ -2020,6 +2020,57 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule StreamLogEvent do
+    @moduledoc false
+    require OpenApiSpex
+
+    # Reuses LogEvent's property definitions (minus `id`, which the SSE frame
+    # carries in its `id:` line rather than the JSON body) so the two schemas
+    # cannot drift on the fields they share. `required` follows the same rule:
+    # whatever LogEvent requires other than `id`.
+    OpenApiSpex.schema(%{
+      title: "StreamLogEvent",
+      description:
+        "One frame of the conversation, events or team SSE log stream (#2297). Same " <>
+          "fields as `LogEvent` minus `id` — the frame's id travels in the SSE `id:` " <>
+          "line, never the JSON body — plus `conversation_id` and `agent_id`, which the " <>
+          "REST log feed never sends because its URL or list item already names the " <>
+          "conversation.\n\n" <>
+          "Not every stream sends every optional field here; see each property's own " <>
+          "description for which of `GET /api/conversations/:id/stream`, " <>
+          "`GET /api/events` and `GET /api/team/stream` include it.",
+      type: :object,
+      properties:
+        LogEvent.schema().properties
+        |> Map.delete(:id)
+        |> Map.merge(%{
+          duration_ms: %Schema{
+            type: :integer,
+            nullable: true,
+            description:
+              "Sent on `GET /api/events`. Not sent on `GET /api/conversations/:id/stream` " <>
+                "or `GET /api/team/stream`."
+          },
+          conversation_id: %Schema{
+            type: :string,
+            format: :uuid,
+            description:
+              "Which conversation this event belongs to. Sent on `GET /api/events` and " <>
+                "`GET /api/team/stream`; not sent on `GET /api/conversations/:id/stream`, " <>
+                "whose URL already names the conversation."
+          },
+          agent_id: %Schema{
+            type: :string,
+            format: :uuid,
+            description:
+              "The teammate whose conversation this is. Sent only on " <>
+                "`GET /api/team/stream`, to route the event to a roster row."
+          }
+        }),
+      required: LogEvent.schema().required -- [:id]
+    })
+  end
+
   defmodule LogEventListResponse do
     @moduledoc false
     require OpenApiSpex

@@ -121,6 +121,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.InferenceCredentialSet, "providers.[]"} => {Credential, :providers},
     {FountainWeb.Schemas.LogEvent, "kind"} => {LogEvent, :kinds},
     {FountainWeb.Schemas.LogEvent, "state"} => {LogEvent, :states},
+    # StreamLogEvent (#2297) reuses LogEvent's own property map for these,
+    # so the same domain lists apply.
+    {FountainWeb.Schemas.StreamLogEvent, "kind"} => {LogEvent, :kinds},
+    {FountainWeb.Schemas.StreamLogEvent, "state"} => {LogEvent, :states},
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
     {FountainWeb.Schemas.SandboxRequest, "kind"} => {Fountain.SandboxQueue.Request, :kinds},
