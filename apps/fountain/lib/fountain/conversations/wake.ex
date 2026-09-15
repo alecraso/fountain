@@ -49,7 +49,7 @@ defmodule Fountain.Conversations.Wake do
   # established there; `sandbox_id` is the conversation's own row.
   def maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
 
-  def maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id, user_id: user_id}) do
+  def maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
     case Conversations._unsafe_get_sandbox(sandbox_id) do
       %Sandbox{reset_requested_at: at, status: status}
       when not is_nil(at) and status not in ["terminated", "failed"] ->
@@ -63,15 +63,18 @@ defmodule Fountain.Conversations.Wake do
       # ended (crashed, or lost its own race) without ever finalizing —
       # possibly after its provider suspend call actually succeeded, in
       # which case the disk is genuinely parked at the provider though this
-      # row still says `ready`. Reconcile against the provider rather than
-      # trusting the row (round 4 finding 2), instead of falling straight
-      # through to an ordinary probe.
-      %Sandbox{status: "ready", park_claimed_at: at} = sandbox
+      # row still says `ready`. This function does no provider I/O and no
+      # write of its own (#2286 round 5 finding 4) — recovering it is
+      # compute, and a suspended account must be refused before any compute
+      # restarts, not after. The caller runs every admission gate first,
+      # then recovers via `Wake.recover_stale_park/3`, passing back the
+      # exact stamp this read saw.
+      %Sandbox{status: "ready", park_claimed_at: at}
       when not is_nil(at) ->
         if Lifecycle.park_claim_live?(at, DateTime.utc_now()) do
           {:error, :sandbox_parking}
         else
-          recover_stale_park(sandbox, sandbox_id, user_id)
+          {:recover_stale_park, sandbox_id, at}
         end
 
       %{status: status, machine_name: name} = sandbox
@@ -145,47 +148,101 @@ defmodule Fountain.Conversations.Wake do
     end
   end
 
-  # A leaf of maybe_reuse_sandbox/1's stale-claim clause (#2286 round 4
-  # finding 2). A stale claim means the reaper's run ended — crashed, or
-  # lost its own race for the second (finalize) lock — without recording
-  # what actually happened at the provider. Reconciles against the
-  # provider's own report rather than trusting the row, under the same
-  # quota reservation `wake_suspended_sandbox/2` takes (`exclude:
-  # sandbox_id`, so this sandbox does not count against its own capacity
-  # check) — the same lock, because resuming a genuinely parked machine is
-  # exactly `wake_suspended_sandbox/2`'s own case, just discovered late.
-  defp recover_stale_park(sandbox, sandbox_id, user_id) do
-    provider = Conversations.sandbox_provider_atom(sandbox)
+  # Recovers a stale park claim (#2286 round 5 finding 1) as a serialized
+  # takeover, not a read carried only under the quota lock: a stale
+  # observation racing a reaper that has since claimed the row for real
+  # (or is still mid-operation past the TTL — the same case, discovered
+  # late) must not let this wake clear a live claim out from under it.
+  #
+  # Called only from `wake_conversation_for/3`, after every admission gate
+  # the reuse arm runs (finding 4) — recovery is compute, gated the same
+  # as any other compute this wake would restart.
+  #
+  #   1. Take over: under `Conversations.with_sandbox_lock/2` (namespace
+  #      4316, the reaper's own lock), re-read and validate full
+  #      admissibility, then write a fresh stamp of our own. The reaper's
+  #      claim step already refuses a live claim, so once this commits no
+  #      reaper can claim while the provider round trip below runs.
+  #   2. Provider round trip: outside that lock (never provider I/O under
+  #      it), but still inside the quota reservation transaction below —
+  #      the same precedent `resume_and_wake/1` sets for
+  #      `wake_suspended_sandbox/2`, and for the same reason: recovering a
+  #      genuinely parked machine is that function's own case, discovered
+  #      late.
+  #   3. Finalize: under the sandbox lock again, a CAS on our own stamp —
+  #      write only if it is still the one on the row. A mismatch means
+  #      the takeover itself was lost while the provider round trip ran;
+  #      write nothing and answer retryably.
+  #
+  # ownership: sandbox_id, user_id and observed_stamp all came from
+  # maybe_reuse_sandbox/1's already tenant-scoped conv.
+  defp recover_stale_park(user_id, sandbox_id, observed_stamp) do
+    result =
+      Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
+        case claim_stale_park(sandbox_id, observed_stamp) do
+          {:ok, {:takeover, sandbox, takeover_stamp}} ->
+            finish_stale_park(sandbox, sandbox_id, takeover_stamp)
 
-    if provider != Fountain.SandboxProviders.default_provider() and
-         not Fountain.SandboxProviders.enabled?(provider) do
-      Logger.warning(
-        "sandbox #{sandbox_id} is on disabled provider #{provider}; refusing to wake or retire"
-      )
+          {:ok, other} ->
+            {:ok, other}
 
-      {:error, {:sandbox_provider_disabled, provider}}
-    else
-      result =
-        Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
-          # ownership: sandbox_id and user_id both came from maybe_reuse_sandbox/1's
-          # already tenant-scoped conv; this re-read is under the lock above.
-          case Conversations._unsafe_get_sandbox(sandbox_id) do
-            %Sandbox{status: "ready", park_claimed_at: at} = fresh when not is_nil(at) ->
-              reconcile_stale_park(fresh, provider, sandbox_id)
+          {:error, _} = error ->
+            error
+        end
+      end)
 
-            _ ->
-              # Someone else already resolved this row (a legitimate wake,
-              # or a fresh reaper claim) between the outer read above and
-              # this re-read under the lock.
-              {:ok, {:reuse, sandbox_id}}
-          end
-        end)
-
-      case result do
-        {:ok, outcome} -> outcome
-        {:error, reason} -> {:error, reason}
-      end
+    case result do
+      {:ok, outcome} -> outcome
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  # The takeover lock. `reset_requested_at` alone covers a teardown fence
+  # too — `Lifecycle.fence_sandbox_for_teardown/2` never sets
+  # `teardown_requested_at` without it — the same single check
+  # `Launch.check_attachable/4` uses for the identical reason.
+  defp claim_stale_park(sandbox_id, observed_stamp) do
+    Conversations.with_sandbox_lock(sandbox_id, fn ->
+      # ownership: sandbox_id came from maybe_reuse_sandbox/1's already
+      # tenant-scoped conv; observed_stamp is what that same read saw.
+      case Conversations._unsafe_get_sandbox(sandbox_id) do
+        nil ->
+          {:ok, :create_new}
+
+        %Sandbox{status: status} when status in ["terminated", "failed"] ->
+          {:ok, :create_new}
+
+        %Sandbox{status: "ready", reset_requested_at: nil, park_claimed_at: at} = fresh ->
+          cond do
+            is_nil(at) ->
+              # Someone else already recovered (or cleared) it — nothing
+              # left to take over; proceed as a plain reuse.
+              {:ok, {:reuse, sandbox_id}}
+
+            at == observed_stamp ->
+              takeover_stamp = DateTime.utc_now()
+
+              {:ok, updated} =
+                Conversations.update_sandbox(fresh, %{park_claimed_at: takeover_stamp})
+
+              {:ok, {:takeover, updated, takeover_stamp}}
+
+            true ->
+              # A different reaper (or a fresh claim) owns this row now.
+              {:error, :sandbox_parking}
+          end
+
+        %Sandbox{status: "ready"} ->
+          # A reset or teardown fence landed.
+          {:error, :sandbox_reset_pending}
+
+        _ ->
+          # `suspended` (a park finished elsewhere), `pending`/`starting`
+          # (should not happen for a row that was ready-with-a-claim a
+          # moment ago), or anything else: retryable, never a silent reuse.
+          {:error, :sandbox_parking}
+      end
+    end)
   end
 
   # The provider status vocabulary (`Managoat.Sandbox.info/0`:
@@ -194,29 +251,22 @@ defmodule Fountain.Conversations.Wake do
   # means the reaper's provider suspend call actually succeeded before it
   # crashed (or lost its race): the resume it never got to record. Anything
   # else means that call never reached (or never finished) the provider —
-  # the claim is simply stale, nothing to undo.
-  defp reconcile_stale_park(sandbox, provider, sandbox_id) do
-    handle = Managoat.Sandbox.build_handle(provider, sandbox.machine_name)
+  # the claim is simply stale, nothing to undo. Runs with no lock held —
+  # `claim_stale_park/2` already released the sandbox lock, and the
+  # reservation transaction stays open around this the same way
+  # `resume_and_wake/1` runs inside `wake_suspended_sandbox/2`'s.
+  defp finish_stale_park(sandbox, sandbox_id, takeover_stamp) do
+    handle =
+      Managoat.Sandbox.build_handle(
+        Conversations.sandbox_provider_atom(sandbox),
+        sandbox.machine_name
+      )
 
     case Managoat.Sandbox.get(handle) do
       {:ok, %{status: :suspended}} ->
         case Managoat.Sandbox.resume(handle) do
           {:ok, _} ->
-            now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-            {:ok, _updated} =
-              Conversations.update_sandbox(sandbox, %{
-                status: "ready",
-                # The machine was genuinely parked with nothing recording
-                # it: this is the resume the crashed reaper run never got
-                # to make, so the max-lifetime clock (anchored to
-                # last_resumed_at || inserted_at) restarts here rather than
-                # silently including the parked interval.
-                last_resumed_at: now,
-                park_claimed_at: nil
-              })
-
-            {:ok, {:reuse, sandbox_id}}
+            finalize_stale_park(sandbox_id, takeover_stamp, resumed?: true)
 
           {:error, reason} ->
             Logger.warning(
@@ -224,17 +274,22 @@ defmodule Fountain.Conversations.Wake do
                 "(#{inspect(reason)}); leaving it parked at the provider"
             )
 
+            # The provider call itself failed — nothing to finalize, and
+            # our takeover must not strand the row for the TTL: clear it
+            # so the next wake (or the reaper) can act on it.
+            _ = clear_stale_park_takeover(sandbox_id, takeover_stamp)
             {:error, :sprite_probe_failed}
         end
 
       {:ok, _info} ->
-        {:ok, updated} = Conversations.update_sandbox(sandbox, %{park_claimed_at: nil})
-        {:ok, {:reuse, updated.id}}
+        finalize_stale_park(sandbox_id, takeover_stamp, resumed?: false)
 
       {:error, :not_found} ->
+        _ = clear_stale_park_takeover(sandbox_id, takeover_stamp)
         {:ok, :create_new}
 
       {:error, {:unavailable, :runner_offline}} ->
+        _ = clear_stale_park_takeover(sandbox_id, takeover_stamp)
         {:error, :runner_offline}
 
       {:error, reason} ->
@@ -243,8 +298,65 @@ defmodule Fountain.Conversations.Wake do
             "#{inspect(reason)}"
         )
 
+        _ = clear_stale_park_takeover(sandbox_id, takeover_stamp)
         {:error, :sprite_probe_failed}
     end
+  end
+
+  # The finalize CAS: only if our takeover stamp is still the one on the
+  # row does this write anything. A stamp that no longer matches means the
+  # takeover itself was lost (a reset fence, or — in principle, since
+  # nothing else writes `park_claimed_at` while it holds our stamp —
+  # nothing legitimate) while the provider round trip above ran; write
+  # nothing and answer retryably rather than resolve a row we no longer
+  # own. `woken_at` is stamped the same as an ordinary reuse's locked
+  # registration (finding 2) — this recovery is the wake, for the reaper's
+  # purposes, exactly as much as starting a server is.
+  defp finalize_stale_park(sandbox_id, takeover_stamp, resumed?: resumed?) do
+    {:ok, result} =
+      Conversations.with_sandbox_lock(sandbox_id, fn ->
+        now = DateTime.utc_now()
+
+        # ownership: sandbox_id came from maybe_reuse_sandbox/1's already
+        # tenant-scoped conv, via claim_stale_park/2's own takeover.
+        case Conversations._unsafe_get_sandbox(sandbox_id) do
+          %Sandbox{park_claimed_at: ^takeover_stamp} = fresh ->
+            attrs =
+              if resumed?,
+                do: %{
+                  park_claimed_at: nil,
+                  last_resumed_at: DateTime.truncate(now, :second),
+                  woken_at: now
+                },
+                else: %{park_claimed_at: nil, woken_at: now}
+
+            {:ok, _updated} = Conversations.update_sandbox(fresh, attrs)
+            {:ok, :ok}
+
+          _ ->
+            {:ok, :lost}
+        end
+      end)
+
+    case result do
+      :ok -> {:ok, {:reuse, sandbox_id}}
+      :lost -> {:error, :sandbox_parking}
+    end
+  end
+
+  defp clear_stale_park_takeover(sandbox_id, takeover_stamp) do
+    Conversations.with_sandbox_lock(sandbox_id, fn ->
+      # ownership: sandbox_id came from maybe_reuse_sandbox/1's already
+      # tenant-scoped conv, via claim_stale_park/2's own takeover.
+      case Conversations._unsafe_get_sandbox(sandbox_id) do
+        %Sandbox{park_claimed_at: ^takeover_stamp} = fresh ->
+          {:ok, updated} = Conversations.update_sandbox(fresh, %{park_claimed_at: nil})
+          {:ok, updated}
+
+        fresh ->
+          {:ok, fresh}
+      end
+    end)
   end
 
   # Waking a suspended sandbox turns a parked sprite back into compute, so it
@@ -396,64 +508,32 @@ defmodule Fountain.Conversations.Wake do
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
       case maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
-          # Reuse provisions nothing, so the fresh-path gates below never ran
-          # here — a canceled or suspended user could restart a server against
-          # a live sprite and keep prompting (#313). Same checks. Reusing a
-          # `ready` sandbox adds no concurrency, so no quota; waking a
-          # `suspended` one re-adds compute, so wake_suspended_sandbox re-runs
-          # the quota gate. The per-turn gate in ConversationServer is the
-          # backstop; this one makes the refusal synchronous at the API door.
+          reuse_sandbox(conv, agent, sandbox_id, runtime_module, initial_prompt)
+
+        # Recovering a stale claim is compute (a provider resume, or at
+        # least treating the row as live again) — gated exactly like any
+        # other compute this wake would restart, not decided inside the
+        # side-effect-free probe (#2286 round 5 finding 4). An interrupt
+        # has nothing to run either way, so it is refused the same
+        # retryable way a live claim is rather than paying for a recovery
+        # whose result it would immediately discard; the next `:work` wake
+        # recovers it instead.
+        {:recover_stale_park, _sandbox_id, _observed_stamp} when purpose == :interrupt ->
+          {:error, :sandbox_parking}
+
+        {:recover_stale_park, sandbox_id, observed_stamp} ->
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
                :ok <- Fountain.Billing.check_spend(conv.user_id),
-               :ok <- check_saved_inference(conv, agent),
-               {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            # #2286 round 4 finding 1: maybe_reuse_sandbox/1's claim check
-            # above and server registration below are two different moments
-            # — the reaper's claim step can land in between, taking the
-            # sandbox's advisory lock and checking any_server_alive? under
-            # it. Re-checking the claim and registering the server inside
-            # that same lock makes the two atomic with each other: whichever
-            # of this wake or a reaper claim reaches the lock first is the
-            # one the other must see. `Horde.DynamicSupervisor.start_child/2`
-            # is a supervisor call, not provider I/O — the server's actual
-            # provisioning runs later in its own `handle_continue(:provision)`
-            # — so this does not violate the "no provider I/O under a lock"
-            # rule every other `with_sandbox_lock/2` caller follows.
-            # `await_registered` and all real provider work stay outside it.
-            # ownership: sandbox_id is conv's own sandbox_id, and conv was
-            # established tenant-scoped by this function's own caller.
-            case Conversations.with_sandbox_lock(sandbox_id, fn ->
-                   fresh = Conversations._unsafe_get_sandbox(sandbox_id)
+               :ok <- check_saved_inference(conv, agent) do
+            case recover_stale_park(conv.user_id, sandbox_id, observed_stamp) do
+              {:reuse, id} ->
+                reuse_sandbox(conv, agent, id, runtime_module, initial_prompt)
 
-                   cond do
-                     is_nil(fresh) ->
-                       {:error, :sandbox_unavailable}
+              :create_new ->
+                create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
 
-                     not is_nil(fresh.park_claimed_at) and
-                         Lifecycle.park_claim_live?(fresh.park_claimed_at, DateTime.utc_now()) ->
-                       {:error, :sandbox_parking}
-
-                     true ->
-                       start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
-                   end
-                 end) do
-              {:error, {:already_started, winner_pid}} ->
-                # Lost a concurrent wake of the same conversation to another
-                # caller reusing the same sandbox. Mirrors the handoff in
-                # create_fresh_sandbox_and_start/4 (#330), but reuse provisions
-                # no row of its own, so there is nothing here to clean up —
-                # just hand the prompt to the winner, which drops it if a turn
-                # is already running.
-                if is_binary(initial_prompt) and initial_prompt != "" do
-                  ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
-                end
-
-                # ownership: conv established tenant-scoped above; this
-                # re-fetch reads under that same ownership.
-                {:ok, Conversations._unsafe_get_conversation!(conv.id)}
-
-              other ->
-                other
+              {:error, _} = err ->
+                err
             end
           end
 
@@ -520,6 +600,133 @@ defmodule Fountain.Conversations.Wake do
 
   defp check_saved_inference(conv, agent) do
     with {:ok, _source} <- Conversations.resolve_saved_inference(conv, agent), do: :ok
+  end
+
+  # The reuse arm, shared by maybe_reuse_sandbox/1's plain {:reuse, _} and
+  # a successful stale-claim recovery (#2286 round 5 finding 4): recovery
+  # leaves the row exactly `ready`, no claim, so it re-enters here and runs
+  # every gate a plain reuse does — cheap, idempotent reads, and the one
+  # place this logic exists rather than two copies that could drift.
+  defp reuse_sandbox(conv, agent, sandbox_id, runtime_module, initial_prompt) do
+    # Reuse provisions nothing, so the fresh-path gates below never ran
+    # here — a canceled or suspended user could restart a server against
+    # a live sprite and keep prompting (#313). Same checks. Reusing a
+    # `ready` sandbox adds no concurrency, so no quota; waking a
+    # `suspended` one re-adds compute, so wake_suspended_sandbox re-runs
+    # the quota gate. The per-turn gate in ConversationServer is the
+    # backstop; this one makes the refusal synchronous at the API door.
+    with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
+         :ok <- Fountain.Billing.check_spend(conv.user_id),
+         :ok <- check_saved_inference(conv, agent),
+         {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
+      # #2286 round 4 finding 1 / round 5 finding 3: maybe_reuse_sandbox/1's
+      # claim check above and server registration below are two different
+      # moments — the reaper's claim step (or a reset, a teardown fence, or
+      # max-lifetime expiry) can land in between, taking the sandbox's
+      # advisory lock. Re-checking full admissibility and registering the
+      # server inside that same lock makes the two atomic with each other:
+      # whichever of this wake or a reaper pass reaches the lock first is
+      # the one the other must see. `Horde.DynamicSupervisor.start_child/2`
+      # is a supervisor call, not provider I/O — the server's actual
+      # provisioning runs later in its own `handle_continue(:provision)` —
+      # so this does not violate the "no provider I/O under a lock" rule
+      # every other `with_sandbox_lock/2` caller follows. `await_registered`
+      # and all real provider work stay outside it.
+      # ownership: sandbox_id is conv's own sandbox_id, and conv was
+      # established tenant-scoped by this function's own caller.
+      case Conversations.with_sandbox_lock(sandbox_id, fn ->
+             fresh = Conversations._unsafe_get_sandbox(sandbox_id)
+             fresh_conv = Conversations._unsafe_get_conversation(conv.id)
+
+             cond do
+               is_nil(fresh) ->
+                 {:error, :sandbox_unavailable}
+
+               is_nil(fresh_conv) or fresh_conv.sandbox_id != sandbox_id ->
+                 # Somebody moved this conversation onto a different
+                 # sandbox (or deleted it) between the reuse decision and
+                 # this lock — the same rebind create_fresh_sandbox_and_start/4
+                 # itself performs. Whoever did it already owns (or is
+                 # starting) this conversation's server; hand off the same
+                 # way a lost start-child race does, just discovered a
+                 # different way.
+                 {:error, {:rebound, fresh_conv}}
+
+               fresh.status in ["terminated", "failed"] ->
+                 {:ok, :create_new}
+
+               fresh.status == "suspended" ->
+                 # A park finished (the reaper's, or a concurrent
+                 # recovery's) between the probe and this lock. Retry into
+                 # the suspended path rather than starting a server
+                 # against a machine that may still be mid-suspend.
+                 {:error, :sandbox_parking}
+
+               not is_nil(fresh.reset_requested_at) ->
+                 # Covers a teardown fence too — the same single check
+                 # `claim_stale_park/2` and `Launch.check_attachable/4` use,
+                 # for the same reason: `Lifecycle.fence_sandbox_for_teardown/2`
+                 # never sets `teardown_requested_at` without it.
+                 {:error, :sandbox_reset_pending}
+
+               not is_nil(fresh.park_claimed_at) and
+                   Lifecycle.park_claim_live?(fresh.park_claimed_at, DateTime.utc_now()) ->
+                 {:error, :sandbox_parking}
+
+               fresh.status != "ready" ->
+                 # pending/starting or anything unforeseen: never a silent
+                 # reuse.
+                 {:error, :sandbox_parking}
+
+               true ->
+                 # The durable publication of this wake (#2286 round 5
+                 # finding 2): Horde registry propagation is asynchronous,
+                 # so a reaper on another node can still read
+                 # `ConversationServer.whereis/1` as `nil` right after this
+                 # commits. `woken_at` is what its abandoned-sweep grace
+                 # predicate checks instead — a database fact, visible the
+                 # moment this transaction commits, on every node.
+                 {:ok, _} =
+                   Conversations.update_sandbox(fresh, %{woken_at: DateTime.utc_now()})
+
+                 start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
+             end
+           end) do
+        {:ok, :create_new} ->
+          create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+
+        {:error, {:rebound, fresh_conv}} ->
+          case ConversationServer.whereis(conv.id) do
+            nil ->
+              {:error, :not_running}
+
+            pid ->
+              if is_binary(initial_prompt) and initial_prompt != "" do
+                ConversationServer.queue_initial_prompt(pid, initial_prompt)
+              end
+
+              {:ok, fresh_conv}
+          end
+
+        {:error, {:already_started, winner_pid}} ->
+          # Lost a concurrent wake of the same conversation to another
+          # caller reusing the same sandbox. Mirrors the handoff in
+          # create_fresh_sandbox_and_start/4 (#330), but reuse provisions
+          # no row of its own, so there is nothing here to clean up —
+          # just hand the prompt to the winner, which drops it if a turn
+          # is already running.
+          if is_binary(initial_prompt) and initial_prompt != "" do
+            ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
+          end
+
+          # ownership: conv established tenant-scoped above; this
+          # re-fetch reads under that same ownership.
+          {:ok, Conversations._unsafe_get_conversation!(conv.id)}
+
+        other ->
+          other
+      end
+    end
   end
 
   # No server, no reusable sandbox, and this wake is only for an interrupt:

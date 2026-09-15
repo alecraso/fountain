@@ -163,3 +163,55 @@ nullable and old code never touches the column, so this is a one-rollout
 window, not a durable gap, and it is accepted rather than solved (there is
 no cheap way to make an old replica respect a column it does not know
 about).
+
+**Recovery is a serialized takeover, not a read (2026-09-15, round 5).** A
+plain read-then-write of a stale claim under only the quota reservation
+lock let a fresh reaper claim (or the same operation simply outliving the
+TTL) get erased mid-flight: `maybe_reuse_sandbox/1` observes a stale
+timestamp (`observed_stamp`) but does no provider I/O and no write of
+its own — recovering it is compute, gated by every admission check
+(including account suspension) the same as any other compute this wake
+would restart, before recovery ever runs. The caller then takes over in
+three steps: under the sandbox's own advisory lock, revalidate full
+admissibility (status `ready`, no reset or teardown fence, and
+`park_claimed_at` exactly equal to `observed_stamp`, or `nil` if someone
+else already resolved it) and write a fresh stamp of our own — the same
+lock the reaper's own claim step takes, so no reaper can claim while the
+provider round trip below runs. Release that lock, do the provider probe
+and, if suspended, the resume — still inside the reservation lock, the
+same as `wake_suspended_sandbox/2`'s own resume. Then take the sandbox
+lock again for a CAS: write only if the takeover stamp is still the one
+on the row; a mismatch answers retryably rather than resolving a row no
+longer ours. The reaper's own `finalize_park/2` gained the mirror case: a
+provider suspend that succeeds after the claim was taken over (by a fresh
+reaper claim, or a recovery) paused a machine somebody else now owns, so
+it best-effort resumes it, the same compensation a live server already
+got.
+
+**A durable wake marker, because the registry is not (round 5).** Horde's
+registry is an asynchronous CRDT, so `ConversationServer.whereis/1` can
+still answer `nil` on a reaper's node moments after a wake registers a
+server on another one — a real distributed-ordering gap no amount of
+retrying the registry check closes. `sandboxes.woken_at` is the fix: a
+wake writes it, under the same lock it registers the server in (and
+recovery's finalize CAS writes it too), so it is a database fact visible
+on every node the instant that transaction commits. `stuck_eligible?/2`
+and `ready_abandoned?/3` both require it nil or past the same 15-minute
+grace window `updated_at` already gets, so a just-woken row stays off the
+reaper regardless of which node runs the pass, however long the registry
+takes to catch up. It is never stamped on an ordinary reuse's probe
+alone — only alongside actually registering a server or finishing a
+recovery — and it is not `last_resumed_at`, which anchors the
+max-lifetime clock and is deliberately untouched by an ordinary reuse.
+
+**The final locked re-read validates full admissibility, not just the
+claim (round 5).** Reaching the lock inside a reuse or a recovery no
+longer only re-checks the park claim: it also re-checks status (a `ready`
+row that has since gone `suspended`, `terminated` or `failed` answers
+retryably or falls to a fresh sandbox, never a silent reuse), the reset
+and teardown fence (the same single `reset_requested_at` check
+`Launch.check_attachable/4` uses, since a teardown fence never sets
+`teardown_requested_at` without it), and that the conversation's own
+`sandbox_id` has not been rebound to a different sandbox by a concurrent
+wake in between — the same rebind `create_fresh_sandbox_and_start/4`
+itself performs.

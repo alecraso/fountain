@@ -68,6 +68,15 @@ defmodule Fountain.Workers.SandboxReaper do
   @terminal_statuses ~w(terminated failed)
   @active_statuses ~w(pending starting)
 
+  # A `ready` row whose server died mid-wake looks identical to an abandoned
+  # one until the new server registers in Horde — whose registry is an async
+  # CRDT, so `any_server_alive?/1` can briefly miss a live server on another
+  # node. `updated_at` and, since #2286 round 5, `woken_at` (the durable
+  # publication a wake makes under the same lock it registers in) both get
+  # this grace period before a row counts as unheld — long enough that
+  # registry propagation always finishes first, on any node.
+  @abandoned_grace_minutes 15
+
   @impl Oban.Worker
   def perform(_job) do
     released = release_stuck_sandboxes()
@@ -136,7 +145,22 @@ defmodule Fountain.Workers.SandboxReaper do
   # get marked `failed` once the reaper's own turn at the lock comes up.
   defp stuck_eligible?(%Sandbox{} = sandbox, cutoff) do
     sandbox.status in @active_statuses and is_nil(sandbox.reset_requested_at) and
-      DateTime.before?(sandbox.updated_at, cutoff) and not Lifecycle.any_server_alive?(sandbox)
+      DateTime.before?(sandbox.updated_at, cutoff) and woken_stale?(sandbox, DateTime.utc_now()) and
+      not Lifecycle.any_server_alive?(sandbox)
+  end
+
+  # The wake's durable publication (#2286 round 5 finding 2): committed
+  # under the same advisory lock a reuse registers its server in, so it is
+  # a database fact visible on every node the instant that transaction
+  # commits — unlike `Lifecycle.any_server_alive?/1`, which reads Horde's
+  # registry and can still see `nil` there for a beat after. `nil` means
+  # never woken (or the marker was already cleared by whichever pass
+  # matters here); a `woken_at` inside the grace window means treat this
+  # row as held, the same as a fresh `updated_at` already does.
+  defp woken_stale?(%Sandbox{woken_at: nil}, _now), do: true
+
+  defp woken_stale?(%Sandbox{woken_at: at}, now) do
+    DateTime.before?(at, DateTime.add(now, -@abandoned_grace_minutes * 60, :second))
   end
 
   defp release_one_stuck(sandbox, cutoff) do
@@ -216,14 +240,6 @@ defmodule Fountain.Workers.SandboxReaper do
   end
 
   # ── pass 1b: ready sandboxes nobody is holding ────────────────────────────
-
-  # A `ready` row whose server died mid-wake looks identical to an abandoned
-  # one until the new server registers in Horde — whose registry is an async
-  # CRDT, so `server_alive?/1` can briefly miss a live server on another node.
-  # The wake path touches `updated_at` when it flips `suspended → ready`, so a
-  # grace period on `updated_at` makes a just-woken row untouchable for far
-  # longer than registry propagation takes.
-  @abandoned_grace_minutes 15
 
   @doc """
   Sweeps `ready` sandboxes with no live server past a lifetime bound: past the
@@ -333,7 +349,7 @@ defmodule Fountain.Workers.SandboxReaper do
     grace_cutoff = DateTime.add(now, -@abandoned_grace_minutes * 60, :second)
 
     sandbox.status == "ready" and is_nil(sandbox.reset_requested_at) and
-      DateTime.before?(sandbox.updated_at, grace_cutoff) and
+      DateTime.before?(sandbox.updated_at, grace_cutoff) and woken_stale?(sandbox, now) and
       not Lifecycle.any_server_alive?(sandbox) and check_bounds(sandbox, now) == expected_verdict
   end
 
@@ -437,7 +453,7 @@ defmodule Fountain.Workers.SandboxReaper do
 
         cond do
           is_nil(fresh) or fresh.status != "ready" or fresh.park_claimed_at != stamp ->
-            {:ok, :claim_lost}
+            {:ok, {:claim_lost, fresh}}
 
           Lifecycle.any_server_alive?(fresh) ->
             {:ok, updated} = Conversations.update_sandbox(fresh, %{park_claimed_at: nil})
@@ -467,27 +483,51 @@ defmodule Fountain.Workers.SandboxReaper do
             "flight; clearing the park claim and undoing the suspend"
         )
 
-        # Outside the lock, best-effort: the row already says `ready` again
-        # (the wake owns it), so a resume failure here leaves the sprite
-        # paused for a moment rather than the database wrong about anything.
-        provider = Conversations.sandbox_provider_atom(updated)
-        handle = Managoat.Sandbox.build_handle(provider, updated.machine_name)
-
-        case Managoat.Sandbox.resume(handle) do
-          {:ok, _} ->
-            :ok
-
-          {:error, reason} ->
-            Logger.warning(
-              "reaper: resume after a lost park claim failed for #{updated.machine_name} " <>
-                "(#{inspect(reason)})"
-            )
-        end
-
+        undo_suspend(updated)
         :skipped
 
-      :claim_lost ->
+      # #2286 round 5 finding 1: our own suspend call just above SUCCEEDED,
+      # so if the row is (still, or again) `ready` — a stamp mismatch means
+      # a fresh reaper claim or a wake's recovery landed while our provider
+      # call was in flight, itself possibly outliving the TTL, and either
+      # one can have left the row `ready` before actually knowing our
+      # suspend would land — the machine we just paused is one somebody
+      # else now owns. Same compensation the live-server branch above
+      # makes. A row that is nil, or not `ready` for some OTHER reason
+      # (terminated, or already `suspended` via someone else's own
+      # finalize), needs none: either there is nothing left to compensate,
+      # or another write already resolved it correctly.
+      {:claim_lost, fresh} ->
+        if fresh && fresh.status == "ready" do
+          Logger.warning(
+            "reaper: #{fresh.id} became active while our own suspend call was " <>
+              "resolving; the park claim is lost, undoing the suspend"
+          )
+
+          undo_suspend(fresh)
+        end
+
         log_claim_lost(claimed.id)
+    end
+  end
+
+  # Outside any lock, best-effort: a resume failure here leaves the sprite
+  # paused for a moment longer rather than the database wrong about
+  # anything — the row already says (or has been left) `ready`, whichever
+  # write got there first.
+  defp undo_suspend(sandbox) do
+    provider = Conversations.sandbox_provider_atom(sandbox)
+    handle = Managoat.Sandbox.build_handle(provider, sandbox.machine_name)
+
+    case Managoat.Sandbox.resume(handle) do
+      {:ok, _} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "reaper: resume after a lost park claim failed for #{sandbox.machine_name} " <>
+            "(#{inspect(reason)})"
+        )
     end
   end
 

@@ -55,6 +55,17 @@ defmodule Fountain.Conversations.Sandbox do
     # claim refuses a reattach retryably rather than racing that provider
     # call.
     field :park_claimed_at, :utc_datetime_usec
+    # A durable publication of a wake's own registration (#2286 round 5),
+    # written under the same advisory lock alongside starting the
+    # `ConversationServer` — Horde registry propagation is asynchronous,
+    # so a reaper on another node can read `ConversationServer.whereis/1`
+    # as `nil` moments after this commits. The abandoned sweep's grace
+    # predicate requires this nil or past the grace window, the same way
+    # it already requires a fresh `updated_at`, so a just-woken row stays
+    # off the reaper regardless of which node runs the pass. Never set on
+    # an ordinary reuse's status; only stamped alongside starting a server
+    # or finishing a stale-claim recovery.
+    field :woken_at, :utc_datetime_usec
     # A digest of the Environment fields provisioning turned into disk state:
     # packages, repositories, the setup script and the network policy. Written
     # when the machine reaches `ready`, so a later reapply can tell whether the
@@ -94,6 +105,7 @@ defmodule Fountain.Conversations.Sandbox do
       :terminated_at,
       :last_resumed_at,
       :park_claimed_at,
+      :woken_at,
       :build_fingerprint,
       :applied_skills,
       :environment_id,

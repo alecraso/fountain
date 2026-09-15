@@ -30,6 +30,7 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
   use Mimic
 
   alias Ecto.Adapters.SQL.Sandbox, as: DBSandbox
+  alias Fountain.Conversations
   alias Fountain.Conversations.{Conversation, Sandbox, Turn, Wake}
   alias Fountain.Repo
   alias Fountain.Workers.SandboxReaper
@@ -408,7 +409,14 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
       assert [%{action: "sandbox.suspended"}] = sandbox_audit(user.id)
     end
 
-    test "a claim cleared by a competing owner while the provider call is in flight is left alone" do
+    test "a claim cleared by a competing owner while the provider call is in flight undoes the suspend (round 5 finding 1)" do
+      # The claim clearing mid-flight means a wake's recovery (or a fresh
+      # reaper claim) already resolved this row as legitimately active
+      # while our own suspend call was still resolving — and it just
+      # succeeded, so the machine we paused is one somebody else now owns.
+      # A plain claim mismatch used to leave the row alone with no
+      # compensation; it now undoes the suspend it just made, the same
+      # way the live-server branch already did.
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
@@ -427,6 +435,11 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
         end
       end)
 
+      stub(Managoat.Sandbox.Sprites, :resume, fn handle ->
+        send(owner, {:resumed, handle})
+        {:ok, handle}
+      end)
+
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         reaper = Task.async(fn -> SandboxReaper.sweep_abandoned_sandboxes() end)
 
@@ -441,6 +454,8 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
         send(reaper.pid, :continue)
         assert Task.await(reaper, 5_000) == {0, 0}
       end)
+
+      assert_receive {:resumed, _handle}, 5_000
 
       reloaded = Repo.reload!(sandbox)
       assert reloaded.status == "ready"
@@ -534,6 +549,158 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
       assert reloaded.status == "ready"
       refute reloaded.park_claimed_at
       assert sandbox_audit(user.id) == []
+    end
+  end
+
+  describe "recovery is a serialized takeover with an exact-stamp CAS (#2286 round 5 finding 1)" do
+    test "a reaper pass leaves a live takeover stamp alone" do
+      # Recovery's takeover write (`Wake.claim_stale_park/2`) and an
+      # ordinary reaper claim share the same column and the same TTL — a
+      # live takeover stamp is exactly as protected against a concurrent
+      # reaper claim as an ordinary one already is (round 3).
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      takeover_stamp = DateTime.utc_now()
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{park_claimed_at: takeover_stamp})
+
+      reject(&Managoat.Sandbox.Sprites.suspend/1)
+
+      result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+      assert result == {0, 0}
+      assert Repo.reload!(sandbox).park_claimed_at == takeover_stamp
+    end
+
+    test "the reaper's own claim taken over mid-suspend: its later success undoes the suspend" do
+      # (c): the reaper's suspend call succeeds after its own claim on the
+      # row was superseded by a takeover (a wake's recovery, or a fresh
+      # reaper claim past the TTL) — finalize_park/2 sees a claim mismatch
+      # on a still-`ready` row and compensates, exactly as it does for a
+      # live server.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      owner = self()
+
+      stub(Managoat.Sandbox.Sprites, :suspend, fn _handle ->
+        send(owner, :suspend_called)
+
+        receive do
+          :continue -> :ok
+        after
+          5_000 -> raise "suspend call never released"
+        end
+      end)
+
+      stub(Managoat.Sandbox.Sprites, :resume, fn handle ->
+        send(owner, {:resumed, handle})
+        {:ok, handle}
+      end)
+
+      reaper_result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          reaper = Task.async(fn -> SandboxReaper.sweep_abandoned_sandboxes() end)
+          assert_receive :suspend_called, 5_000
+
+          # A takeover superseding the reaper's own claim, discovered late
+          # — the same write claim_stale_park/2 makes.
+          {:ok, _} = Conversations.update_sandbox(sandbox, %{park_claimed_at: DateTime.utc_now()})
+
+          send(reaper.pid, :continue)
+          Task.await(reaper, 5_000)
+        end)
+
+      assert reaper_result == {0, 0}
+      assert_receive {:resumed, _handle}, 5_000
+      assert Repo.reload!(sandbox).status == "ready"
+    end
+  end
+
+  describe "a durable wake marker the reaper can see (#2286 round 5 finding 2)" do
+    test "a fresh woken_at keeps a row off both reaper passes even with a stale registry view" do
+      # ConversationServer.whereis/1 stubbed to nil the whole time: this is
+      # exactly what a Horde registry that has not yet propagated to the
+      # reaper's node looks like. woken_at, a database fact, is what keeps
+      # the row off the reaper here — not liveness.
+      stub(Fountain.Conversations.ConversationServer, :whereis, fn _id -> nil end)
+
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      # A raw update — see the note in the next test on why writing
+      # woken_at through Conversations.update_sandbox/2 would confound
+      # this with the updated_at check it sits beside.
+      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+        set: [woken_at: DateTime.utc_now()]
+      )
+
+      reject(&Managoat.Sandbox.Sprites.suspend/1)
+
+      result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+      assert result == {0, 0}
+      assert Repo.reload!(sandbox).status == "ready"
+    end
+
+    test "a woken_at older than the grace window is eligible again" do
+      stub(Fountain.Conversations.ConversationServer, :whereis, fn _id -> nil end)
+
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      # A raw update: writing woken_at through Conversations.update_sandbox/2
+      # would also bump updated_at (Ecto's own timestamp), which alone
+      # would exclude this row from the outer scan and defeat the point —
+      # isolate the woken_at check from the updated_at one it sits beside.
+      stale_woken_at = DateTime.add(DateTime.utc_now(), -30 * 60, :second)
+
+      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+        set: [woken_at: stale_woken_at]
+      )
+
+      result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+      assert result == {1, 0}
+      assert Repo.reload!(sandbox).status == "suspended"
+    end
+
+    test "a fresh woken_at also keeps a stuck-mid-provision row off release_stuck_sandboxes/0" do
+      # stuck_eligible?/2 reads the same woken_at gate — defensively, since
+      # nothing on the current provisioning path stamps it on a
+      # pending/starting row, but the predicate itself must not silently
+      # skip the check just because this shape has not been observed yet.
+      stub(Fountain.Conversations.ConversationServer, :whereis, fn _id -> nil end)
+
+      sandbox = insert_sandbox(status: "starting") |> age_sandbox(120)
+
+      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+        set: [woken_at: DateTime.utc_now()]
+      )
+
+      assert SandboxReaper.release_stuck_sandboxes() == 0
+      assert Repo.reload!(sandbox).status == "starting"
     end
   end
 
