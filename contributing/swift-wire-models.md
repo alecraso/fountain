@@ -122,13 +122,31 @@ cannot reach the generator the check exists to stop. The both-shaped case is why
 `Catalog.sandbox_api_access` types as `[SandboxAPIAccess]` beside the scalar
 `Conversation.sandbox_api_access`.
 
-Neither rule catches a property *disappearing*: they compare optionality, so a
-generated model that stops declaring a property is accepted. `PublicSurfaceTests`
-covers that, and it is the one test file that imports `FountainKit` without
-`@testable` — every other file in the target compiles against internals, so
-nothing else was compiling against the public API alone. Emptying
-`EXTRA_PROPERTIES` generates cleanly and fails that file to compile, which is
-the check working.
+Neither rule above catches a property *disappearing*: both compare
+optionality, so a model that simply stops declaring a key passes either one.
+A third rule closes that gap at generation time: it reads the same `shipped`
+baseline as the source rule and asks presence instead, comparing it against
+every `public var` the type currently publishes — not just `self.models`'
+own field list, but also a computed property this module adds outside it
+(`permissionPolicy`, `Teammate.id`) and one a handwritten extension elsewhere
+under `Models/` adds to a generated type (`LogEvent.stageData`), since either
+would otherwise read as removed the moment this guard exists. A property that
+fails is a claim nobody meant to make, unless `REMOVED_PROPERTIES` — a table
+beside `REQUIRED_BY_CONTRACT`, pruned once the release it cites is no longer
+the baseline — records the removal as deliberate, citing the PR and changelog
+fragment that made it. Its first entry is `("AuthMe", "onboardingState")`,
+retired in #2269 when `AuthMe` moved to generation. A rename is invisible to
+all three rules, since each is keyed by the property name alone — this is
+also why `camel()` learning `ms` → `MS` in #2295 renamed nothing, only because
+nothing generated ended in `Ms` — so a real rename reads here as the old name
+removed and a new one added; this guard catches the half of that which
+matters, the old name silently disappearing.
+
+`PublicSurfaceTests` remains the compiled-consumer cover this rule does not
+replace: it is still the one test file that imports `FountainKit` without
+`@testable`, so it alone fails to compile if a property named in it
+disappears. But it is a hand-written list that only names the families #2251
+moved, where the generation-time rule reaches every currently generated type.
 
 `EXTRA_PROPERTIES` is the third table and the smallest: two properties this
 SDK publishes that the contract does not describe. Both are SSE-frame fields —
@@ -162,24 +180,3 @@ Checks: `python3 scripts/sdk-contract/generate-swift.py --check`,
 `python3 -m unittest discover -s scripts/ci -p test_swift_generation.py`, and
 `swift test -Xswiftc -warnings-as-errors`. Synthetic additions to every generated
 family verify propagation without adding fake production API fields.
-
-A third rule asks the question the two above do not: for a type still
-generated, is a property that release published still among its current
-properties. Both compare optionality, so a model that simply stops declaring
-a key passes either one; this rule reads the same `shipped` baseline as the
-source rule and asks presence instead, comparing it against every `public var`
-the current output publishes for that type — including a computed property
-this module adds outside the field list (`permissionPolicy`,
-`Teammate.id`) and one a handwritten extension elsewhere under `Models/` adds
-to a generated type (`LogEvent.stageData`), not just `self.models`' own field
-tuples, or either would read as removed the moment this guard exists. A
-property that fails is a claim nobody meant to make unless `REMOVED_PROPERTIES`
-records it as a deliberate retirement, citing the PR and changelog fragment
-that made it; the table sits next to `REQUIRED_BY_CONTRACT` and is pruned once
-the release it cites is no longer the baseline. Its first entry is
-`("AuthMe", "onboardingState")`, retired in #2269 when `AuthMe` moved to
-generation. A rename is invisible to all three rules, since each is keyed by
-the property name alone — this is also why `camel()` learning `ms` → `MS` in
-#2295 renamed nothing, only because nothing generated ended in `Ms` — so a real
-rename reads here as the old name removed and a new one added; this guard
-catches the half of that which matters, the old name silently disappearing.
