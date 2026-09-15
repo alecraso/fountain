@@ -1134,31 +1134,26 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15]
 
-    env:
-      SWIFT_VERSION: "6.1.3"
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
-      - name: Set up Swift
+      - name: Set up Swift on Linux
+        if: ${{ runner.os == 'Linux' }}
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
-          swift-version: ${{ env.SWIFT_VERSION }}
+          swift-version: "6.1.3"
 
-      - name: Record the Swift build image
+      # Xcode 16.4 already supplies Apple Swift 6.1.2, satisfying the package's
+      # 6.1 minimum. Pin the Xcode selection and avoid downloading a second
+      # compiler. Linux exercises the upstream Swift 6.1.3 toolchain above.
+      - name: Select Apple Swift on macOS
         if: ${{ runner.os == 'macOS' }}
-        id: swift-image
-        run: echo "version=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
-
-      # Compiled modules depend on the compiler and Apple SDK in the runner
-      # image. Restore only the same image, architecture and source inputs.
-      # Every swift test/build command still runs and validates its inputs.
-      - name: Restore Swift build cache
-        if: ${{ runner.os == 'macOS' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: .build
-          key: swift-build-v1-${{ matrix.os }}-${{ runner.arch }}-${{ env.SWIFT_VERSION }}-${{ steps.swift-image.outputs.version }}-${{ hashFiles('Package.swift', 'sdk/swift/**/*.swift', '.github/workflows/ci.yml') }}
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+        run: |
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          dirname "$(xcrun --find swift)" >> "$GITHUB_PATH"
+          xcrun swift --version
 
       - name: Check Swift SDK version
         run: |
