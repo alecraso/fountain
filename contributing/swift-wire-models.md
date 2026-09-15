@@ -49,7 +49,11 @@ Generation fails when a property would be non-Optional on a type that has
 already shipped and is either new there or was Optional before. Pinning the
 property clears the failure, or `REQUIRED_BY_CONTRACT` records that no deployed
 server emits the type without it — an entry there is a claim about every server
-in the field, which is why it is empty.
+in the field, which is why it is empty. Before this guard the rule was applied
+by hand and a miss was caught only if some fixture happened to decode that type
+from a payload lacking the key. For 25 of 27 decodable schemas one did;
+`Teammate`, the return of four public `TeamResource` methods, had no fixture at
+all, so a required property there would have shipped (#2284).
 
 The two rules below are answered independently and a property can owe both,
 because the remedies differ. `REQUIRED_BY_CONTRACT` reaches only the decode
@@ -57,11 +61,7 @@ rule: "every deployed server sends this key" can establish that decoding is
 safe, but it cannot make an already-public `T?` becoming `T` source-compatible.
 The source rule therefore has no override at all. Keep the pin; a change that
 really means to drop a published Optional should add its own door and say why,
-rather than borrow an escape hatch written for a different question. Before this guard the rule was applied
-by hand and a miss was caught only if some fixture happened to decode that type
-from a payload lacking the key. For 25 of 27 decodable schemas one did;
-`Teammate`, the return of four public `TeamResource` methods, had no fixture at
-all, so a required property there would have shipped (#2284).
+rather than borrow an escape hatch written for a different question.
 
 Both baselines come from the last release tag, because a baseline has to be
 immutable with respect to the change being checked. The committed output is
