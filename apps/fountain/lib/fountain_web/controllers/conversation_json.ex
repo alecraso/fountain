@@ -84,9 +84,9 @@ defmodule FountainWeb.ConversationJSON do
       # Running sums of the turns' usage (#827); zeros until a turn reports one.
       usage_total: %{input: c.usage_input_tokens || 0, output: c.usage_output_tokens || 0},
       # Permission requests that outlived a turn (#1635); `[]` here and
-      # overwritten with the real list only where `show/2` fetched it (see
-      # below) — a query per row the list and the create response don't pay
-      # for something almost always empty (#2305).
+      # overwritten with the real list only where `show/2` fetched it (above)
+      # — a query per row the list and the create response don't pay for
+      # something almost always empty (#2305).
       pending_requests: [],
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
