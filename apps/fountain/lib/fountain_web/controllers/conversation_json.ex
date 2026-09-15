@@ -7,10 +7,11 @@ defmodule FountainWeb.ConversationJSON do
   def show(%{conversation: conv, resumed: resumed?}),
     do: %{data: data(conv), meta: %{resumed: resumed?}}
 
-  # Requests that outlived a turn (#1635). Served on `show` only: the
-  # conversation is idle while one waits, so a client that reloads has
-  # nowhere else to learn the card is still up, and a list of conversations
-  # would pay a query per row for something almost always empty.
+  # Requests that outlived a turn (#1635). Only `show/2` on a single
+  # conversation ever fetches these, so every other renderer's `data/1`
+  # carries the field as `[]` and this clause overwrites it with the real
+  # answer. A list of conversations would pay a query per row for something
+  # almost always empty; this way it still gets the key, just not the query.
   def show(%{conversation: conv, pending_requests: requests}),
     do: %{data: Map.put(data(conv), :pending_requests, Enum.map(requests, &request_data/1))}
 
@@ -82,6 +83,11 @@ defmodule FountainWeb.ConversationJSON do
       unread: Fountain.Conversations.unread?(c),
       # Running sums of the turns' usage (#827); zeros until a turn reports one.
       usage_total: %{input: c.usage_input_tokens || 0, output: c.usage_output_tokens || 0},
+      # Permission requests that outlived a turn (#1635); `[]` here and
+      # overwritten with the real list only where `show/2` fetched it (above)
+      # — a query per row the list and the create response don't pay for
+      # something almost always empty (#2305).
+      pending_requests: [],
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
     }

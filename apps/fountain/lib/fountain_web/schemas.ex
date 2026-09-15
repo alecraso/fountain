@@ -601,8 +601,9 @@ defmodule FountainWeb.Schemas do
           items: PendingPermissionRequest,
           description:
             "Permission requests that outlived a turn and are still waiting for an " <>
-              "answer (#1635). Served on GET /api/conversations/{id} only; absent " <>
-              "from the list and from the create response."
+              "answer (#1635). Only GET /api/conversations/{id} can report one; " <>
+              "every other response carrying this schema, including the list and " <>
+              "the create response, sends an empty array rather than querying for it."
         }
       },
       required: [:id, :runtime, :status]

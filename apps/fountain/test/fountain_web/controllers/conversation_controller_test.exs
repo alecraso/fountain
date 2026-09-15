@@ -26,6 +26,20 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conv.id in ids
     end
 
+    test "carries pending_requests as an empty array on every row (#2305)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      insert_conversation(user_id: user.id)
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations")
+
+      body = json_response(conn, 200)
+      assert body["data"] != []
+      assert Enum.all?(body["data"], &(&1["pending_requests"] == []))
+    end
+
     test "does not include conversations belonging to other users", %{
       conn: conn,
       raw_key: raw_key
@@ -511,7 +525,8 @@ defmodule FountainWeb.ConversationControllerTest do
         |> authed_with_key(raw_key)
         |> post_json("/api/conversations", %{"agent_id" => agent.id})
 
-      assert json_response(conn, 201)
+      body = json_response(conn, 201)
+      assert body["data"]["pending_requests"] == []
     end
 
     test "prompting a dormant conversation is capped too", %{
