@@ -475,7 +475,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       # ownership: this newly started actor fetched its parent above. A journal
       # left by another incarnation is retired, never reattached or replayed.
-      case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv.id) do
+      case Fountain.Conversations.Interruption.retire_journal_before_reattach(conv.id) do
         {:ok, :unbounded} -> provision_with_rows(state, conv, sandbox)
         {:ok, {:bounded, _}} -> {:stop, :normal, state}
         {:error, _} -> {:stop, :normal, state}

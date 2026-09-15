@@ -54,6 +54,22 @@ defmodule Fountain.Conversations.Interruption do
     result
   end
 
+  @doc """
+  The journal door for the provision continue before a reattach
+  (`ConversationServer.handle_continue(:provision, _)`) and the delete
+  cascade (`Conversations.delete_conversation/2`): a journal left by another
+  incarnation, or by the conversation being deleted, is retired rather than
+  reattached or replayed (ADR 0046: a bounded journal means the actor stops
+  instead of reattaching). Returns the guard's `{:ok, _} | {:error, _}`
+  unchanged.
+  """
+  def retire_journal_before_reattach(conv_id) do
+    # ownership: the server already holds this conversation's row (fetched at
+    # the top of the provision continue); the delete cascade runs after its
+    # own tenant-scoped fetch. Both callers established ownership before here.
+    ExecutionGuard._unsafe_interrupt(conv_id)
+  end
+
   defp interrupt_dead(conv_id) do
     # A remote self-call (not a bare local call): Mimic's copy renames the
     # original module's compiled code, so only a call through the module's
