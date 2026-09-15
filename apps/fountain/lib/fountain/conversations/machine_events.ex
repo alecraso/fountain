@@ -4,6 +4,7 @@ defmodule Fountain.Conversations.MachineEvents do
   import Ecto.Query
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.ConversationServer
   alias Fountain.Conversations.Output
   alias Fountain.Repo
 
@@ -96,4 +97,24 @@ defmodule Fountain.Conversations.MachineEvents do
   end
 
   def gone(state, _sandbox_id, _notification, _interrupt, _drop), do: {:noreply, state}
+
+  @doc """
+  The one sender of the `{:machine_gone, ..}` cast that `reset/6` and `gone/5`
+  above receive. A park, a destroy or a replaced machine is a machine
+  operation: every other conversation on the sandbox loses its handle with
+  it. Tell their servers, so each records what happened on its own transcript
+  and stops — the next prompt then takes the wake path, the only path that
+  brings the machine back. A cast: a co-tenant whose server is already gone
+  (including a cross-pod registry miss) is not an error here.
+  """
+  @spec tell_cotenants([String.t()], String.t() | nil, String.t(), String.t(), String.t()) ::
+          :ok
+  def tell_cotenants(ids, sandbox_id, event, reason, message) do
+    Enum.each(ids, fn id ->
+      case ConversationServer.whereis(id) do
+        nil -> :ok
+        pid -> GenServer.cast(pid, {:machine_gone, sandbox_id, event, reason, message})
+      end
+    end)
+  end
 end
