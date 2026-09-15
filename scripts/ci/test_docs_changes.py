@@ -21,6 +21,10 @@ class DocumentationRoutingTest(unittest.TestCase):
             (["CLAUDE.md", "CONTRIBUTING.md", "SETUP.md", "contributing/docs.md",
               "standards/new-guide.md", "scripts/ci/README.md"], True, False, False),
             (["README.md"], True, True, False),
+            (["decisions/0001-template.md", "decisions/index.md"], True, False, False),
+            (["changelog.d/2210-docs.md"], True, False, False),
+            (["docs/index.md", "changelog.d/2210-docs.md"], True, True, False),
+            (["CHANGELOG.md"], True, True, False),
             (["docs/nav.yml", "docs/images/primitives.svg"], True, True, False),
             (["CONTRIBUTING.md", "docs/index.md"], True, True, False),
             (["docs/cli/commands.md"], True, True, True),
@@ -52,8 +56,10 @@ class DocumentationRoutingTest(unittest.TestCase):
             "apps/fountain/lib/fountain/agents.ex", "apps/fountain/test/fountain/docs_test.exs",
             "apps/fountain_buzz/lib/fountain_buzz/docs.ex", "apps/fountain_buzz/test/fountain_buzz/docs_test.exs",
             "apps/new_extension/docs/page.md", "contributing/tool.py", "standards/check.sh",
-            "config/test.exs", "mix.exs", "mix.lock", "Dockerfile", "CHANGELOG.md",
-            "decisions/0001-template.md", "scripts/test-docs.sh", ".github/workflows/ci.yml",
+            "config/test.exs", "mix.exs", "mix.lock", "Dockerfile",
+            "decisions/evidence/decimal-advisory.json", "decisions/check.py", "changelog.d/check.sh",
+            "deploy/k8s/prometheusrule.yaml", "deploy/grafana/fountain-finance.json",
+            "scripts/test-alerts.py", "scripts/decisions-index.sh", "scripts/test-docs.sh", ".github/workflows/ci.yml",
             "sdk/python/client.py", "sdk/contract/README.md", "new-directory/guide.md",
         ):
             with self.subTest(path=path):
@@ -135,6 +141,9 @@ class DocumentationRoutingTest(unittest.TestCase):
             output = root / ".git/ci-outputs"
             for path, short, manual in (("CONTRIBUTING.md", True, False),
                                         ("docs/cli.md", True, True),
+                                        ("decisions/0002-choice.md", True, False),
+                                        ("changelog.d/2210-docs.md", True, False),
+                                        ("CHANGELOG.md", True, True),
                                         ("apps/fountain_slack/docs/nav.yml", True, True),
                                         ("sdk/python/README.md", True, False),
                                         ("config/runtime.exs", False, False)):
@@ -160,6 +169,19 @@ class DocumentationRoutingTest(unittest.TestCase):
 
 
 class DocumentationRunnerTest(unittest.TestCase):
+    def test_alert_evaluation_skips_only_explicit_docs_plans(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        job = workflow.split("\n  workflow-checks:\n", 1)[1].split("\n  gate:\n", 1)[0]
+        self.assertIn("    needs: changes\n", job)
+        # A skipped classifier on push must not skip the required policy job.
+        self.assertIn("    if: ${{ !cancelled() }}\n", job)
+        for name in ("Install the alert rule evaluator", "Evaluate shipped alert fixtures"):
+            step = job.split(f"      - name: {name}\n", 1)[1].split("      - ", 1)[0]
+            self.assertIn("        if: ${{ needs.changes.outputs.docs_only != 'true' }}\n", step)
+        for name in ("Reject conflict markers", "Test CI decisions", "Check the changelog fragments"):
+            step = job.split(f"      - name: {name}\n", 1)[1].split("      - ", 1)[0]
+            self.assertNotIn("        if:", step)
+
     def test_workflow_requires_manual_selection_and_honors_tree_reuse(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         job = workflow.split("\n  docs:\n", 1)[1].split("\n  workflow-checks:\n", 1)[0]
