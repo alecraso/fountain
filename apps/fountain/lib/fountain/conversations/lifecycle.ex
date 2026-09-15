@@ -62,7 +62,7 @@ defmodule Fountain.Conversations.Lifecycle do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.MachineEvents
   alias Fountain.Conversations.Egress
   alias Fountain.Conversations.HomeCheckpoint
   alias Managoat.Sandbox.Handle
@@ -561,22 +561,15 @@ defmodule Fountain.Conversations.Lifecycle do
 
   @doc """
   A park or a destroy is a machine operation: every other conversation on the
-  sandbox loses its handle with it. Tell their servers, so each records what
-  happened on its own transcript and stops — the next prompt then takes the
-  wake path, the only path that brings the machine back. A cast: a co-tenant
-  whose server is already gone is not an error here.
+  sandbox loses its handle with it. Tell their servers through
+  `MachineEvents.tell_cotenants/5`, the one sender of that cast.
   """
   @spec stop_cotenants(String.t() | nil, String.t(), String.t(), String.t(), String.t()) :: :ok
   def stop_cotenants(sandbox_id, conversation_id, event, reason, message) do
     # Ownership: as home?/1 above.
     sandbox_id
     |> Conversations._unsafe_list_cotenant_ids(conversation_id)
-    |> Enum.each(fn conv_id ->
-      case ConversationServer.whereis(conv_id) do
-        nil -> :ok
-        pid -> GenServer.cast(pid, {:machine_gone, sandbox_id, event, reason, message})
-      end
-    end)
+    |> MachineEvents.tell_cotenants(sandbox_id, event, reason, message)
   end
 
   defp minutes(nil), do: "?"
