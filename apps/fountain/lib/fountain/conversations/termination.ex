@@ -262,6 +262,81 @@ defmodule Fountain.Conversations.Termination do
   end
 
   @doc """
+  Support teardown of any tenant's sandbox, from the admin panel. Moved from
+  `Fountain.Conversations._unsafe_reap_sandbox/1` in #2257 (#2255, tranche 2);
+  the old name still calls in.
+
+  A conversation with a live `ConversationServer` is terminated through the
+  server, which destroys the sprite and ends the conversation — that is what
+  stopping a runaway agent means. A sandbox with no live server (including a
+  `suspended` one) just has its row marked terminated: the conversation stays
+  resumable (next prompt gets a fresh sandbox, with the agent's memory lost —
+  decisions/0017) and the reaper destroys the sprite on its next pass, the
+  same split `SandboxReaper.sweep_abandoned_sandboxes/0` uses.
+  """
+  def reap_sandbox(sandbox_id) do
+    alias Fountain.Conversations.ConversationServer
+
+    # ownership: sandbox_id is given by an admin surface behind require_admin
+    # (AdminController.reap_sandbox/2, AdminLive.Sandboxes), or by
+    # reap_all_for_user/1 below whose own caller (Accounts.suspend_user/1) is
+    # admin-driven.
+    case Conversations._unsafe_get_sandbox(sandbox_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Sandbox{status: s} when s in ["terminated", "failed"] ->
+        {:ok, :already_terminal}
+
+      sandbox ->
+        sandbox = Fountain.Repo.preload(sandbox, :conversations)
+        live = Enum.filter(sandbox.conversations, &ConversationServer.whereis(&1.id))
+
+        if live == [] do
+          now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+          {:ok, _} =
+            Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+
+          {:ok, :released}
+        else
+          # A reclaimed sandbox took the tenant's conversations down with it,
+          # which is worth a row each — this is the one termination they did
+          # not ask for. #551 covers the reaper that calls this.
+          Enum.each(
+            live,
+            &terminate_conversation(&1.id, actor: "system:sandbox_reaper")
+          )
+
+          {:ok, :terminated}
+        end
+    end
+  end
+
+  @doc """
+  Reap every active sandbox belonging to `user_id` — the suspension path
+  (#287). Moved from `Fountain.Conversations._unsafe_reap_all_for_user/1` in
+  #2257 (#2255, tranche 2); the old name still calls in. Unscoped by the same
+  contract as the `_unsafe_` prefix it left behind: legitimate callers are
+  admin-driven (`Accounts.suspend_user/1` behind `require_admin`).
+
+  Best-effort by design: each sandbox reaps independently and a failure moves
+  on — suspension must not be blocked by one wedged sprite; `SandboxReaper`
+  sweeps stragglers. Returns the number of sandboxes reaped.
+  """
+  def reap_all_for_user(user_id) when is_binary(user_id) do
+    # Deliberately NOT Quotas.active_statuses(): `suspended` is excluded from
+    # the concurrency cap (a parked sprite is not compute) but its sprite is
+    # very much alive at sprites.dev, and a suspended tenant must not keep it.
+    from(s in Sandbox,
+      where: s.user_id == ^user_id and s.status in ~w(pending starting ready suspended),
+      select: s.id
+    )
+    |> Fountain.Repo.all()
+    |> Enum.count(fn id -> match?({:ok, _}, reap_sandbox(id)) end)
+  end
+
+  @doc """
   The journal door for `_unsafe_release_conversation/2` below: the same
   durable-idle-parent release `ExecutionGuard._unsafe_release_parent/3`
   performs, exposed so that module is the journal's only caller outside
