@@ -9,10 +9,10 @@ defmodule Fountain.Conversations.PromptInput do
   The rule is that images need words. A launch with neither is fine — that is
   how a conversation opens without a first turn — but images with a blank or
   absent prompt are refused, because the runtime is handed pixels and no
-  instruction. The OpenAI-compatible controller decides the other way for its
-  own dialect and synthesizes a caption
-  (`FountainWeb.OpenAIController.non_empty/2`); that is a shim for clients that
-  cannot send one, not the native contract.
+  instruction. The retired OpenAI-compatible controller decided the other way
+  for its own dialect and synthesized a caption; that was a shim for clients
+  that could not send one, never the native contract, and it left with the
+  dialect (ADR 0057).
 
   The media-type and size checks repeat what `FountainWeb.PromptImages.decode/1`
   already did. That is deliberate: `decode/1` belongs to the two HTTP

@@ -11,6 +11,14 @@ server releases.
 
 ---
 
+## [6.0.0] - 2026-09-15
+
+### Removed
+
+- The generated types for the retired OpenAI-compatible and AG-UI surfaces: `components["schemas"]["ChatCompletion"]`, `["ChatCompletionRequest"]`, `["Model"]`, `["OpenAIError"]` and `["RunAgentInput"]`, with the `POST /v1/chat/completions`, `GET /v1/models`, `GET /v1/models/{model}` and `POST /api/agui/{agent_id}` entries of `paths` and `operations`. The server no longer serves those routes (ADR 0057, #2252).
+
+  Major because `schemas.ts` re-exports `components` and `paths`, so the keys were part of the published type surface even though no hand-written client method used them. No runtime export, method or option changed, and nothing in this release alters a call the SDK makes: code that does not name those keys compiles and runs unchanged.
+
 ## [5.2.1] - 2026-09-15
 
 ### Fixed
