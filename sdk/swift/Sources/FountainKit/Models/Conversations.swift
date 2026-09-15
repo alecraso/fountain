@@ -1,17 +1,5 @@
 import Foundation
 
-public struct ConversationTreeNode: Sendable, Decodable, Identifiable, Hashable {
-  public var id: String
-  public var source: ConversationSource?
-  public var status: ConversationStatus?
-  public var parentID: String?
-
-  enum CodingKeys: String, CodingKey {
-    case id, source, status
-    case parentID = "parent_id"
-  }
-}
-
 /// How a nullable conversation binding changes during a reapply. Three states,
 /// because "leave it alone" and "remove it" are different requests and a plain
 /// optional cannot tell them apart.

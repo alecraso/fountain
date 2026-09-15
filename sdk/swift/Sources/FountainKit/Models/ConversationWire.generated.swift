@@ -347,6 +347,82 @@ public struct UsageAccounting: Sendable, Decodable, Hashable {
   }
 }
 
+public struct SandboxDetail: Sendable, Decodable, Hashable, Identifiable {
+  public var agentID: String?
+  public var checkpoint: Sandbox.Checkpoint?
+  public var conversations: [SandboxDetail.SandboxConversation]?
+  public var environmentID: String?
+  public var id: String
+  public var insertedAt: Date?
+  public var lastResumedAt: Date?
+  public var mode: SandboxMode?
+  public var provider: SandboxProvider?
+  public var runner: Sandbox.RunnerRef?
+  public var spriteName: String?
+  public var status: SandboxStatus?
+  public var url: String?
+  public var vaultID: String?
+
+  enum CodingKeys: String, CodingKey {
+    case agentID = "agent_id"
+    case checkpoint = "checkpoint"
+    case conversations = "conversations"
+    case environmentID = "environment_id"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case lastResumedAt = "last_resumed_at"
+    case mode = "mode"
+    case provider = "provider"
+    case runner = "runner"
+    case spriteName = "sprite_name"
+    case status = "status"
+    case url = "url"
+    case vaultID = "vault_id"
+  }
+}
+
+public struct Runner: Sendable, Decodable, Hashable, Identifiable {
+  public var arch: String?
+  public var connectedAt: Date?
+  public var createdAt: Date?
+  public var hostname: String?
+  public var id: String
+  public var lastSeenAt: Date?
+  public var name: String
+  public var online: Bool
+  public var os: String?
+  public var root: String?
+  public var version: String?
+
+  enum CodingKeys: String, CodingKey {
+    case arch = "arch"
+    case connectedAt = "connected_at"
+    case createdAt = "created_at"
+    case hostname = "hostname"
+    case id = "id"
+    case lastSeenAt = "last_seen_at"
+    case name = "name"
+    case online = "online"
+    case os = "os"
+    case root = "root"
+    case version = "version"
+  }
+}
+
+public struct ConversationTreeNode: Sendable, Decodable, Hashable, Identifiable {
+  public var id: String
+  public var parentID: String?
+  public var source: ConversationSource?
+  public var status: ConversationStatus?
+
+  enum CodingKeys: String, CodingKey {
+    case id = "id"
+    case parentID = "parent_id"
+    case source = "source"
+    case status = "status"
+  }
+}
+
 public struct PendingPermissionRequest: Sendable, Decodable, Hashable {
   public var askedAt: Date?
   public var deadline: Date?
@@ -365,6 +441,34 @@ public struct PendingPermissionRequest: Sendable, Decodable, Hashable {
   }
 }
 
+public struct Sandbox: Sendable, Decodable, Hashable, Identifiable {
+  public var agentID: String?
+  public var checkpoint: Sandbox.Checkpoint?
+  public var environmentID: String?
+  public var id: String
+  public var mode: SandboxMode?
+  public var provider: SandboxProvider?
+  public var runner: Sandbox.RunnerRef?
+  public var spriteName: String?
+  public var status: SandboxStatus?
+  public var url: String?
+  public var vaultID: String?
+
+  enum CodingKeys: String, CodingKey {
+    case agentID = "agent_id"
+    case checkpoint = "checkpoint"
+    case environmentID = "environment_id"
+    case id = "id"
+    case mode = "mode"
+    case provider = "provider"
+    case runner = "runner"
+    case spriteName = "sprite_name"
+    case status = "status"
+    case url = "url"
+    case vaultID = "vault_id"
+  }
+}
+
 public struct TurnModelSelection: Sendable, Decodable, Hashable {
   public var effectiveModel: String?
   public var error: String?
@@ -378,5 +482,55 @@ public struct TurnModelSelection: Sendable, Decodable, Hashable {
     case requestedModel = "requested_model"
     case source = "source"
     case status = "status"
+  }
+}
+
+extension Sandbox {
+  public struct Checkpoint: Sendable, Decodable, Hashable, Identifiable {
+    public var at: Date?
+    public var id: String?
+
+    enum CodingKeys: String, CodingKey {
+      case at = "at"
+      case id = "id"
+    }
+  }
+}
+
+extension SandboxDetail {
+  public struct SandboxConversation: Sendable, Decodable, Hashable, Identifiable {
+    public var id: String
+    public var insertedAt: Date?
+    public var midTurn: Bool
+    public var runtime: Runtime?
+    public var status: ConversationStatus
+    public var title: String?
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case insertedAt = "inserted_at"
+      case midTurn = "mid_turn"
+      case runtime = "runtime"
+      case status = "status"
+      case title = "title"
+    }
+  }
+}
+
+extension Sandbox {
+  public struct RunnerRef: Sendable, Decodable, Hashable, Identifiable {
+    public var hostname: String?
+    public var id: String?
+    public var name: String?
+    public var online: Bool?
+    public var path: String?
+
+    enum CodingKeys: String, CodingKey {
+      case hostname = "hostname"
+      case id = "id"
+      case name = "name"
+      case online = "online"
+      case path = "path"
+    }
   }
 }

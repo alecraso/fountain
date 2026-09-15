@@ -28,6 +28,28 @@ class SwiftGeneration(unittest.TestCase):
         self.assertIn("try _futureSwitch.encode(into: &container, forKey: .futureSwitch)", output)
         self.assertNotIn("futureSwitch", swiftgen.Generator(self.contract).render())
 
+    def test_sandbox_family_fields_propagate_without_registration(self):
+        owners = ["Sandbox", "SandboxDetail", "SandboxConversation", "Runner", "ConversationTreeNode", "UsageTotal"]
+        for owner in owners:
+            self.contract["schemas"][owner]["properties"]["future_switch"] = {
+                "type": "boolean", "required": False, "nullable": True,
+            }
+        output = swiftgen.Generator(self.contract).render()
+        self.assertEqual(output.count('case futureSwitch = "future_switch"'), len(owners))
+        self.assertIn("extension Sandbox {", output)
+        self.assertIn("public struct RunnerRef:", output)
+        self.assertIn("extension SandboxDetail {", output)
+
+    def test_reused_inline_shapes_cannot_drift_silently(self):
+        self.contract["schemas"]["SandboxDetail"]["properties"]["runner"]["properties"]["other"] = {"type": "string"}
+        with self.assertRaisesRegex(ValueError, "Incompatible reused inline shape"):
+            swiftgen.Generator(self.contract).render()
+
+    def test_usage_alias_rejects_incompatible_fields(self):
+        self.contract["schemas"]["UsageTotal"]["properties"]["input"]["type"] = "string"
+        with self.assertRaisesRegex(ValueError, "Incompatible usage field: input"):
+            swiftgen.Generator(self.contract).render()
+
     def test_generation_is_deterministic(self):
         self.assertEqual(swiftgen.Generator(self.contract).render(), swiftgen.Generator(self.contract).render())
 

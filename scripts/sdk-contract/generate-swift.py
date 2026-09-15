@@ -17,7 +17,26 @@ ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "sdk/swift/Sources/FountainKit/Models/ConversationWire.generated.swift"
 # Existing public names/types, not an allowlist of supported properties.
 TYPE_NAMES = {"TurnUsage": "Usage", "UsageTotal": "Usage"}
-REUSED = {"Sandbox"}
+REUSED = set()
+# Public nested names are source compatibility, not schema/property lists.
+TYPE_NAMES.update({"SandboxCheckpoint": "Sandbox.Checkpoint",
+                   "SandboxRunner": "Sandbox.RunnerRef",
+                   "SandboxConversation": "SandboxDetail.SandboxConversation"})
+INLINE_TYPES = {
+    ("Sandbox", "checkpoint"): "SandboxCheckpoint",
+    ("SandboxDetail", "checkpoint"): "SandboxCheckpoint",
+    ("Sandbox", "runner"): "SandboxRunner",
+    ("SandboxDetail", "runner"): "SandboxRunner",
+}
+# Preserve the pre-generation optional Swift API and permissive decoder for
+# these already-public properties, even where the contract now requires them.
+# New properties always inherit requiredness directly from the contract.
+OPTIONAL_COMPAT = {
+    ("Sandbox", "sprite_name"), ("Sandbox", "status"),
+    ("SandboxDetail", "sprite_name"), ("SandboxDetail", "status"),
+    ("SandboxDetail", "conversations"), ("SandboxRunner", "online"),
+    ("Runner", "created_at"),
+}
 ENUM_TYPES = {
     ("Conversation", "runtime"): "Runtime",
     ("Conversation", "status"): "ConversationStatus",
@@ -27,6 +46,13 @@ ENUM_TYPES = {
     ("ConversationCreateRequest", "sandbox_mode"): "SandboxMode",
     ("Turn", "status"): "TurnStatus", ("Turn", "origin"): "TurnOrigin",
 }
+for owner in ("Sandbox", "SandboxDetail"):
+    ENUM_TYPES.update({(owner, "status"): "SandboxStatus", (owner, "mode"): "SandboxMode",
+                       (owner, "provider"): "SandboxProvider"})
+ENUM_TYPES.update({("SandboxConversation", "status"): "ConversationStatus",
+                   ("SandboxConversation", "runtime"): "Runtime",
+                   ("ConversationTreeNode", "status"): "ConversationStatus",
+                   ("ConversationTreeNode", "source"): "ConversationSource"})
 # Swift argument ordering is source API. New fields append automatically.
 INIT_ORDER = "agent_id prompt title vault_id environment_id permission_policy images sprite_name sandbox_mode sandbox_api_access sandbox_id channel_id fresh".split()
 
@@ -39,7 +65,7 @@ def camel(key):
 class Generator:
     def __init__(self, contract):
         self.schemas = contract["schemas"]
-        self.pending = ["Conversation", "Turn", "ConversationCreateRequest", "ImageInput", "TurnUsage", "UsageAccounting"]
+        self.pending = ["Conversation", "Turn", "ConversationCreateRequest", "ImageInput", "TurnUsage", "UsageAccounting", "SandboxDetail", "Runner", "ConversationTreeNode"]
         self.done = set()
         self.nested = {}
         self.dependencies = {}
@@ -78,8 +104,13 @@ class Generator:
                 return f"[String: {value}]"
             if not node.get("properties"):
                 return "[String: JSONValue]"
-            name = owner + camel(key)[0].upper() + camel(key)[1:]
-            self.nested[name] = node
+            name = INLINE_TYPES.get((owner, key), owner + camel(key)[0].upper() + camel(key)[1:])
+            # Reused inline models must remain the same shape. A contract
+            # divergence needs an explicit migration, never first-wins output.
+            shape = {k: v for k, v in node.items() if k not in {"required", "nullable"}}
+            if name in self.nested and self.nested[name] != shape:
+                raise ValueError(f"Incompatible reused inline shape: {name}")
+            self.nested[name] = shape
             return self.reference(owner, name)
         if kind == "string":
             return "Date" if node.get("format") == "date-time" else "String"
@@ -97,8 +128,21 @@ class Generator:
             for branch in self.schemas["TeammateConversation"]["allOf"]:
                 for key, value in branch.get("properties", {}).items():
                     props[key] = dict(value, required=False)
+        if owner == "TurnUsage":
+            # Usage is the public superset used for both a turn and a total.
+            # New total fields must propagate too; incompatible shared names
+            # need a migration rather than silently choosing one definition.
+            for key, value in self.schemas["UsageTotal"]["properties"].items():
+                if key in props:
+                    shape = lambda node: {k: v for k, v in node.items() if k != "required"}
+                    if shape(props[key]) != shape(value):
+                        raise ValueError(f"Incompatible usage field: {key}")
+                else:
+                    props[key] = dict(value, required=False)
         fields = []
         for key, value in sorted(props.items()):
+            if (owner, key) in OPTIONAL_COMPAT:
+                value["required"] = False
             swift = "permissionPolicyValues" if key == "permission_policy" else camel(key)
             fields.append((key, swift, self.type(owner, key, value), value))
         return fields
@@ -119,7 +163,8 @@ class Generator:
             conform = "Sendable, Encodable"
         if decodable and "id" in props:
             conform += ", Identifiable"
-        lines = [f"public struct {name}: {conform} {{"]
+        parent, _, short_name = name.rpartition(".")
+        lines = [f"public struct {short_name or name}: {conform} {{"]
         for key, swift, typ, value in fields:
             optional = not value.get("required", False) or value.get("nullable", False)
             if input_fields and optional:
@@ -180,7 +225,10 @@ class Generator:
                     else:
                         lines += [f"    {swift} = try container.decode({typ}.self, forKey: .{swift})"]
                 lines += ["  }"]
-        return "\n".join(lines + ["}", ""])
+        rendered = "\n".join(lines + ["}", ""])
+        if parent:
+            return f"extension {parent} {{\n" + "\n".join("  " + line for line in rendered.splitlines()) + "\n}\n"
+        return rendered
 
     def render(self):
         # Discover the whole graph before emitting models: a response model
