@@ -1140,20 +1140,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
-      # setup-swift reuses the runner tool cache, but hosted runners start
-      # fresh. Persist its macOS installation, including the architecture's
-      # .complete marker. Keep an exact version/platform key: no fallbacks.
-      - name: Restore Swift toolchain cache
-        if: ${{ runner.os == 'macOS' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: ${{ runner.tool_cache }}/swift-macOS/${{ env.SWIFT_VERSION }}
-          key: swift-toolchain-v1-${{ matrix.os }}-${{ runner.arch }}-${{ env.SWIFT_VERSION }}
-
       - name: Set up Swift
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
           swift-version: ${{ env.SWIFT_VERSION }}
+
+      - name: Record the Swift build image
+        if: ${{ runner.os == 'macOS' }}
+        id: swift-image
+        run: echo "version=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+
+      # Compiled modules depend on the compiler and Apple SDK in the runner
+      # image. Restore only the same image, architecture and source inputs.
+      # Every swift test/build command still runs and validates its inputs.
+      - name: Restore Swift build cache
+        if: ${{ runner.os == 'macOS' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: .build
+          key: swift-build-v1-${{ matrix.os }}-${{ runner.arch }}-${{ env.SWIFT_VERSION }}-${{ steps.swift-image.outputs.version }}-${{ hashFiles('Package.swift', 'sdk/swift/**/*.swift', '.github/workflows/ci.yml') }}
 
       - name: Check Swift SDK version
         run: |
