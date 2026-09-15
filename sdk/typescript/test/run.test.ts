@@ -498,3 +498,46 @@ describe("escape hatch", () => {
     assert.equal(me.email, "test@example.com");
   });
 });
+
+
+describe("runRequest", () => {
+  test("forwards wire fields, preserves empty/null/false values and follows the turn", async () => {
+    fake.onTurn = (c, n) => fake.scriptTurn(c.id, { turnNumber: n, turnId: "t1", text: ["ok"] });
+    const request = {
+      agent_id: "11111111-1111-1111-1111-111111111111", prompt: "hello",
+      title: "", vault_id: null, images: [], fresh: false, queue: false,
+      labels: { attempt: "0" }, permission_policy: { default: "auto_allow" as const },
+      sandbox_api_access: "none" as const,
+    };
+    const result = await client().runRequest(request, { collectEvents: true, timeoutMs: 1000 });
+    assert.equal(result.text, "ok");
+    const create = fake.requests.find(r => r.method === "POST" && r.path === "/api/conversations");
+    assert.deepEqual(create?.body, request);
+    assert.ok(!fake.requests.some(r => r.path === "/api/agents"));
+    assert.ok(!Object.hasOwn(create!.body as object, "environment_id"));
+  });
+
+  test("uses channel history when choosing the turn to follow", async () => {
+    fake.onTurn = (c) => fake.scriptTurn(c.id, { turnNumber: 2, turnId: "t2", text: ["next"] });
+    const sdk = client();
+    // FakeFountain has no channel binding; supply the resumed thread's history.
+    sdk.api.list = async <T>(path: string): Promise<T[]> => {
+      assert.match(path, /conversations\/[^/]+\/turns$/);
+      return [{ turn_number: 1 }] as T[];
+    };
+    const result = await sdk.runRequest({
+      agent_id: "11111111-1111-1111-1111-111111111111", prompt: "hi", channel_id: "raw",
+    }, { timeoutMs: 1000 });
+    assert.equal(result.turnNumber, 2);
+    assert.equal(result.text, "next");
+  });
+
+  test("refuses promptless and queued runs before sending anything", () => {
+    const sdk = client();
+    for (const prompt of [undefined, "", "  "]) {
+      assert.throws(() => sdk.runRequest({ agent_id: "id", prompt }), /non-empty prompt/);
+    }
+    assert.throws(() => sdk.runRequest({ agent_id: "id", prompt: "hi", queue: true }), /queued/);
+    assert.equal(fake.requests.length, 0);
+  });
+});
