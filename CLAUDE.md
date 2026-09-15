@@ -41,11 +41,15 @@ mise install                        # Erlang/OTP 28 + Elixir 1.19.2, from .tool-
 mix deps.get && mix setup           # dev DB: create + migrate
 MIX_ENV=test mix ecto.create && MIX_ENV=test mix ecto.migrate
 mix test                            # core, ee/test and every sibling app
-mix precommit                       # the local gate: static checks, sobelow, release assemble
-mix precommit --full                # the same plus the whole suite; CI runs the suite either way
+mix precommit                       # server checks: static analysis, sobelow, release assemble
+mix precommit --full                # server checks plus the whole suite
 mix precommit --list                # its stages; `mix precommit credo test` runs a subset
 gh pr merge <N> --squash --auto     # queue a reviewed PR; never --admin
 ```
+
+Choose local checks by the changed component in
+[CONTRIBUTING.md](CONTRIBUTING.md#before-you-push). Go, SDK and tooling changes
+use their own checks; mixed changes combine the relevant checks.
 
 Run every mix command through the pinned toolchain (activate mise, or
 `mise exec -- mix ...`). `mix precommit` refuses a different Elixir.

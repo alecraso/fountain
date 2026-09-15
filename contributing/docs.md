@@ -66,7 +66,8 @@ go -C cli test -count=1 ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNo
 
 For SDK documentation, run that client's checks from
 [scripts/ci/README.md](../scripts/ci/README.md#sdk-jobs).
-`mix precommit` remains the full local gate for code, CI policy and mixed changes.
+For code, tooling or mixed changes, use the component checks in
+[CONTRIBUTING.md](../CONTRIBUTING.md#before-you-push).
 
 ## Structural rules
 
