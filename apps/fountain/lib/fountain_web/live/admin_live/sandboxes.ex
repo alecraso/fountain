@@ -43,15 +43,10 @@ defmodule FountainWeb.AdminLive.Sandboxes do
 
   @impl true
   def handle_event("reap_sandbox", %{"id" => id}, socket) do
-    case Termination.reap_sandbox(id) do
+    # Termination.reap_sandbox/2 records admin.sandbox.reaped itself (#2255
+    # decision 4).
+    case Termination.reap_sandbox(id, admin_user_id: socket.assigns.current_user.id) do
       {:ok, outcome} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: nil,
-          event_type: "admin.sandbox.reaped",
-          metadata: %{"sandbox_id" => id, "outcome" => to_string(outcome)}
-        })
-
         msg =
           case outcome do
             :terminated -> "Sandbox and its live conversations terminated"

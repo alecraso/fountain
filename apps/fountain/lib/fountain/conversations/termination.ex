@@ -272,45 +272,78 @@ defmodule Fountain.Conversations.Termination do
   resumable (next prompt gets a fresh sandbox, with the agent's memory lost —
   decisions/0017) and the reaper destroys the sprite on its next pass, the
   same split `SandboxReaper.sweep_abandoned_sandboxes/0` uses.
+
+  With `admin_user_id:` in `opts`, a successful reap records
+  `admin.sandbox.reaped` here, outside any transaction (this function opens
+  none) — folded in from the admin controller and `AdminLive.Sandboxes`,
+  which used to record the identical event themselves (#2255 decision 4).
+  `reap_all_for_user/1` below passes no admin id, so a suspension's reaps
+  stay silent, exactly as before.
   """
-  def reap_sandbox(sandbox_id) do
+  def reap_sandbox(sandbox_id, opts \\ []) do
     alias Fountain.Conversations.ConversationServer
 
     # ownership: sandbox_id is given by an admin surface behind require_admin
     # (AdminController.reap_sandbox/2, AdminLive.Sandboxes), or by
     # reap_all_for_user/1 below whose own caller (Accounts.suspend_user/1) is
     # admin-driven.
-    case Conversations._unsafe_get_sandbox(sandbox_id) do
+    result =
+      case Conversations._unsafe_get_sandbox(sandbox_id) do
+        nil ->
+          {:error, :not_found}
+
+        %Sandbox{status: s} when s in ["terminated", "failed"] ->
+          {:ok, :already_terminal}
+
+        sandbox ->
+          sandbox = Fountain.Repo.preload(sandbox, :conversations)
+          live = Enum.filter(sandbox.conversations, &ConversationServer.whereis(&1.id))
+
+          if live == [] do
+            now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+            {:ok, _} =
+              Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+
+            {:ok, :released}
+          else
+            # A reclaimed sandbox took the tenant's conversations down with it,
+            # which is worth a row each — this is the one termination they did
+            # not ask for. #551 covers the reaper that calls this.
+            Enum.each(
+              live,
+              &terminate_conversation(&1.id, actor: "system:sandbox_reaper")
+            )
+
+            {:ok, :terminated}
+          end
+      end
+
+    audit_reap(sandbox_id, result, opts)
+    result
+  end
+
+  # Only on success, and only when the caller identified an admin. A failed
+  # reap changed nothing, and reap_all_for_user/1's suspension sweep records
+  # nothing per sandbox, per #2255 decision 4.
+  defp audit_reap(sandbox_id, {:ok, outcome}, opts) do
+    case Keyword.get(opts, :admin_user_id) do
       nil ->
-        {:error, :not_found}
+        :ok
 
-      %Sandbox{status: s} when s in ["terminated", "failed"] ->
-        {:ok, :already_terminal}
+      admin_user_id ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: admin_user_id,
+          target_user_id: nil,
+          event_type: "admin.sandbox.reaped",
+          metadata: %{"sandbox_id" => sandbox_id, "outcome" => to_string(outcome)}
+        })
 
-      sandbox ->
-        sandbox = Fountain.Repo.preload(sandbox, :conversations)
-        live = Enum.filter(sandbox.conversations, &ConversationServer.whereis(&1.id))
-
-        if live == [] do
-          now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-          {:ok, _} =
-            Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
-
-          {:ok, :released}
-        else
-          # A reclaimed sandbox took the tenant's conversations down with it,
-          # which is worth a row each — this is the one termination they did
-          # not ask for. #551 covers the reaper that calls this.
-          Enum.each(
-            live,
-            &terminate_conversation(&1.id, actor: "system:sandbox_reaper")
-          )
-
-          {:ok, :terminated}
-        end
+        :ok
     end
   end
+
+  defp audit_reap(_sandbox_id, _result, _opts), do: :ok
 
   @doc """
   Reap every active sandbox belonging to `user_id` — the suspension path
