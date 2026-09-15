@@ -62,8 +62,9 @@ defmodule Fountain.Conversations.Conversation do
     # in `start_conversation/2` rather than silently clamped.
     field :permission_policy, :map
     # `caller_tools` was the retired tool bridge's registry (#1202). The field
-    # is gone with the bridge (ADR 0057, #2252); the column stays until #2273
-    # drops it, so this server is a non-reader while older ones still write it.
+    # went with the bridge (ADR 0057, #2252) and the column with #2273, one
+    # release later, so that v0.18.0 could be the non-reader a rolling
+    # deployment needed before the drop.
     # Free-form `key => value` strings (#1637). Set at launch, merged by the
     # labels route and by the agent's own `_fountain/labels` ACP notification,
     # and filtered on with jsonb containment. `Conversations.Labels` owns the
