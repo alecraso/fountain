@@ -99,6 +99,44 @@ public final class Fountain: @unchecked Sendable {
       }, timeout: timeout, collectEvents: collectEvents)
   }
 
+  /// Follow an API-shaped conversation request. Uses wire keys and IDs;
+  /// timeout and event collection are local options and never enter the body.
+  public func runRequest(
+    _ request: JSONObject,
+    timeout: TimeInterval? = nil,
+    collectEvents: Bool = false
+  ) throws -> Run {
+    guard let prompt = request["prompt"]?.stringValue,
+      !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw FountainError(.validation, "runRequest requires a nonblank prompt")
+    }
+    guard request["queue"] == nil || request["queue"] == .null || request["queue"] == .bool(false)
+    else {
+      throw FountainError(.validation, "runRequest does not support queued creation")
+    }
+    return Run(
+      http: api,
+      plan: RunPlan { [api] in
+        let response = try await api.request("POST", "/api/conversations", body: .object(request))
+        let conversation = response["data"]?.objectValue ?? [:]
+        if response["meta"]?["resumed"]?.boolValue == true,
+          let id = conversation["id"]?.stringValue
+        {
+          // Resume only binds the channel. Capture history before submitting
+          // the prompt so even a fast follow-up is followed from its beginning.
+          let after = await Conversation(http: api, id: id).cursor()
+          let turns = try await api.list("/api/conversations/\(id)/turns")
+          let turnNumber = (turns.compactMap { $0["turn_number"]?.intValue }.max() ?? 0) + 1
+          var body: JSONObject = ["prompt": .string(prompt)]
+          if let images = request["images"] { body["images"] = images }
+          _ = try await api.request("POST", "/api/conversations/\(id)/prompts", body: .object(body))
+          return (conversation, turnNumber, after)
+        }
+        return (conversation, 1, 0)
+      }, timeout: timeout, collectEvents: collectEvents)
+  }
+
   public func resume(_ conversationID: String) -> Conversation {
     Conversation(http: api, id: conversationID)
   }

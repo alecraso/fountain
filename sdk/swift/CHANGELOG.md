@@ -5,6 +5,15 @@ Notable changes to the Fountain Swift SDK follow
 
 ## Unreleased
 
+### Added
+
+- `runRequest` in both products forwards API-shaped conversation requests with
+  local run options kept separate (#2231).
+- FountainKit conversation wire models are generated from the committed contract;
+  requests support explicit null, labels, queue and inference credentials. Numeric
+  permission-policy values are available through `permissionPolicyValues` while
+  the existing string-only property and initializer remain usable (#2231).
+
 ## [0.17.0] - 2026-09-14
 
 ### Breaking changes

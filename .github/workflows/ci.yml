@@ -1153,6 +1153,9 @@ jobs:
           test "${sdk_version}" = "${server_version}"
           test "${kit_version}" = "${server_version}"
 
+      - name: Generated Swift conversation models are current
+        run: python3 scripts/sdk-contract/generate-swift.py --check
+
       - name: Swift format
         run: swift format lint --strict --recursive Package.swift sdk/swift/Sources sdk/swift/Tests
 

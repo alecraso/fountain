@@ -31,6 +31,10 @@ public struct ConversationsResource: Sendable {
   }
 
   public func create(_ request: ConversationCreateRequest) async throws -> OpenedConversation {
+    guard request.queue != true else {
+      throw ConversationRunInputError(
+        message: "create returns a conversation; use the raw API for queued creation")
+    }
     let (data, response) = try await client.raw(.post, "/api/conversations", body: request)
     let envelope = try APIClient.decode(Envelope<Conversation>.self, from: data)
     // 200 + meta.resumed means a channel_id matched an existing conversation.
