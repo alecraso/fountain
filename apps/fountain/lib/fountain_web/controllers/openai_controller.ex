@@ -74,7 +74,7 @@ defmodule FountainWeb.OpenAIController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.{Agents, CallerTools, Conversations}
-  alias Fountain.Conversations.{Blocks, ConversationServer, LogEvent}
+  alias Fountain.Conversations.{Blocks, ConversationServer, Launch, LogEvent}
   alias FountainWeb.{Audited, FallbackController}
 
   tags(["Integrations"])
@@ -497,7 +497,7 @@ defmodule FountainWeb.OpenAIController do
       "caller_tools" => tools
     }
 
-    case Conversations.start_or_resume_conversation(attrs, Audited.attribution(conn)) do
+    case Launch.start_or_resume_conversation(attrs, Audited.attribution(conn)) do
       {:ok, conv, :created} ->
         subscribe(conv.id)
         {:ok, conv, 0}
@@ -533,7 +533,7 @@ defmodule FountainWeb.OpenAIController do
   defp resume(_conn, agent, user, thread, answers) do
     attrs = %{"agent_id" => agent.id, "user_id" => user.id, "channel_id" => channel_id(thread)}
 
-    case Conversations.channel_conversation(attrs) do
+    case Launch.channel_conversation(attrs) do
       nil ->
         {:error, :no_pending_tool_calls}
 

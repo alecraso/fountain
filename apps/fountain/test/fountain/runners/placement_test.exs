@@ -13,6 +13,7 @@ defmodule Fountain.Runners.PlacementTest do
   alias Fountain.Conversations
   alias Fountain.Runners
   alias Managoat.Runner.FakeDaemon
+  alias Fountain.Conversations.Launch
 
   setup do
     previous = Application.get_env(:fountain, :runners_enabled)
@@ -35,7 +36,7 @@ defmodule Fountain.Runners.PlacementTest do
     before = Fountain.Quotas.active_sandbox_count(user.id)
 
     assert {:error, :no_runner_online} =
-             Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+             Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
     assert Fountain.Quotas.active_sandbox_count(user.id) == before
   end
@@ -48,7 +49,7 @@ defmodule Fountain.Runners.PlacementTest do
     on_exit(fn -> FakeDaemon.stop(daemon) end)
 
     assert {:ok, conv} =
-             Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+             Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
     sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
     assert sandbox.provider == "runner"
@@ -69,7 +70,7 @@ defmodule Fountain.Runners.PlacementTest do
     before = Fountain.Quotas.active_sandbox_count(user.id)
 
     assert {:error, :sprite_name_not_supported} =
-             Conversations.start_conversation(%{
+             Launch.start_conversation(%{
                "agent_id" => agent.id,
                "user_id" => user.id,
                "sprite_name" => "pinned-name"
@@ -90,7 +91,7 @@ defmodule Fountain.Runners.PlacementTest do
     on_exit(fn -> FakeDaemon.stop(daemon) end)
 
     assert {:ok, conv} =
-             Conversations.start_conversation(%{
+             Launch.start_conversation(%{
                "agent_id" => agent.id,
                "user_id" => user.id,
                "sprite_name" => ""
@@ -112,12 +113,12 @@ defmodule Fountain.Runners.PlacementTest do
     on_exit(fn -> FakeDaemon.stop(daemon) end)
 
     assert {:ok, conv} =
-             Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+             Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
     minted = Conversations._unsafe_get_sandbox!(conv.sandbox_id).machine_name
 
     assert {:error, :sprite_name_not_supported} =
-             Conversations.start_conversation(%{
+             Launch.start_conversation(%{
                "agent_id" => agent.id,
                "user_id" => user.id,
                "sprite_name" => minted
@@ -129,7 +130,7 @@ defmodule Fountain.Runners.PlacementTest do
     agent = insert_agent(user_id: user.id)
 
     assert {:ok, conv} =
-             Conversations.start_conversation(%{
+             Launch.start_conversation(%{
                "agent_id" => agent.id,
                "user_id" => user.id,
                "sprite_name" => "pinned-name"

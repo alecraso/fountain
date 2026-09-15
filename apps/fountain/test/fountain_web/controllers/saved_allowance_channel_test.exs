@@ -5,6 +5,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{ConversationServer, ExecutionAllowance}
   alias FountainWeb.{AguiController, OpenAIController}
+  alias Fountain.Conversations.Launch
 
   setup do
     user = insert_verified_user()
@@ -91,7 +92,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     assert is_nil(before.inference_source)
 
     assert {:error, _} =
-             Conversations.start_or_resume_conversation(
+             Launch.start_or_resume_conversation(
                Map.put(attrs(ctx, "bad-labels"), "labels", %{"bad" => ["not a string"]})
              )
 
@@ -110,7 +111,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     end)
 
     assert {:ok, _, :resumed} =
-             Conversations.start_or_resume_conversation(
+             Launch.start_or_resume_conversation(
                Map.put(attrs(ctx, "label-audit"), "labels", %{"result" => "ready"})
              )
 
@@ -122,7 +123,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     assert is_nil(conv.inference_source)
 
     assert {:ok, resumed, :resumed} =
-             Conversations.start_or_resume_conversation(attrs(ctx, "bind-success"))
+             Launch.start_or_resume_conversation(attrs(ctx, "bind-success"))
 
     assert is_map(resumed.inference_source)
     assert Repo.reload!(conv).inference_source == resumed.inference_source
@@ -135,9 +136,9 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     attrs = attrs(ctx, "parked")
 
     assert {:error, {:execution_limits_unsupported, ["wall_time_seconds"]}} =
-             Conversations.start_or_resume_conversation(attrs)
+             Launch.start_or_resume_conversation(attrs)
 
-    assert Conversations.channel_conversation(attrs).id == conv.id
+    assert Launch.channel_conversation(attrs).id == conv.id
     assert Repo.reload!(conv.sandbox).status == "suspended"
     refute_received :worker_started
   end
@@ -148,7 +149,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
       if limits, do: save(conv, limits)
 
       assert {:ok, resumed, :resumed} =
-               Conversations.start_or_resume_conversation(attrs(ctx, channel))
+               Launch.start_or_resume_conversation(attrs(ctx, channel))
 
       assert resumed.id == conv.id
       refute_received :worker_started
@@ -160,8 +161,8 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     save(conv, %{max_model_turns: 2})
     foreign = insert_verified_user()
     foreign_attrs = Map.put(attrs(ctx, "private"), "user_id", foreign.id)
-    assert {:error, :not_found} = Conversations.start_or_resume_conversation(foreign_attrs)
-    assert Conversations.channel_conversation(foreign_attrs) == nil
+    assert {:error, :not_found} = Launch.start_or_resume_conversation(foreign_attrs)
+    assert Launch.channel_conversation(foreign_attrs) == nil
     refute_received :worker_started
   end
 
@@ -170,9 +171,7 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     save(conv, %{max_model_turns: 2})
 
     assert {:ok, fresh, :created} =
-             Conversations.start_or_resume_conversation(
-               Map.put(attrs(ctx, "rotate"), "fresh", true)
-             )
+             Launch.start_or_resume_conversation(Map.put(attrs(ctx, "rotate"), "fresh", true))
 
     refute fresh.id == conv.id
     assert Repo.reload!(conv).channel_id == nil

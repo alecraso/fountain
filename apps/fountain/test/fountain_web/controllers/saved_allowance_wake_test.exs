@@ -4,6 +4,8 @@ defmodule FountainWeb.SavedAllowanceWakeTest do
 
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{ConversationServer, ExecutionAllowance, Sandbox}
+  alias Fountain.Conversations.Interruption
+  alias Fountain.Conversations.Wake
 
   setup do
     user = insert_verified_user()
@@ -43,7 +45,7 @@ defmodule FountainWeb.SavedAllowanceWakeTest do
 
       for prompt <- [nil, "continue"] do
         assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
-                 Conversations.wake_conversation(conv.id, prompt)
+                 Wake.wake_conversation(conv.id, prompt)
       end
 
       assert Repo.reload!(conv) == conv
@@ -107,7 +109,7 @@ defmodule FountainWeb.SavedAllowanceWakeTest do
     for limits <- [:absent, %{}] do
       conv = conversation(ctx, insert_sandbox(user_id: ctx.user.id, status: "ready"))
       if limits != :absent, do: save(conv, limits)
-      assert {:ok, _} = Conversations.wake_conversation(conv.id, "continue")
+      assert {:ok, _} = Wake.wake_conversation(conv.id, "continue")
       assert_received :provider_probe
       assert_received :worker_start
       assert_received :prompt_queued
@@ -142,7 +144,7 @@ defmodule FountainWeb.SavedAllowanceWakeTest do
       [{peer, nil}]
     end)
 
-    assert :ok = ConversationServer.interrupt(conv.id)
+    assert :ok = Interruption.interrupt(conv.id)
     assert_received :interrupted
     assert_received :provider_probe
     refute_received :prompt_queued
@@ -151,7 +153,7 @@ defmodule FountainWeb.SavedAllowanceWakeTest do
   test "cancellation does not wake an idle conversation", ctx do
     conv = conversation(ctx, insert_sandbox(user_id: ctx.user.id, status: "ready"))
     save(conv, %{max_model_turns: 2})
-    assert {:error, :not_running} = Conversations.wake_for_interrupt(conv.id)
+    assert {:error, :not_running} = Interruption.wake_for_interrupt(conv.id)
     refute_side_effects()
   end
 

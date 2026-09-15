@@ -11,11 +11,11 @@ defmodule Fountain.CreditsEnforcementTest do
   alias Fountain.Accounts
   alias Fountain.Accounts.User
   alias Fountain.Billing
-  alias Fountain.Conversations
   alias Fountain.Credits
   alias Fountain.Quotas
   alias Fountain.Repo
   alias Fountain.Workers.CreditsEmail
+  alias Fountain.Conversations.Launch
 
   @since ~U[2026-07-01 00:00:00Z]
 
@@ -92,7 +92,7 @@ defmodule Fountain.CreditsEnforcementTest do
       agent = insert_agent(user_id: user.id)
 
       assert {:error, :insufficient_credits} =
-               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+               Launch.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       assert Quotas.active_sandbox_counts() |> Map.get(user.id, 0) == 0
     end

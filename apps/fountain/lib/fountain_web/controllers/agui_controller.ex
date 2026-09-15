@@ -54,7 +54,7 @@ defmodule FountainWeb.AguiController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.{CallerTools, Conversations}
-  alias Fountain.Conversations.{Blocks, ConversationServer, LogEvent}
+  alias Fountain.Conversations.{Blocks, ConversationServer, Launch, LogEvent}
   alias FountainWeb.Audited
 
   action_fallback FountainWeb.FallbackController
@@ -171,7 +171,7 @@ defmodule FountainWeb.AguiController do
   defp resume(agent_id, user, thread_id, answers) do
     attrs = %{"agent_id" => agent_id, "user_id" => user.id, "channel_id" => channel_id(thread_id)}
 
-    case Conversations.channel_conversation(attrs) do
+    case Launch.channel_conversation(attrs) do
       nil ->
         {:error, "no_pending_tool_calls"}
 
@@ -205,7 +205,7 @@ defmodule FountainWeb.AguiController do
       "caller_tools" => tools
     }
 
-    case Conversations.start_or_resume_conversation(attrs, Audited.attribution(conn)) do
+    case Launch.start_or_resume_conversation(attrs, Audited.attribution(conn)) do
       {:ok, conv, :created} ->
         subscribe(conv.id)
         # A conversation opened by this request has no earlier events to skip.

@@ -23,14 +23,11 @@ defmodule Fountain.Conversations do
     TurnImage
   }
 
-  alias Fountain.Conversations.Reapply
-  alias Fountain.Conversations.Wake
   alias Fountain.Conversations.Interruption
   alias Fountain.Conversations.Termination
   alias Fountain.Conversations.InferenceResolution
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
-  alias Fountain.Conversations.Launch
   alias Fountain.InferenceCredentials
   alias Fountain.InferenceCredentials.Source
   alias Fountain.PermissionPolicy
@@ -97,7 +94,7 @@ defmodule Fountain.Conversations do
   Whether a conversation other than `conv_id` still holds `sandbox_id` — one
   that is not `terminated`/`failed`. A sandbox normally has one conversation;
   it gets a second when a teammate starts a fresh conversation on the same
-  computer (`ConversationServer.release_conversation/2`, `Fountain.Team`),
+  computer (`Fountain.Conversations.Termination.release_conversation/2`, `Fountain.Team`),
   and from then on the retired thread's lifecycle must not reach the disk
   its successor is running on. `_unsafe_`: callers have established
   ownership of `conv_id` already (a GenServer, or a scoped fetch before it).
@@ -198,7 +195,7 @@ defmodule Fountain.Conversations do
           # not ask for. #551 covers the reaper that calls this.
           Enum.each(
             live,
-            &ConversationServer.terminate_conversation(&1.id, actor: "system:sandbox_reaper")
+            &Termination.terminate_conversation(&1.id, actor: "system:sandbox_reaper")
           )
 
           {:ok, :terminated}
@@ -238,7 +235,7 @@ defmodule Fountain.Conversations do
 
   Every sandbox status change in the system goes through here — fresh
   provisioning, the wake path, and the terminate-when-the-server-is-already-dead
-  path in `ConversationServer.terminate_conversation/2`. Metering at this choke point means a
+  path in `Fountain.Conversations.Termination.terminate_conversation/2`. Metering at this choke point means a
   new caller cannot forget to record usage, which is how `Billing.emit/5` ended
   up with no call sites at all despite being documented, schema'd and tested.
 
@@ -1244,7 +1241,7 @@ defmodule Fountain.Conversations do
   so a reassignment during provider cleanup cannot terminate the new binding.
 
   The actor owns both IDs. This is internal lifecycle bookkeeping; the public
-  `ConversationServer.terminate_conversation/2` records the action's audit once
+  `Fountain.Conversations.Termination.terminate_conversation/2` records the action's audit once
   after a successful reply. A missing or moved conversation returns a refusal.
   """
   def _unsafe_finish_conversation_termination(conversation_id, sandbox_id) do
@@ -1265,18 +1262,6 @@ defmodule Fountain.Conversations do
         {:error, :sandbox_unavailable}
     end
   end
-
-  @doc """
-  Re-resolve the Agent, Environment and Vault for an existing conversation,
-  on the machine it is already running (#1565). Owned by
-  `Fountain.Conversations.Reapply.reapply_conversation/3`, which holds the
-  rule and the docs; this is the door the API controller calls.
-  """
-  @spec reapply_conversation(Conversation.t(), map(), keyword()) ::
-          {:ok, Conversation.t()} | {:error, term()}
-  def reapply_conversation(%Conversation{} = conv, attrs \\ %{}, opts \\ [])
-      when is_map(attrs),
-      do: Reapply.reapply_conversation(conv, attrs, opts)
 
   # The lock turn admission takes, so a reapply and a turn start cannot
   # interleave on one machine. `nil` is a conversation whose machine has not
@@ -1319,7 +1304,7 @@ defmodule Fountain.Conversations do
     # detail of deleting, not a second thing the user asked for, and the
     # `conversation.deleted` below already accounts for the sandbox going
     # away. Without it every delete would read as terminate-then-delete.
-    _ = Fountain.Conversations.ConversationServer.terminate_conversation(id, audit: false)
+    _ = Termination.terminate_conversation(id, audit: false)
     result = Repo.delete(conv)
 
     if match?({:ok, _}, result) do
@@ -1999,11 +1984,6 @@ defmodule Fountain.Conversations do
     end_running_turn(turn, sandbox_id, status, true, Map.new(Keyword.take(opts, [:exit_code])))
   end
 
-  # Row write for the interrupted turn moved to `Fountain.Conversations.Interruption`
-  # in #2213 (one owner per lifecycle verb); this keeps the name every caller
-  # (`turn_machine.ex`, `interruption_admission_isolation_test.exs`) calls.
-  defdelegate _unsafe_interrupt_turn(turn, sandbox_id), to: Interruption
-
   # Door for `Fountain.Conversations.Interruption` (#2213), which shares this
   # helper with `_unsafe_complete_turn/4` above and so cannot move with it.
   @doc false
@@ -2047,11 +2027,6 @@ defmodule Fountain.Conversations do
         error
     end
   end
-
-  # Row write for the interrupted turn's idle release moved to
-  # `Fountain.Conversations.Interruption` in #2213; this keeps the name
-  # `turn_machine.ex` calls.
-  defdelegate _unsafe_idle_interrupted_turn(turn), to: Interruption
 
   @doc """
   Finish an actor's machine-gone notification, and release a stranded parent.
@@ -2764,20 +2739,6 @@ defmodule Fountain.Conversations do
   alias Fountain.Agents
   alias Fountain.Conversations.ConversationServer
 
-  @doc """
-  Start a conversation, or resume the one already bound to `attrs["channel_id"]`.
-  See `Fountain.Conversations.Launch.start_or_resume_conversation/2`.
-  """
-  def start_or_resume_conversation(attrs, opts \\ []),
-    do: Launch.start_or_resume_conversation(attrs, opts)
-
-  @doc """
-  The conversation a channel binding resumes, without opening one.
-  See `Fountain.Conversations.Launch.channel_conversation/1`.
-  """
-  @spec channel_conversation(map()) :: Conversation.t() | nil
-  defdelegate channel_conversation(attrs), to: Launch
-
   # No runtime has integrated end-to-end enforcement yet. Refuse a requested
   # control before reserving capacity, attaching or unbinding a channel; an
   # SDK option alone must not make admission promise a bounded execution.
@@ -2826,13 +2787,6 @@ defmodule Fountain.Conversations do
       do: merge_labels(conv, labels),
       else: {:error, :sprite_may_not_label_another_conversation}
   end
-
-  @doc """
-  Start a conversation: a fresh sandbox + conversation, or an attach onto one
-  the caller already has (`attrs["sandbox_id"]`, ADR 0023 gate 3).
-  See `Fountain.Conversations.Launch.start_conversation/2`.
-  """
-  def start_conversation(attrs, opts \\ []), do: Launch.start_conversation(attrs, opts)
 
   @doc """
   The live home of an agent identity — the one persistent sandbox for
@@ -3005,9 +2959,7 @@ defmodule Fountain.Conversations do
 
         fenced.conversations
         |> Enum.reject(&(&1.status in ["terminated", "failed"]))
-        |> Enum.each(
-          &ConversationServer.terminate_conversation(&1.id, actor: "system:home_reset")
-        )
+        |> Enum.each(&Termination.terminate_conversation(&1.id, actor: "system:home_reset"))
 
         _unsafe_retire_home(fenced)
       end
@@ -4131,19 +4083,6 @@ defmodule Fountain.Conversations do
       _errors -> {:error, :permission_policy_invalid}
     end
   end
-
-  # `Wake.wake_conversation/2` holds the docstring, the strategy notes and
-  # the `{:error, :gone}` contract (#2211); this stays the public name every
-  # caller (conversation_server.ex `send_prompt/4` and `interrupt_dead/1`, and
-  # the Mimic stub in audit_guardrail_test.exs) keeps calling.
-  def wake_conversation(conv_id, initial_prompt \\ nil),
-    do: Wake.wake_conversation(conv_id, initial_prompt)
-
-  # The client half moved to `Fountain.Conversations.Interruption` in #2213
-  # (one owner per lifecycle verb); this keeps the name every caller
-  # (`conversation_server.ex`, `saved_allowance_wake_test.exs`) calls.
-  @spec wake_for_interrupt(binary()) :: {:ok, pid()} | {:error, :not_found | :not_running}
-  defdelegate wake_for_interrupt(conv_id), to: Interruption
 
   def sandbox_provider_atom(%{provider: provider}) when is_binary(provider),
     do: String.to_existing_atom(provider)

@@ -2,8 +2,9 @@ defmodule Fountain.Conversations.LaunchCommitBoundaryTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.Conversations
   alias Fountain.Conversations.{Conversation, Sandbox}
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Wake
 
   setup do
     user = insert_active_user()
@@ -38,15 +39,13 @@ defmodule Fountain.Conversations.LaunchCommitBoundaryTest do
                Repo.transaction(fn ->
                  case ctx.path do
                    :create ->
-                     Conversations.start_conversation(attrs)
+                     Launch.start_conversation(attrs)
 
                    :attach ->
-                     Conversations.start_conversation(
-                       Map.put(attrs, "sandbox_id", ctx.sandbox.id)
-                     )
+                     Launch.start_conversation(Map.put(attrs, "sandbox_id", ctx.sandbox.id))
 
                    :wake ->
-                     Conversations.wake_conversation(ctx.conv.id, "hello")
+                     Wake.wake_conversation(ctx.conv.id, "hello")
                  end
                end)
 

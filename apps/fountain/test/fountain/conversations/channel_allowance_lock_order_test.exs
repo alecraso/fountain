@@ -5,6 +5,7 @@ defmodule Fountain.Conversations.ChannelAllowanceLockOrderTest do
   alias Fountain.{Conversations, Crypto, InferenceCredentials}
   alias Fountain.Conversations.ExecutionAllowance
   alias Fountain.InferenceCredentials.Source
+  alias Fountain.Conversations.Launch
 
   for runtime <- ["claude", "codex"] do
     test "#{runtime} channel resume locks the conversation before its allowance" do
@@ -51,7 +52,7 @@ defmodule Fountain.Conversations.ChannelAllowanceLockOrderTest do
             )
 
             try do
-              Conversations.start_or_resume_conversation(%{
+              Launch.start_or_resume_conversation(%{
                 "user_id" => user.id,
                 "agent_id" => agent.id,
                 "channel_id" => "lock-order",

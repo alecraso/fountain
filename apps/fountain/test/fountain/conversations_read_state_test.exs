@@ -3,6 +3,7 @@ defmodule Fountain.ConversationsReadStateTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Wake
 
   # mark_read/2 and the last_active_at / unread reporting it feeds.
   # Split out of the 2,215-line conversations_context_test.exs (#899): ExUnit
@@ -165,7 +166,7 @@ defmodule Fountain.ConversationsReadStateTest do
 
       before = Fountain.Repo.all(Fountain.Conversations.Sandbox) |> MapSet.new(& &1.id)
 
-      assert {:ok, _conv} = Conversations.wake_conversation(conv.id, "hi")
+      assert {:ok, _conv} = Wake.wake_conversation(conv.id, "hi")
 
       # The row the loser created for itself is terminated, not pending —
       # which is what #330 is about: a double-click must not strand a quota
@@ -204,7 +205,7 @@ defmodule Fountain.ConversationsReadStateTest do
         :ok
       end)
 
-      assert {:ok, _} = Conversations.wake_conversation(conv.id, "the racing prompt")
+      assert {:ok, _} = Wake.wake_conversation(conv.id, "the racing prompt")
       assert_received {:forwarded, _conv_id, "the racing prompt"}
     end
 
@@ -217,7 +218,7 @@ defmodule Fountain.ConversationsReadStateTest do
         {:error, :max_children}
       end)
 
-      assert {:error, :max_children} = Conversations.wake_conversation(conv.id, "hi")
+      assert {:error, :max_children} = Wake.wake_conversation(conv.id, "hi")
     end
   end
 end

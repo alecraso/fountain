@@ -12,6 +12,7 @@ defmodule Fountain.Conversations.LabelsTest do
   alias Fountain.Audit
   alias Fountain.Conversations
   alias Fountain.Conversations.Labels
+  alias Fountain.Conversations.Launch
 
   describe "the limits" do
     test "a legal map passes" do
@@ -358,7 +359,7 @@ defmodule Fountain.Conversations.LabelsTest do
     end
 
     defp resume(context, extra) do
-      Conversations.start_or_resume_conversation(
+      Launch.start_or_resume_conversation(
         Map.merge(
           %{
             "agent_id" => context.agent.id,
@@ -401,7 +402,7 @@ defmodule Fountain.Conversations.LabelsTest do
       {key, _raw} = insert_sprite_api_key(context.user)
 
       assert {:error, :sprite_may_not_label_another_conversation} =
-               Conversations.start_or_resume_conversation(
+               Launch.start_or_resume_conversation(
                  %{
                    "agent_id" => context.agent.id,
                    "user_id" => context.user.id,

@@ -24,6 +24,8 @@ defmodule Fountain.Conversations.PromptReplayTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Wake
 
   setup :set_mimic_global
 
@@ -68,7 +70,7 @@ defmodule Fountain.Conversations.PromptReplayTest do
     test "puts no prompt in the child spec", %{conv: conv} do
       # The bug, in one assertion. Anything in here is replayed by Horde on
       # every redistribution, so a one-shot side effect must not be in it.
-      {:ok, _} = Conversations.wake_conversation(conv.id, "run the migration")
+      {:ok, _} = Wake.wake_conversation(conv.id, "run the migration")
 
       args = spec_args()
 
@@ -83,7 +85,7 @@ defmodule Fountain.Conversations.PromptReplayTest do
       # to the pid start_child returned, not through the registry: a cast to
       # a not-yet-propagated via-name is a silent no-op that eats the first
       # prompt (#367).
-      {:ok, _} = Conversations.wake_conversation(conv.id, "run the migration")
+      {:ok, _} = Wake.wake_conversation(conv.id, "run the migration")
 
       assert_received {:started_pid, started_pid}
       assert_received {:queued_prompt, target, "run the migration", _}
@@ -92,13 +94,13 @@ defmodule Fountain.Conversations.PromptReplayTest do
 
     test "waking without a prompt queues nothing", %{conv: conv} do
       # The rehydrator path. A boot must not send anything to the agent.
-      {:ok, _} = Conversations.wake_conversation(conv.id)
+      {:ok, _} = Wake.wake_conversation(conv.id)
 
       refute_received {:queued_prompt, _, _, _}
     end
 
     test "the spec carries only what a restart legitimately needs", %{conv: conv} do
-      {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
+      {:ok, _} = Wake.wake_conversation(conv.id, "hello")
 
       assert Enum.sort(Keyword.keys(spec_args())) ==
                [:conversation_id, :runtime_module, :sandbox_id]
@@ -110,7 +112,7 @@ defmodule Fountain.Conversations.PromptReplayTest do
       # The other entry point. Fixing only the wake path would leave every
       # conversation created with an opening prompt still replaying it.
       {:ok, _conv} =
-        Conversations.start_conversation(%{
+        Launch.start_conversation(%{
           "agent_id" => agent.id,
           "user_id" => user.id,
           "prompt" => "kick things off"

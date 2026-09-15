@@ -7,6 +7,7 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
   use Fountain.ConversationServerCase
 
   alias Fountain.Environments
+  alias Fountain.Conversations.Reapply
 
   setup do
     user = insert_verified_user()
@@ -124,7 +125,7 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
       :ok
     end)
 
-    assert {:ok, updated} = Conversations.reapply_conversation(conv, %{})
+    assert {:ok, updated} = Reapply.reapply_conversation(conv, %{})
     {pid, _, :alive} = start_server(updated)
 
     assert_received :skills_reconciled
@@ -151,7 +152,7 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
       {:error, {:unavailable, :test_finished}}
     end)
 
-    assert {:ok, updated} = Conversations.reapply_conversation(conv, %{})
+    assert {:ok, updated} = Reapply.reapply_conversation(conv, %{})
     assert :sys.get_state(pid).configuration_revision == 0
 
     assert :ok = GenServer.call(pid, {:send_prompt, "after reapply", []})

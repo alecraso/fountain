@@ -7,7 +7,8 @@ defmodule FountainWeb.ConversationController do
 
   alias Fountain.Billing
   alias Fountain.Conversations
-  alias Fountain.Conversations.{ConversationServer, LogEvent}
+  alias Fountain.Conversations.{ConversationServer, Interruption, Launch, LogEvent}
+  alias Fountain.Conversations.{Reapply, Termination}
   alias FountainWeb.Audited
   alias FountainWeb.LabelFilter
   alias FountainWeb.SandboxKey
@@ -553,7 +554,7 @@ defmodule FountainWeb.ConversationController do
     opts = SandboxKey.opts(conn) ++ Audited.attribution(conn)
 
     with :ok <- Billing.check_spend(user),
-         {:ok, conv, outcome} <- Conversations.start_or_resume_conversation(params, opts) do
+         {:ok, conv, outcome} <- Launch.start_or_resume_conversation(params, opts) do
       # 201 when a conversation was opened; 200 when `channel_id` resumed an
       # existing one (#774). Same body either way, so a client that ignores
       # the status still gets the id it needs.
@@ -672,7 +673,7 @@ defmodule FountainWeb.ConversationController do
       conv ->
         # Ownership was established by the scoped fetch above.
         with {:ok, updated} <-
-               Conversations.reapply_conversation(conv, params, Audited.attribution(conn)) do
+               Reapply.reapply_conversation(conv, params, Audited.attribution(conn)) do
           render(conn, :show, conversation: updated)
         end
     end
@@ -871,7 +872,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.terminate_conversation(id, Audited.attribution(conn)) do
+        case Termination.terminate_conversation(id, Audited.attribution(conn)) do
           :ok -> send_resp(conn, :no_content, "")
           {:error, :not_running} -> {:error, :not_found}
           # :provisioning and future shapes render via the FallbackController.
@@ -906,7 +907,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.interrupt(id, Audited.attribution(conn)) do
+        case Interruption.interrupt(id, Audited.attribution(conn)) do
           :ok ->
             send_resp(conn, :no_content, "")
 

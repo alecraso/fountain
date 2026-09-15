@@ -4,6 +4,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
 
   alias Fountain.{Agents, Conversations}
   alias Fountain.Conversations.Reapply
+  alias Fountain.Conversations.Launch
 
   setup do
     user = insert_active_user()
@@ -71,7 +72,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       turn = insert_turn(ctx.conv, status: "completed", prompt: "remember this")
 
       assert {:ok, updated} =
-               Conversations.reapply_conversation(ctx.conv, %{},
+               Reapply.reapply_conversation(ctx.conv, %{},
                  actor: "api",
                  request_ip: "10.0.0.1"
                )
@@ -110,7 +111,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
         {:ok, :reloaded}
       end)
 
-      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert {:ok, updated} = Reapply.reapply_conversation(ctx.conv, %{})
       assert_received {:refreshed, id, revision}
       assert id == ctx.conv.id
       assert revision == updated.configuration_revision
@@ -130,7 +131,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       end)
 
       # The commit already happened, so the caller is not told it did not.
-      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert {:ok, updated} = Reapply.reapply_conversation(ctx.conv, %{})
       assert updated.configuration_revision == 1
 
       # The part the previous shape of this test never looked at: the row moved
@@ -150,7 +151,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
 
     test "audits the change, naming the fields that moved", ctx do
       assert {:ok, updated} =
-               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id},
+               Reapply.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id},
                  actor: "api",
                  request_ip: "10.0.0.1"
                )
@@ -173,24 +174,24 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       newest = Agents._unsafe_current_version_id(ctx.agent.id)
       refute newest == ctx.conv.agent_version_id
 
-      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert {:ok, updated} = Reapply.reapply_conversation(ctx.conv, %{})
       assert updated.agent_version_id == newest
     end
 
     test "rebinds the Vault, and an explicit null clears it", ctx do
       assert {:ok, updated} =
-               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+               Reapply.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
 
       assert updated.vault_id == ctx.new_vault.id
       assert updated.sandbox_id == ctx.sandbox.id
 
-      assert {:ok, cleared} = Conversations.reapply_conversation(updated, %{"vault_id" => nil})
+      assert {:ok, cleared} = Reapply.reapply_conversation(updated, %{"vault_id" => nil})
       assert cleared.vault_id == nil
     end
 
     test "rebinds to an environment that builds the machine the same way", ctx do
       assert {:ok, updated} =
-               Conversations.reapply_conversation(ctx.conv, %{
+               Reapply.reapply_conversation(ctx.conv, %{
                  "environment_id" => ctx.sibling_env.id
                })
 
@@ -210,7 +211,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
         )
 
       assert {:error, {:rebuild_required, :runtime}} =
-               Conversations.reapply_conversation(ctx.conv, %{"agent_id" => codex.id})
+               Reapply.reapply_conversation(ctx.conv, %{"agent_id" => codex.id})
 
       unchanged = Conversations._unsafe_get_conversation!(ctx.conv.id)
       assert unchanged.agent_id == ctx.agent.id
@@ -233,7 +234,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       conv = Conversations._unsafe_get_conversation!(ctx.conv.id)
 
       assert {:error, {:rebuild_required, :setup_script}} =
-               Conversations.reapply_conversation(conv, %{"environment_id" => rebuilt.id})
+               Reapply.reapply_conversation(conv, %{"environment_id" => rebuilt.id})
 
       assert Conversations._unsafe_get_conversation!(conv.id).environment_id == nil
     end
@@ -257,7 +258,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       conv = Conversations._unsafe_get_conversation!(ctx.conv.id)
 
       assert {:error, {:rebuild_required, :networking}} =
-               Conversations.reapply_conversation(conv, %{"environment_id" => restricted.id})
+               Reapply.reapply_conversation(conv, %{"environment_id" => restricted.id})
     end
 
     test "refuses to reconfigure a machine other conversations share", ctx do
@@ -286,10 +287,10 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       # Skills, instructions and .mcp.json are per-machine paths, so changing
       # the vault here would change it for the cotenant too.
       assert {:error, {:rebuild_required, :shared_sandbox}} =
-               Conversations.reapply_conversation(conv, %{"vault_id" => ctx.new_vault.id})
+               Reapply.reapply_conversation(conv, %{"vault_id" => ctx.new_vault.id})
 
       # The refresh its cotenants would want anyway is still allowed.
-      assert {:ok, refreshed} = Conversations.reapply_conversation(conv, %{})
+      assert {:ok, refreshed} = Reapply.reapply_conversation(conv, %{})
       assert refreshed.sandbox_id == home.id
     end
   end
@@ -300,7 +301,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       foreign_agent = insert_agent(user_id: other.id)
 
       assert {:error, :not_found} =
-               Conversations.reapply_conversation(ctx.conv, %{"agent_id" => foreign_agent.id})
+               Reapply.reapply_conversation(ctx.conv, %{"agent_id" => foreign_agent.id})
 
       locked_agent =
         insert_agent(
@@ -311,7 +312,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
         )
 
       assert {:error, :vault_not_allowed} =
-               Conversations.reapply_conversation(ctx.conv, %{
+               Reapply.reapply_conversation(ctx.conv, %{
                  "agent_id" => locked_agent.id,
                  "vault_id" => ctx.new_vault.id
                })
@@ -324,19 +325,19 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
     test "a running turn", ctx do
       insert_turn(ctx.conv, status: "running")
 
-      assert {:error, :conversation_busy} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert {:error, :conversation_busy} = Reapply.reapply_conversation(ctx.conv, %{})
       assert Conversations._unsafe_get_conversation!(ctx.conv.id).vault_id == ctx.old_vault.id
     end
 
     test "a terminated conversation is gone", ctx do
       {:ok, done} = Conversations.update_conversation(ctx.conv, %{status: "terminated"})
-      assert {:error, :gone} = Conversations.reapply_conversation(done, %{})
+      assert {:error, :gone} = Reapply.reapply_conversation(done, %{})
     end
 
     test "a conversation whose agent was deleted is refused, not crashed", ctx do
       {:ok, orphan} = Conversations.update_conversation(ctx.conv, %{agent_id: nil})
 
-      assert {:error, :no_agent} = Conversations.reapply_conversation(orphan, %{})
+      assert {:error, :no_agent} = Reapply.reapply_conversation(orphan, %{})
     end
   end
 
@@ -348,7 +349,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       {:ok, promptless} = Conversations.update_conversation(ctx.conv, %{status: "pending"})
 
       assert {:ok, updated} =
-               Conversations.reapply_conversation(promptless, %{"vault_id" => ctx.new_vault.id})
+               Reapply.reapply_conversation(promptless, %{"vault_id" => ctx.new_vault.id})
 
       assert updated.vault_id == ctx.new_vault.id
     end
@@ -357,14 +358,14 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       {:ok, _} = Conversations.update_sandbox(ctx.sandbox, %{status: "starting"})
       {:ok, provisioning} = Conversations.update_conversation(ctx.conv, %{status: "pending"})
 
-      assert {:error, :provisioning} = Conversations.reapply_conversation(provisioning, %{})
+      assert {:error, :provisioning} = Reapply.reapply_conversation(provisioning, %{})
     end
   end
 
   describe "the machine's binding identity" do
     test "attachments use the new sandbox identity", ctx do
       assert {:ok, updated} =
-               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+               Reapply.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
 
       assert Conversations._unsafe_get_sandbox!(ctx.sandbox.id).vault_id == ctx.new_vault.id
 
@@ -375,10 +376,10 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       }
 
       assert {:ok, _} =
-               Conversations.start_conversation(Map.put(attrs, "vault_id", updated.vault_id))
+               Launch.start_conversation(Map.put(attrs, "vault_id", updated.vault_id))
 
       assert {:error, :sandbox_identity_mismatch} =
-               Conversations.start_conversation(Map.put(attrs, "vault_id", ctx.old_vault.id))
+               Launch.start_conversation(Map.put(attrs, "vault_id", ctx.old_vault.id))
     end
 
     test "a conflicting persistent home rolls back both bindings", ctx do
@@ -394,7 +395,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       )
 
       assert {:error, %Ecto.Changeset{}} =
-               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+               Reapply.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
 
       assert Conversations._unsafe_get_conversation!(ctx.conv.id).vault_id == ctx.old_vault.id
       assert Conversations._unsafe_get_sandbox!(ctx.sandbox.id).vault_id == ctx.old_vault.id
@@ -410,7 +411,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
         })
 
       {:ok, _} = Agents.update_agent(ctx.agent, %{skills: []})
-      assert {:ok, _} = Conversations.reapply_conversation(conv, %{})
+      assert {:ok, _} = Reapply.reapply_conversation(conv, %{})
       assert Conversations._unsafe_get_sandbox!(ctx.sandbox.id).applied_skills == old
     end
   end
@@ -418,12 +419,12 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
   describe "concurrent selections" do
     test "omitted fields use the latest committed selection", ctx do
       assert {:ok, _} =
-               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+               Reapply.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
 
       # Deliberately the stale `ctx.conv`: the second caller never saw the
       # first one's vault, and must not undo it by omission.
       assert {:ok, updated} =
-               Conversations.reapply_conversation(ctx.conv, %{
+               Reapply.reapply_conversation(ctx.conv, %{
                  "environment_id" => ctx.sibling_env.id
                })
 
@@ -433,7 +434,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
     end
 
     test "a stale server cannot open a turn after a reapply", ctx do
-      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert {:ok, updated} = Reapply.reapply_conversation(ctx.conv, %{})
 
       for capacity <- [:unbounded, 1] do
         assert {:error, :configuration_changed} =
@@ -463,11 +464,11 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
                  updated.configuration_revision
                )
 
-      assert {:error, :conversation_busy} = Conversations.reapply_conversation(updated, %{})
+      assert {:error, :conversation_busy} = Reapply.reapply_conversation(updated, %{})
     end
 
     test "a caller with no revision to offer is not checked", ctx do
-      assert {:ok, _} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert {:ok, _} = Reapply.reapply_conversation(ctx.conv, %{})
 
       assert {:ok, _turn} =
                Conversations._unsafe_create_turn_on_sandbox(

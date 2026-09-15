@@ -8,6 +8,7 @@ defmodule Fountain.Conversations.WakePolicyTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Wake
 
   defp parked_home do
     user = insert_verified_user()
@@ -46,7 +47,7 @@ defmodule Fountain.Conversations.WakePolicyTest do
     stub_parked_sprite()
     record_server_starts()
 
-    assert {:ok, woken} = Conversations.wake_conversation(b.id)
+    assert {:ok, woken} = Wake.wake_conversation(b.id)
     assert woken.sandbox_id == sandbox.id
     assert Repo.reload(sandbox).status == "ready"
 
@@ -61,7 +62,7 @@ defmodule Fountain.Conversations.WakePolicyTest do
     stub_parked_sprite()
     record_server_starts()
 
-    assert {:ok, _} = Conversations.wake_conversation(b.id)
+    assert {:ok, _} = Wake.wake_conversation(b.id)
     assert_receive {:server_started, _}
     assert Repo.reload(sandbox).status == "ready"
 
@@ -69,7 +70,7 @@ defmodule Fountain.Conversations.WakePolicyTest do
     reject(&Managoat.Sandbox.Sprites.resume/1)
     stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :running, raw: %{}}} end)
 
-    assert {:ok, woken} = Conversations.wake_conversation(a.id)
+    assert {:ok, woken} = Wake.wake_conversation(a.id)
     assert woken.sandbox_id == sandbox.id
     assert_receive {:server_started, spec}
     assert spec =~ a.id

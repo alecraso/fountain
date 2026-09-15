@@ -3,7 +3,7 @@ defmodule Fountain.Test.ConversationMessagePeer do
   use GenServer
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{ConversationServer, ExecutionGuard}
+  alias Fountain.Conversations.{ConversationServer, ExecutionGuard, Termination}
 
   # Runs only in disposable peer VMs. The real client and receiver communicate
   # over distribution; the database fence is the observation point, so this
@@ -56,7 +56,7 @@ defmodule Fountain.Test.ConversationMessagePeer do
 
   @impl true
   def handle_call({:request_termination, opts}, _from, :caller) do
-    {:reply, ConversationServer.terminate_conversation("conversation", opts), :caller}
+    {:reply, Termination.terminate_conversation("conversation", opts), :caller}
   end
 
   def handle_call(message, from, state),

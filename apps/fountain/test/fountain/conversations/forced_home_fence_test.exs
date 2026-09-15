@@ -3,7 +3,7 @@ defmodule Fountain.Conversations.ForcedHomeFenceTest do
   use Mimic
 
   alias Fountain.{Agents, Conversations}
-  alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Termination
 
   setup do
     user = insert_verified_user()
@@ -42,12 +42,12 @@ defmodule Fountain.Conversations.ForcedHomeFenceTest do
   end
 
   test "the fence commits before existing conversation actors are stopped", ctx do
-    expect(ConversationServer, :terminate_conversation, fn id, opts ->
+    expect(Termination, :terminate_conversation, fn id, opts ->
       refute Repo.in_transaction?()
       assert id == ctx.conv.id
       assert Repo.reload!(ctx.home).reset_requested_at
       assert {:error, :sandbox_unavailable} = admit(ctx, :unbounded)
-      Mimic.call_original(ConversationServer, :terminate_conversation, [id, opts])
+      Mimic.call_original(Termination, :terminate_conversation, [id, opts])
     end)
 
     expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
@@ -58,7 +58,7 @@ defmodule Fountain.Conversations.ForcedHomeFenceTest do
   for operation <- [:agent, :home] do
     test "an enclosing transaction refuses #{operation} teardown before any side effect", ctx do
       reject(Managoat.Sandbox.Sprites, :destroy, 1)
-      reject(ConversationServer, :terminate_conversation, 2)
+      reject(Termination, :terminate_conversation, 2)
 
       assert {:ok, {:error, :provider_transaction_open}} =
                Repo.transaction(fn ->

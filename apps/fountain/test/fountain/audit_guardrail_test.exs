@@ -37,6 +37,11 @@ defmodule Fountain.AuditGuardrailTest do
   }
 
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Interruption
+  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Reapply
+  alias Fountain.Conversations.Termination
+  alias Fountain.Conversations.Wake
 
   defmodule OkProbe do
     @moduledoc false
@@ -258,7 +263,7 @@ defmodule Fountain.AuditGuardrailTest do
           {Vaults, :update_vault, 3},
           {Vaults, :delete_vault, 2},
           {InferenceCredentials, :put_credential, 5},
-          {Conversations, :start_conversation, 2},
+          {Launch, :start_conversation, 2},
           {Conversations, :_unsafe_fence_sandbox_for_teardown, 2},
           {Fountain.Accounts.Deletion, :destroy_sprites, 2},
           {Conversations, :delete_conversation, 2},
@@ -515,7 +520,7 @@ defmodule Fountain.AuditGuardrailTest do
   # no-server paths, which write the rows for real.
   def do_conv_prompt(user) do
     conv = insert_conversation(user_id: user.id, agent: insert_agent(user_id: user.id))
-    stub(Conversations, :wake_conversation, fn _id, _prompt -> {:ok, conv} end)
+    stub(Wake, :wake_conversation, fn _id, _prompt -> {:ok, conv} end)
     :ok = ConversationServer.send_prompt(conv.id, "hello", [], actor: "ui")
   end
 
@@ -536,7 +541,7 @@ defmodule Fountain.AuditGuardrailTest do
     # that module for ConversationServer.interrupt/2 (a defdelegate to it)
     # to pick it up.
     stub(Fountain.Conversations.Interruption, :wake_for_interrupt, fn _id -> {:ok, probe} end)
-    :ok = ConversationServer.interrupt(conv.id, actor: "ui")
+    :ok = Interruption.interrupt(conv.id, actor: "ui")
   end
 
   def do_conv_terminate(user) do
@@ -549,7 +554,7 @@ defmodule Fountain.AuditGuardrailTest do
         sandbox_id: sandbox.id
       )
 
-    :ok = ConversationServer.terminate_conversation(conv.id, actor: "ui")
+    :ok = Termination.terminate_conversation(conv.id, actor: "ui")
   end
 
   def do_conv_release(user) do
@@ -563,7 +568,7 @@ defmodule Fountain.AuditGuardrailTest do
         status: "idle"
       )
 
-    :ok = ConversationServer.release_conversation(conv.id, actor: "ui")
+    :ok = Termination.release_conversation(conv.id, actor: "ui")
   end
 
   def do_allowance_creation(user) do
@@ -610,7 +615,7 @@ defmodule Fountain.AuditGuardrailTest do
       )
 
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
-    {:ok, _} = Conversations.reapply_conversation(conv)
+    {:ok, _} = Reapply.reapply_conversation(conv)
   end
 
   def do_account_compute_teardown(user) do

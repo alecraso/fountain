@@ -13,7 +13,7 @@ defmodule Fountain.ConversationCreationSeamTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.Conversations
+  alias Fountain.Conversations.Launch
 
   setup do
     user = insert_verified_user()
@@ -65,7 +65,7 @@ defmodule Fountain.ConversationCreationSeamTest do
 
   defp open(:fresh, ctx) do
     with {:ok, conv} <-
-           Conversations.start_conversation(%{
+           Launch.start_conversation(%{
              "user_id" => ctx.user.id,
              "agent_id" => ctx.agent.id,
              "sandbox_mode" => "ephemeral"
@@ -75,7 +75,7 @@ defmodule Fountain.ConversationCreationSeamTest do
 
   defp open(:attach, ctx) do
     with {:ok, conv} <-
-           Conversations.start_conversation(%{
+           Launch.start_conversation(%{
              "user_id" => ctx.user.id,
              "agent_id" => ctx.agent.id,
              "sandbox_id" => ctx.sandbox.id

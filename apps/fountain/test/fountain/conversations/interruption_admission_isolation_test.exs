@@ -2,6 +2,7 @@ defmodule Fountain.Conversations.InterruptionAdmissionIsolationTest do
   use Fountain.DataCase, async: false
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Interruption
 
   for capacity <- [1, :unbounded], ending <- [:interrupt, :machine_gone] do
     @tag capacity: capacity, ending: ending
@@ -13,7 +14,7 @@ defmodule Fountain.Conversations.InterruptionAdmissionIsolationTest do
         conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "running")
         turn = insert_turn(conv, status: "running")
         # Ownership: these fixtures are the actor's own conversation and machine.
-        assert {:ok, _} = Conversations._unsafe_interrupt_turn(turn, sandbox.id)
+        assert {:ok, _} = Interruption._unsafe_interrupt_turn(turn, sandbox.id)
         handler = {__MODULE__, make_ref()}
 
         :telemetry.attach(
@@ -45,7 +46,7 @@ defmodule Fountain.Conversations.InterruptionAdmissionIsolationTest do
                 # moved that fence into the process, since the two interrupt
                 # halves are one synchronous body and a stale actor cannot
                 # reach the second.
-                :interrupt -> Conversations._unsafe_idle_interrupted_turn(turn)
+                :interrupt -> Interruption._unsafe_idle_interrupted_turn(turn)
                 :machine_gone -> Conversations._unsafe_finish_machine_gone(conv.id, sandbox.id)
               end
             end)

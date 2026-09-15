@@ -3,6 +3,7 @@ defmodule Fountain.ConversationsWakeTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.Wake
 
   # wake_conversation/2 — resume, provider stickiness and the sandbox it lands on.
   # Split out of the 2,215-line conversations_context_test.exs (#899): ExUnit
@@ -14,21 +15,21 @@ defmodule Fountain.ConversationsWakeTest do
 
   describe "wake_conversation/2" do
     test "returns {:error, :not_found} when conversation does not exist" do
-      assert {:error, :not_found} = Conversations.wake_conversation(Ecto.UUID.generate())
+      assert {:error, :not_found} = Wake.wake_conversation(Ecto.UUID.generate())
     end
 
     test "returns {:error, :gone} when conversation status is terminated" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id, status: "terminated")
 
-      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+      assert {:error, :gone} = Wake.wake_conversation(conv.id)
     end
 
     test "returns {:error, :gone} when conversation status is failed" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id, status: "failed")
 
-      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+      assert {:error, :gone} = Wake.wake_conversation(conv.id)
     end
 
     test "an idle conversation whose sandbox was reclaimed is still resumable" do
@@ -48,7 +49,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> Process.sleep(:infinity) end)}
       end)
 
-      refute match?({:error, :gone}, Conversations.wake_conversation(conv.id))
+      refute match?({:error, :gone}, Wake.wake_conversation(conv.id))
     end
 
     test "returns {:error, :no_agent} when conversation has no agent_id" do
@@ -56,7 +57,7 @@ defmodule Fountain.ConversationsWakeTest do
       # insert_conversation does not set an agent by default, so agent_id is nil
       conv = insert_conversation(user_id: user.id, status: "idle")
 
-      assert {:error, :no_agent} = Conversations.wake_conversation(conv.id)
+      assert {:error, :no_agent} = Wake.wake_conversation(conv.id)
     end
 
     test "returns {:ok, conv} reusing existing sandbox when sprite is still alive" do
@@ -76,7 +77,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+      assert {:ok, _conv} = Wake.wake_conversation(conv.id)
     end
 
     test "a reuse that loses the start race hands the prompt to the winner (#667)" do
@@ -106,7 +107,7 @@ defmodule Fountain.ConversationsWakeTest do
         :ok
       end)
 
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id, "hello")
+      assert {:ok, woken} = Wake.wake_conversation(conv.id, "hello")
       assert_receive {:queued, ^winner, "hello"}
 
       # Reuse touches no row — the conversation still names the sandbox it
@@ -135,7 +136,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      assert {:ok, woken} = Wake.wake_conversation(conv.id)
       # Same sandbox — no fresh sprite was provisioned.
       assert woken.sandbox_id == sandbox.id
 
@@ -159,7 +160,7 @@ defmodule Fountain.ConversationsWakeTest do
 
       stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :unknown, raw: %{}}} end)
 
-      assert {:error, {:sandbox_quota_exceeded, _}} = Conversations.wake_conversation(conv.id)
+      assert {:error, {:sandbox_quota_exceeded, _}} = Wake.wake_conversation(conv.id)
       # Refused means still parked — the row must not be half-woken.
       assert Repo.reload(sandbox).status == "suspended"
     end
@@ -176,7 +177,7 @@ defmodule Fountain.ConversationsWakeTest do
 
       stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, {:unavailable, :timeout}} end)
 
-      assert {:error, :sprite_probe_failed} = Conversations.wake_conversation(conv.id)
+      assert {:error, :sprite_probe_failed} = Wake.wake_conversation(conv.id)
       assert Repo.reload(sandbox).status == "suspended"
     end
 
@@ -197,7 +198,7 @@ defmodule Fountain.ConversationsWakeTest do
 
       reject(&Horde.DynamicSupervisor.start_child/2)
 
-      assert {:error, :sprite_probe_failed} = Conversations.wake_conversation(conv.id)
+      assert {:error, :sprite_probe_failed} = Wake.wake_conversation(conv.id)
       reloaded = Repo.reload(sandbox)
       assert reloaded.status == "ready"
       assert is_nil(reloaded.terminated_at)
@@ -217,7 +218,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      assert {:ok, woken} = Wake.wake_conversation(conv.id)
       assert woken.sandbox_id != sandbox.id
       assert Repo.reload(sandbox).status == "terminated"
     end
@@ -256,7 +257,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      assert {:ok, woken} = Wake.wake_conversation(conv.id)
       new_id = woken.sandbox_id
       assert new_id != sandbox.id
 
@@ -289,7 +290,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+      assert {:ok, _conv} = Wake.wake_conversation(conv.id)
     end
 
     test "returns {:ok, conv} creating fresh sandbox when sandbox is pending (not ready)" do
@@ -306,7 +307,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      assert {:ok, woken} = Wake.wake_conversation(conv.id)
       assert woken.sandbox_id != sandbox.id
     end
 
@@ -355,7 +356,7 @@ defmodule Fountain.ConversationsWakeTest do
       # No second server, no second sandbox.
       reject(&Horde.DynamicSupervisor.start_child/2)
 
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id, "hello")
+      assert {:ok, woken} = Wake.wake_conversation(conv.id, "hello")
       assert_receive {:handed_off, "hello", []}, 500
 
       # The first poll missed: the wake waited for the registry rather than
@@ -387,7 +388,7 @@ defmodule Fountain.ConversationsWakeTest do
       # sandbox status is "terminated" (not "ready"), so maybe_reuse_sandbox returns :create_new,
       # which calls create_fresh_sandbox_and_start -> mark_old_sandbox_terminated(sandbox.id)
       # where the sandbox is already terminated, hitting the no-op branch
-      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+      assert {:ok, _conv} = Wake.wake_conversation(conv.id)
     end
 
     test "mark_old_sandbox_terminated handles deleted sandbox gracefully" do
@@ -424,7 +425,7 @@ defmodule Fountain.ConversationsWakeTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+      assert {:ok, _conv} = Wake.wake_conversation(conv.id)
     end
   end
 
