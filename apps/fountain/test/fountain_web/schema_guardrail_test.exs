@@ -171,15 +171,12 @@ defmodule FountainWeb.SchemaGuardrailTest do
     # an endpoint that legitimately sends null for an optional field (`model` on
     # an acp agent, `sandbox` before one is provisioned) is not required to send
     # every property's opposite-of-null value too.
-    @unrendered %{
-      # Declared on `Conversation` for `GET /api/conversations/{id}` only — its
-      # own description says so — because a permission request that outlives a
-      # turn is served on show, not on the list (#1635). Both operations render
-      # from the same `Conversation` schema, which has no way to say "declared
-      # here, not there" for one property. Filed rather than fixed here: #2298
-      # is tests-only. See #2305.
-      {"GET /api/conversations", "pending_requests"} => "#2305"
-    }
+    # {operation, property} => issue, for a declared property a pinned
+    # operation deliberately does not render (a real API decision, not a
+    # miss). Empty today: `pending_requests` was the only tenant, and #2305
+    # closed it by having every renderer that shares the `Conversation`
+    # schema send `[]` instead of omitting the key.
+    @unrendered %{}
 
     @pins [
       {"GET /api/auth/me", "AuthMeResponse", :root, &__MODULE__.request_auth_me/0},
