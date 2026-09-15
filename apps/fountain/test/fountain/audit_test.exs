@@ -213,24 +213,34 @@ defmodule Fountain.AuditTest do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       old = DateTime.add(now, -3600, :second)
 
-      Audit.record!(valid_attrs(user.id, %{action: "old.event", inserted_at: old}))
-      Audit.record!(valid_attrs(user.id, %{action: "new.event", inserted_at: now}))
+      # `_unsafe_list_events/1` is cross-tenant and pages 200 rows newest
+      # first. The page is shared with every other row in the database:
+      # the `account.registered` from the user above, and on a reused
+      # workstation database the rows that `unboxed_run` tests commit and
+      # never remove (#2178). Filtering the *result* down to the planted
+      # events is not enough, because the planted `old.event` is the oldest
+      # row in the window and is the first to fall off the end of the page.
+      # Narrow the *query* instead, with a prefix no other row carries, so
+      # the property under test — which side of the bound each planted row
+      # lands on — never depends on what else exists.
+      prefix = "window#{System.unique_integer([:positive])}."
+      old_action = prefix <> "old"
+      new_action = prefix <> "new"
 
-      # `_unsafe_list_events/1` is cross-tenant, and since #544 creating the
-      # user above puts an `account.registered` in that window too. Narrowed
-      # to the two events this test planted — the property is which side of
-      # the bound each lands on, not what else exists.
-      planted = &Enum.filter(&1, fn e -> e.action in ["old.event", "new.event"] end)
+      Audit.record!(valid_attrs(user.id, %{action: old_action, inserted_at: old}))
+      Audit.record!(valid_attrs(user.id, %{action: new_action, inserted_at: now}))
 
-      recent = Audit._unsafe_list_events(since: DateTime.add(now, -60, :second))
-      assert recent |> planted.() |> Enum.map(& &1.action) == ["new.event"]
+      list = &Audit._unsafe_list_events([{:action_prefix, prefix} | &1])
 
-      earlier = Audit._unsafe_list_events(until: DateTime.add(now, -60, :second))
-      assert earlier |> planted.() |> Enum.map(& &1.action) == ["old.event"]
+      recent = list.(since: DateTime.add(now, -60, :second))
+      assert Enum.map(recent, & &1.action) == [new_action]
+
+      earlier = list.(until: DateTime.add(now, -60, :second))
+      assert Enum.map(earlier, & &1.action) == [old_action]
 
       # Inclusive on both ends: the boundary timestamp itself matches.
-      assert Enum.any?(Audit._unsafe_list_events(since: now), &(&1.action == "new.event"))
-      assert Enum.any?(Audit._unsafe_list_events(until: old), &(&1.action == "old.event"))
+      assert Enum.map(list.(since: now), & &1.action) == [new_action]
+      assert Enum.map(list.(until: old), & &1.action) == [old_action]
     end
   end
 
