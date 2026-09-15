@@ -141,12 +141,11 @@ such a property as non-optional anyway, which is why
 
 The projection takes requiredness from the schema's `required` list and nothing
 else, records `has_default` separately, and `build.py` refuses to write a
-contract where a default-carrying property came out required. Four properties
-are in that state today (`ChatCompletionRequest.stream`,
-`InferenceCredentialRequest.validate`, `TeamScheduleCreateRequest.enabled`,
-`TeamScheduleCreateRequest.one_off`); the TypeScript manifest declares the last
-two as `optional`, so the day the server makes one required, the client that
-omits it is told.
+contract where a default-carrying property came out required. Three properties
+are in that state today (`InferenceCredentialRequest.validate`,
+`TeamScheduleCreateRequest.enabled`, `TeamScheduleCreateRequest.one_off`); the
+TypeScript manifest declares the last two as `optional`, so the day the server
+makes one required, the client that omits it is told.
 
 ## The `nullable` trap
 

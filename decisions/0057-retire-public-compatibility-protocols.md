@@ -15,19 +15,26 @@ date: 2026-09-15
 [ADR 0035](0035-openai-compatible-endpoint.md)**, which described the
 OpenAI-compatible dialect as shipped behavior.
 
-Built so far, in the change that carries this status line: the four
-OpenAI/AG-UI route declarations and their two exclusive controllers are gone,
-and the caller-tool bridge is no longer advertised to a sandbox. That last part
-is not cosmetic ordering — the two controllers were the only things that could
-hand a parked caller-tool call back to a client, so continuing to offer those
-tools after removing them would let an agent on a legacy row park a call nobody
-could answer.
+Built so far, in the change that carries this status line:
+
+- The four OpenAI/AG-UI route declarations and their two exclusive controllers
+  are gone, with their operations and schemas out of the contract and the
+  generated types.
+- The caller-tool bridge is no longer **advertised** to a sandbox. That is not
+  cosmetic ordering — the two controllers were the only things that could hand
+  a parked caller-tool call back to a client, so continuing to offer those
+  tools after removing them would let an agent on a legacy row park a call
+  nobody could answer.
+- The public cutover: the four integration pages kept as migration pages at
+  their URLs, their cross-links, the three runnable examples deleted, and the
+  operator flag guidance. The approved inventory requires the source-removal
+  change to carry the migration guide, so it is here rather than later.
 
 Not yet built, each in a later change of the same stack: deleting
-`Fountain.CallerTools`, the caller MCP adapter and route, and the parked-call
-plumbing; removing the `openai_compat` flag; and reconciling the manual and the
-examples. **This section is updated by each of those**, so it always describes
-the tree it is merged into.
+`Fountain.CallerTools`, **the caller MCP adapter and its still-live route**,
+and the parked-call plumbing; and removing the `openai_compat` flag, which
+still exists here and now gates nothing. **This section is updated by each of
+those**, so it always describes the tree it is merged into.
 
 Outside the stack entirely, with their own gates: the physical
 `conversations.caller_tools` column, which
@@ -79,10 +86,10 @@ because a retiring client meets it:
 | Path | JSON client | No API key | `Accept: text/event-stream` |
 |---|---|---|---|
 | `/v1/*` | 404 | 404 | 404 |
-| `/api/agui/*`, `/api/mcp/caller/*` | 404 | **401** | **406** |
+| `/api/agui/*` | 404 | **401** | **406** |
 
 `/v1` matches no route at all, so `NoRouteError` renders 404 before anything
-authenticates. The `/api` paths fall through to the extension-dispatch scope,
+authenticates. `/api/agui/*` falls through to the extension-dispatch scope,
 which sits inside the `:api` pipeline: `TenantAPIAuth` answers a keyless call
 401, and `plug :accepts, ["json"]` refuses an event-stream `Accept` with 406 —
 which is exactly what an AG-UI client sends, so for that path it is the common
@@ -93,6 +100,14 @@ answers identically, which `protocol_retirement_test.exs` asserts by comparing
 the two rather than by hard-coding a status. So the decision's intent holds —
 nothing dialect-specific survives — but "ordinary 404" was too simple a
 sentence for what a caller actually sees.
+
+`POST /api/mcp/caller/:conversation_id` is **not** in that table yet. The route
+is still declared as this is merged, and an authenticated `tools/list` on a
+legacy row still answers 200 — it stops being reachable in the change that
+deletes `Fountain.CallerTools`, and joins the `/api/agui/*` row there. Nothing
+can reach it from a retired dialect in the meantime, because both controllers
+are gone and the tools are no longer advertised; it is a live authenticated
+callback surface with no remaining caller, not a retired one.
 
 Preserve agent-configured MCP servers and application tool callbacks, including
 credential substitution, connection-backed tools, callback-key scope/rotation,

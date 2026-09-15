@@ -23,6 +23,39 @@ That is the same for `GET` and `POST`, with or without an API key, and
 whether the client asks for JSON or `text/event-stream`. There is no legacy
 envelope, no `openai_compat_not_enabled` code, and no redirect.
 
+## Continuing a thread you already have
+
+**Do this before creating anything.** A conversation your old integration
+opened is still there, with its sandbox and everything the agent worked out in
+it. Creating a new one instead gets you a fresh sandbox and loses that.
+
+The thread key you were sending — `X-Fountain-Thread`, else `user`, else
+`safety_identifier` — was stored as the conversation's `channel_id`, prefixed
+`openai:`. So find it, then prompt the id you get back:
+
+```bash
+# 1. Find the conversation your thread key is bound to.
+curl -H "Authorization: Bearer ftn_..." \
+  "https://your-fountain/api/conversations?channel_id=openai:<your-thread-key>"
+
+# 2. Prompt it by id. Same sandbox, same history.
+curl -X POST -H "Authorization: Bearer ftn_..." -H "Content-Type: application/json" \
+  -d '{"prompt":"..."}' \
+  "https://your-fountain/api/conversations/<id>/prompts"
+```
+
+Two things to get right:
+
+- **Do not replay your transcript.** The sandbox is the memory. Send only the
+  new message; replaying the history feeds the agent its own words back.
+- If you resume by `channel_id` rather than by id, **send the same
+  `agent_id`, `environment_id` and `vault_id`** the conversation was created
+  with. An incomplete identity resolves to a different machine, which is the
+  same lost-sandbox outcome by another route.
+
+Existing `openai:` bindings are left intact by the retirement — nothing was
+renamed or migrated.
+
 ## What to use instead
 
 The native conversation API. It is not a drop-in for a chat-completions

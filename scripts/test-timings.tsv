@@ -188,7 +188,6 @@ apps/fountain/test/fountain_web/controllers/agent_avatar_controller_test.exs	173
 apps/fountain/test/fountain_web/controllers/agent_controller_test.exs	7247
 apps/fountain/test/fountain_web/controllers/agent_filter_test.exs	2852
 apps/fountain/test/fountain_web/controllers/agent_version_controller_test.exs	2583
-apps/fountain/test/fountain_web/controllers/agui_controller_test.exs	7124
 apps/fountain/test/fountain_web/controllers/api_key_controller_test.exs	2958
 apps/fountain/test/fountain_web/controllers/apply_controller_test.exs	2012
 apps/fountain/test/fountain_web/controllers/audit_controller_test.exs	3045
@@ -226,7 +225,6 @@ apps/fountain/test/fountain_web/controllers/moved_controller_test.exs	1719
 apps/fountain/test/fountain_web/controllers/oauth_controller_test.exs	1266
 apps/fountain/test/fountain_web/controllers/oauth_test.exs	2454
 apps/fountain/test/fountain_web/controllers/onboarding_controller_test.exs	1496
-apps/fountain/test/fountain_web/controllers/openai_controller_test.exs	10493
 apps/fountain/test/fountain_web/controllers/orphaned_home_door_test.exs	3144
 apps/fountain/test/fountain_web/controllers/password_reset_controller_test.exs	3411
 apps/fountain/test/fountain_web/controllers/registration_controller_test.exs	4376
