@@ -19,28 +19,22 @@ public struct TeamResource: Sendable {
     environmentID: String? = nil,
     vaultID: String? = nil
   ) async throws -> Teammate {
-    struct Body: Encodable {
-      var agentID: String
-      var name: String?
-      var environmentID: String?
-      var vaultID: String?
-
-      enum CodingKeys: String, CodingKey {
-        case name
-        case agentID = "agent_id"
-        case environmentID = "environment_id"
-        case vaultID = "vault_id"
-      }
-    }
-    return try await client.data(
+    try await client.data(
       .post, "/api/team",
-      body: Body(agentID: agentID, name: name, environmentID: environmentID, vaultID: vaultID)
+      body: TeamAddRequest(
+        agentID: agentID, name: name, environmentID: environmentID, vaultID: vaultID)
     )
   }
 
-  /// `nil`/blank restores the agent's own name.
+  /// `nil`/blank restores the agent's own name. Sent as an explicit JSON
+  /// `null`, not omitted, so the server always resets rather than leaves the
+  /// current name untouched.
   public func rename(_ agentID: String, name: String?) async throws -> Teammate {
-    try await client.data(.patch, "/api/team/\(agentID)", body: ["name": name])
+    var body = TeamRenameRequest(name: name)
+    if name == nil {
+      body.setNull(.name)
+    }
+    return try await client.data(.patch, "/api/team/\(agentID)", body: body)
   }
 
   public func remove(_ agentID: String) async throws {
@@ -54,10 +48,6 @@ public struct TeamResource: Sendable {
   public func message(_ agentID: String, _ prompt: String, images: [ImageInput]? = nil) async throws
     -> String?
   {
-    struct Body: Encodable {
-      var prompt: String
-      var images: [ImageInput]?
-    }
     struct Reply: Decodable {
       var conversationID: String?
       enum CodingKeys: String, CodingKey {
@@ -67,7 +57,7 @@ public struct TeamResource: Sendable {
     // Unenveloped response.
     let reply: Reply = try await client.request(
       .post, "/api/team/\(agentID)/messages",
-      body: Body(prompt: prompt, images: images)
+      body: TeamMessageRequest(prompt: prompt, images: images)
     )
     return reply.conversationID
   }

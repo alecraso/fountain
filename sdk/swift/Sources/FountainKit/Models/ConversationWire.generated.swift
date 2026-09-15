@@ -1055,6 +1055,154 @@ public struct TeamScheduleInput: Sendable, Encodable {
   }
 }
 
+public struct TeamAddRequest: Sendable, Encodable {
+  public var agentID: String
+  private var _environmentID: ConversationInputField<String> = .omitted
+  public var environmentID: String? {
+    get { _environmentID.value }
+    set { _environmentID = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _name: ConversationInputField<String> = .omitted
+  public var name: String? {
+    get { _name.value }
+    set { _name = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _vaultID: ConversationInputField<String> = .omitted
+  public var vaultID: String? {
+    get { _vaultID.value }
+    set { _vaultID = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+
+  public init(
+    agentID: String,
+    name: String? = nil,
+    environmentID: String? = nil,
+    vaultID: String? = nil
+  ) {
+    self.agentID = agentID
+    self.name = name
+    self.environmentID = environmentID
+    self.vaultID = vaultID
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentID = "agent_id"
+    case environmentID = "environment_id"
+    case name = "name"
+    case vaultID = "vault_id"
+  }
+
+  /// Fields for which the API accepts an explicit JSON null.
+  public enum NullableField: Sendable {
+    case environmentID
+    case name
+    case vaultID
+  }
+
+  /// Send null. Assigning the property nil again restores omission.
+  public mutating func setNull(_ field: NullableField) {
+    switch field {
+    case .environmentID: _environmentID = .null
+    case .name: _name = .null
+    case .vaultID: _vaultID = .null
+    }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(agentID, forKey: .agentID)
+    try _environmentID.encode(into: &container, forKey: .environmentID)
+    try _name.encode(into: &container, forKey: .name)
+    try _vaultID.encode(into: &container, forKey: .vaultID)
+  }
+}
+
+public struct TeamRenameRequest: Sendable, Encodable {
+  private var _name: ConversationInputField<String> = .omitted
+  public var name: String? {
+    get { _name.value }
+    set { _name = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+
+  public init(
+    name: String? = nil
+  ) {
+    self.name = name
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case name = "name"
+  }
+
+  /// Fields for which the API accepts an explicit JSON null.
+  public enum NullableField: Sendable {
+    case name
+  }
+
+  /// Send null. Assigning the property nil again restores omission.
+  public mutating func setNull(_ field: NullableField) {
+    switch field {
+    case .name: _name = .null
+    }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try _name.encode(into: &container, forKey: .name)
+  }
+}
+
+public struct TeamMessageRequest: Sendable, Encodable {
+  private var _images: ConversationInputField<[ImageInput]> = .omitted
+  public var images: [ImageInput]? {
+    get { _images.value }
+    set { _images = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _labels: ConversationInputField<[String: JSONValue]> = .omitted
+  public var labels: [String: JSONValue]? {
+    get { _labels.value }
+    set { _labels = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  public var prompt: String
+
+  public init(
+    prompt: String,
+    images: [ImageInput]? = nil,
+    labels: [String: JSONValue]? = nil
+  ) {
+    self.prompt = prompt
+    self.images = images
+    self.labels = labels
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case images = "images"
+    case labels = "labels"
+    case prompt = "prompt"
+  }
+
+  /// Fields for which the API accepts an explicit JSON null.
+  public enum NullableField: Sendable {
+    case images
+    case labels
+  }
+
+  /// Send null. Assigning the property nil again restores omission.
+  public mutating func setNull(_ field: NullableField) {
+    switch field {
+    case .images: _images = .null
+    case .labels: _labels = .null
+    }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try _images.encode(into: &container, forKey: .images)
+    try _labels.encode(into: &container, forKey: .labels)
+    try container.encode(prompt, forKey: .prompt)
+  }
+}
+
 public struct APIKey: Sendable, Decodable, Hashable, Identifiable {
   public var createdAt: Date?
   public var expiresAt: Date?
