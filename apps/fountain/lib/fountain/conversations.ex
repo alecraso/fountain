@@ -33,7 +33,6 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.Launch
   alias Fountain.InferenceCredentials
   alias Fountain.InferenceCredentials.Source
-  alias Fountain.Conversations.InferenceBinding
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
 
@@ -2835,44 +2834,6 @@ defmodule Fountain.Conversations do
   """
   def start_conversation(attrs, opts \\ []), do: Launch.start_conversation(attrs, opts)
 
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
-    do: {:ok, "owner"}
-
-  def resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
-  def resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
-
-  # ADR 0045's machine isolation is a claim about a machine, not about a row:
-  # a `none` conversation must be alone on a fresh one. `Launch.check_sandbox_api_attach/2`
-  # answers that by asking which conversations point at `sandbox.id`, so it can
-  # only see machines Fountain knows it is sharing. A caller-supplied name can
-  # name a machine that already exists — the provider adopts it rather than
-  # failing — so the two cannot be asked for together (#1632).
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def check_sandbox_api_name("none", name) when is_binary(name) and name != "",
-    do: {:error, :invalid_sandbox_api_access}
-
-  def check_sandbox_api_name(_access, _name), do: :ok
-
-  # The launch's sandbox mode: the agent's default unless the launch names
-  # one (ADR 0023). Not an allowlisted override like `environment_id` — the
-  # mode is not a security boundary; the tenant scope on the sandbox is.
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def resolve_sandbox_mode(mode, %Agents.Agent{sandbox_mode: default}) when mode in [nil, ""],
-    do: {:ok, default || "ephemeral"}
-
-  def resolve_sandbox_mode(mode, _agent) when is_binary(mode) do
-    if mode in Sandbox.modes(), do: {:ok, mode}, else: {:error, :invalid_sandbox_mode}
-  end
-
-  def resolve_sandbox_mode(_mode, _agent), do: {:error, :invalid_sandbox_mode}
-
   @doc """
   The live home of an agent identity — the one persistent sandbox for
   `(user, agent, environment, vault)` that is not terminated or failed — or
@@ -3560,45 +3521,6 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
-  # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def get_root_conversation_id(conversation_id) do
-    sql = """
-    WITH RECURSIVE ancestors(id, parent_conversation_id) AS (
-      SELECT id, parent_conversation_id FROM conversations WHERE id = $1
-      UNION ALL
-      SELECT c.id, c.parent_conversation_id FROM conversations c
-      INNER JOIN ancestors a ON c.id = a.parent_conversation_id
-    )
-    SELECT id FROM ancestors WHERE parent_conversation_id IS NULL LIMIT 1
-    """
-
-    {:ok, uuid} = Ecto.UUID.dump(conversation_id)
-
-    case Repo.query!(sql, [uuid]) do
-      %{rows: [[root_id]]} ->
-        {:ok, str_id} = Ecto.UUID.load(root_id)
-        str_id
-
-      _ ->
-        conversation_id
-    end
-  end
-
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def broadcast_graph_update(root_id) do
-    Phoenix.PubSub.broadcast(
-      Fountain.PubSub,
-      "conversations:graph:#{root_id}",
-      {:graph_updated}
-    )
-  end
-
   # A door for `Fountain.Conversations.Reapply` (#2215); not part of the
   # context's public surface.
   @doc false
@@ -3675,29 +3597,6 @@ defmodule Fountain.Conversations do
 
   defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
 
-  # `parent_conversation_id` arrives from a client-supplied header
-  # (X-Fountain-Parent-Conversation-Id). The changeset only enforced an FK, so
-  # any conversation id in the system was accepted — including another tenant's,
-  # which grafted this conversation onto their spawn tree and theirs onto ours.
-  #
-  # A legitimate spawn comes from inside a sprite holding that tenant's own
-  # token, so ownership always matches; a mismatch is a bug or an attack.
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def resolve_parent_id(nil, _user_id), do: {:ok, nil}
-  def resolve_parent_id("", _user_id), do: {:ok, nil}
-
-  def resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
-    # A header that is not a uuid is not a conversation anyone owns.
-    # `get_conversation/2` reads it as nil rather than raising (#1679), so this
-    # stays the plain lookup it was.
-    case get_conversation(id, user_id) do
-      nil -> {:error, :parent_not_found}
-      conv -> {:ok, conv.id}
-    end
-  end
-
   # A door for `Fountain.Conversations.Reapply` (#2215) and
   # `Fountain.Conversations.Launch` (#2216); not part of the context's public
   # surface.
@@ -3751,22 +3650,6 @@ defmodule Fountain.Conversations do
 
   defp check_environment_allowed(id, %Agents.Agent{allowed_environment_ids: allowed}) do
     if id in allowed, do: :ok, else: {:error, :environment_not_allowed}
-  end
-
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def reserve_inference(conv) do
-    InferenceBinding.reserve(conv, Source.load(conv.inference_source))
-  end
-
-  # Public (door for `Fountain.Conversations.Wake`, #2211): both callers
-  # (`wake_conversation_for/3`, `create_fresh_sandbox_and_start/4`) moved
-  # there and call this remotely. `resolve_saved_inference/2` below is a
-  # door too (#2216), for `Launch.resume_channel/4`.
-  @doc false
-  def check_saved_inference(conv, agent) do
-    with {:ok, _source} <- resolve_saved_inference(conv, agent), do: :ok
   end
 
   # Public for `Fountain.Conversations.Launch` (stage 7a of #2175), which

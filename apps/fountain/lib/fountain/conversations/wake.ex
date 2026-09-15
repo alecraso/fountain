@@ -265,7 +265,7 @@ defmodule Fountain.Conversations.Wake do
           # backstop; this one makes the refusal synchronous at the API door.
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
                :ok <- Fountain.Billing.check_spend(conv.user_id),
-               :ok <- Conversations.check_saved_inference(conv, agent),
+               :ok <- check_saved_inference(conv, agent),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
@@ -327,6 +327,10 @@ defmodule Fountain.Conversations.Wake do
     end
   end
 
+  defp check_saved_inference(conv, agent) do
+    with {:ok, _source} <- Conversations.resolve_saved_inference(conv, agent), do: :ok
+  end
+
   defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do
     # The sandbox being replaced is excluded: it is retired immediately below,
     # so counting it would block a wake that leaves concurrency unchanged.
@@ -348,7 +352,7 @@ defmodule Fountain.Conversations.Wake do
 
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_spend(conv.user_id),
-         :ok <- Conversations.check_saved_inference(conv, agent),
+         :ok <- check_saved_inference(conv, agent),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.
