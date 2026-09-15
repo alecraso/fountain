@@ -5,6 +5,10 @@ Notable changes to the Fountain Swift SDK follow
 
 ## Unreleased
 
+### Changed
+
+- Generate the Sandbox, Runner and conversation-tree model families from the contract. Preserve public nested types, unknown enums and legacy optional decoding; Usage now includes additive fields from both turn and total schemas (#2251).
+
 ### Fixed
 
 - Both products share conversation launch handling across `run` and `runRequest`. New channels follow turn one; resumed channels submit the prompt and images once before following the next turn (#2250).
