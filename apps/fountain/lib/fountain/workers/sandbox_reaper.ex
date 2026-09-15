@@ -491,19 +491,66 @@ defmodule Fountain.Workers.SandboxReaper do
     end
   end
 
-  # The provider suspend call above failed, so this run's own claim is
-  # corrected to `terminated` (an unparked sandbox keeps billing) — unless
-  # the claim no longer matches (a legitimate wake already cleared it, or a
-  # later claim overwrote it), in which case there is nothing to correct.
+  # The provider suspend call above failed — revalidated exactly as
+  # `finalize_park/2` revalidates a successful one (#2286 round 4 finding 1a;
+  # a plain claim-stamp match alone let a sandbox a wake had since brought
+  # back to life get marked terminal, and pass 2 could then destroy its
+  # still-live provider machine). Three outcomes:
+  #
+  #   * still `ready`, still our stamp, no reset fence, still no live
+  #     server: this run's own claim, genuinely still ours to correct —
+  #     terminate (pass 2 destroys the still-live sprite this same run;
+  #     the provider suspend call above failed, so it is still there).
+  #   * the claim no longer matches (cleared, overwritten, or the row moved
+  #     on entirely): someone else already resolved this sandbox; write
+  #     nothing.
+  #   * still our stamp, but a reset fence landed or a server is now live:
+  #     ours to release, not to terminate — a reset fence means a different
+  #     operation now owns this row, and a live server means a wake
+  #     registered while the failed suspend call was still resolving (which
+  #     itself never reached the provider, so there is nothing to undo
+  #     there, unlike the successful-suspend case `finalize_park/2` handles).
+  #     Clear the claim only, leave the row exactly as it is, and record
+  #     nothing — there is no outcome here worth an audit row.
   defp expire_after_failed_suspend(claimed, stamp, reason) do
-    eligible? = &(&1.status == "ready" and &1.park_claimed_at == stamp)
+    {:ok, result} =
+      Conversations.with_sandbox_lock(claimed.id, fn ->
+        fresh = reload_with_conversations(claimed.id)
 
-    case expire_locked(claimed.id, eligible?) do
+        cond do
+          is_nil(fresh) or fresh.status != "ready" or fresh.park_claimed_at != stamp ->
+            {:ok, :claim_lost}
+
+          not is_nil(fresh.reset_requested_at) or Lifecycle.any_server_alive?(fresh) ->
+            {:ok, updated} = Conversations.update_sandbox(fresh, %{park_claimed_at: nil})
+            {:ok, {:reclaimed, updated}}
+
+          true ->
+            {:ok, updated} =
+              Conversations.update_sandbox(fresh, %{
+                status: "terminated",
+                terminated_at: DateTime.utc_now() |> DateTime.truncate(:second),
+                park_claimed_at: nil
+              })
+
+            {:ok, {:expired, updated}}
+        end
+      end)
+
+    case result do
       {:expired, updated} ->
         finish_expire(updated, reason)
         :expired
 
-      :skipped ->
+      {:reclaimed, updated} ->
+        Logger.warning(
+          "reaper: #{updated.id} became active (or was fenced for a reset) while its " <>
+            "provider suspend call was failing; clearing the park claim, leaving it alone"
+        )
+
+        :skipped
+
+      :claim_lost ->
         log_claim_lost(claimed.id)
     end
   end

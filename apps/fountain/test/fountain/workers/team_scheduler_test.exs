@@ -95,6 +95,44 @@ defmodule Fountain.Workers.TeamSchedulerTest do
       assert Schedules.get_schedule(s.id, user.id).last_error == "teammate was busy"
     end
 
+    test "snoozes on a park-claimed sandbox, gives up once the firing is stale (#2286 round 4 finding 3)" do
+      # No stub: send_prompt/4 finds no live server, calls
+      # Wake.wake_conversation/2 for real, and the sandbox's live claim
+      # refuses it with :sandbox_parking — real end-to-end proof the
+      # transient-error lists agree, not just that the atom is in a list.
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id)
+
+      sandbox =
+        insert_sandbox(
+          user_id: user.id,
+          agent_id: ada.id,
+          status: "ready",
+          park_claimed_at: DateTime.utc_now()
+        )
+
+      insert_conversation(
+        user_id: user.id,
+        agent: ada,
+        sandbox: sandbox,
+        status: "idle",
+        channel_id: Team.channel()
+      )
+
+      s = create!(user, ada)
+
+      fresh = DateTime.utc_now() |> DateTime.to_iso8601()
+
+      assert {:snooze, 30} =
+               perform_job(TeamScheduleRun, %{"schedule_id" => s.id, "fired_at" => fresh})
+
+      stale = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.to_iso8601()
+      assert :ok = perform_job(TeamScheduleRun, %{"schedule_id" => s.id, "fired_at" => stale})
+
+      assert Schedules.get_schedule(s.id, user.id).last_error ==
+               "the sandbox is being parked; retry shortly"
+    end
+
     test "a deleted or paused schedule is a no-op" do
       user = insert_verified_user()
       ada = insert_agent(user_id: user.id)

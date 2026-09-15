@@ -142,3 +142,24 @@ one. If a wake nonetheless lands inside that window (a provider call that
 outran the TTL), the reaper's finalize step detects the now-live server,
 clears its own claim without touching status, and best-effort resumes the
 machine to undo a suspend that may have already reached the provider.
+
+A wake that finds a `ready` row whose claim has already gone stale does not
+just proceed: it reconciles against the provider's own reported state
+(`:running | :suspended | :unknown`, shared across every adapter) under the
+same quota reservation lock `wake_suspended_sandbox/2` uses. A stale claim
+where the provider reports `:suspended` means the reaper's own suspend call
+succeeded before that run crashed or lost its race for the finalize lock —
+the resume it never got to record; the wake makes it, stamping
+`last_resumed_at` so the max-lifetime clock restarts rather than silently
+including the parked interval. Every other stale-claim outcome (running,
+unknown, not found, a transient probe failure) is handled the same way an
+ordinary probe already is.
+
+**Rolling deploy.** A replica on the previous release does not read
+`park_claimed_at` at all — old code neither writes it nor checks it. During
+a rollout, a reaper pass or a wake landing on an old replica reproduces the
+pre-claim race until that replica drains; the migration is additive and
+nullable and old code never touches the column, so this is a one-rollout
+window, not a durable gap, and it is accepted rather than solved (there is
+no cheap way to make an old replica respect a column it does not know
+about).

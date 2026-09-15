@@ -469,6 +469,72 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
       refute reloaded.park_claimed_at
       assert [%{action: "sandbox.expired"}] = sandbox_audit(user.id)
     end
+
+    test "a claim step that finds a live server writes no claim (round 4 finding 1 mirror)" do
+      # The review's residual gap (finding 1) is a Horde registry that can
+      # lag a fresh registration by a moment; the reaper's own claim step
+      # already re-checks liveness fresh under the lock (decision 2's
+      # any_server_alive?/1). This pins that it still does, now that the
+      # wake side of the same race also takes the lock (finding 1b) — a
+      # live server present when the claim step runs must still stop the
+      # claim from being written at all.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      reject(&Managoat.Sandbox.Sprites.suspend/1)
+
+      stub(Fountain.Conversations.ConversationServer, :whereis, fn id ->
+        if id == conv.id, do: self(), else: nil
+      end)
+
+      result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+      assert result == {0, 0}
+
+      reloaded = Repo.reload!(sandbox)
+      assert reloaded.status == "ready"
+      refute reloaded.park_claimed_at
+    end
+
+    test "a provider suspend failure while a server is live clears the claim without terminating (round 4 finding 1a)" do
+      # The gap the review found: expire_after_failed_suspend/3 used to
+      # revalidate only the claim stamp, not liveness or a reset fence —
+      # unlike finalize_park/2's revalidation of a successful suspend. A
+      # server that registered (a wake winning the residual Horde-registry-
+      # lag race) while this failed provider call was resolving must not
+      # be marked terminal and left for pass 2 to destroy.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      stub(Managoat.Sandbox.Sprites, :suspend, fn _handle ->
+        stub(Fountain.Conversations.ConversationServer, :whereis, fn id ->
+          if id == conv.id, do: self(), else: nil
+        end)
+
+        {:error, :boom}
+      end)
+
+      result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+      assert result == {0, 0}
+
+      reloaded = Repo.reload!(sandbox)
+      assert reloaded.status == "ready"
+      refute reloaded.park_claimed_at
+      assert sandbox_audit(user.id) == []
+    end
   end
 
   describe "chronological, not structural, DateTime comparison (#2286 finding 3)" do

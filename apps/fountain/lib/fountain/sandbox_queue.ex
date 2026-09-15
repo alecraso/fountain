@@ -70,6 +70,17 @@ defmodule Fountain.SandboxQueue do
   """
   def actor, do: @system_actor
 
+  @doc """
+  The retryable reasons this queue snoozes on rather than treats as
+  terminal (#2286 round 4 finding 3). `Workers.TeamScheduleRun` reads its
+  own snooze guard from this at compile time (`@transient_errors
+  SandboxQueue.transient_errors()`) instead of keeping a second, driftable
+  list — the missing `:sandbox_parking` entry there is what made this a
+  finding in the first place.
+  """
+  @spec transient_errors() :: [atom()]
+  def transient_errors, do: @transient_errors
+
   # Its own advisory-lock namespace. The depth bound counts rows in
   # `sandbox_requests` and has nothing to serialize against a sandbox
   # reservation, and every namespace here hashes a different kind of id into

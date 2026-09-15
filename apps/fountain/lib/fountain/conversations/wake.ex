@@ -49,7 +49,7 @@ defmodule Fountain.Conversations.Wake do
   # established there; `sandbox_id` is the conversation's own row.
   def maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
 
-  def maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
+  def maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id, user_id: user_id}) do
     case Conversations._unsafe_get_sandbox(sandbox_id) do
       %Sandbox{reset_requested_at: at, status: status}
       when not is_nil(at) and status not in ["terminated", "failed"] ->
@@ -59,15 +59,19 @@ defmodule Fountain.Conversations.Wake do
       # row it has committed to suspending, mid-checkpoint or mid-provider-
       # suspend-call. Reattaching here would race that suspend outside any
       # lock, so a live claim refuses retryably rather than probing through
-      # it. A stale claim (the claiming run died, or outlasted the TTL) is
-      # ignored — the next reaper pass overwrites it, and this wake probes
-      # exactly as it would with no claim at all.
+      # it. A claim older than `Lifecycle.park_claim_ttl/0` means that run
+      # ended (crashed, or lost its own race) without ever finalizing —
+      # possibly after its provider suspend call actually succeeded, in
+      # which case the disk is genuinely parked at the provider though this
+      # row still says `ready`. Reconcile against the provider rather than
+      # trusting the row (round 4 finding 2), instead of falling straight
+      # through to an ordinary probe.
       %Sandbox{status: "ready", park_claimed_at: at} = sandbox
       when not is_nil(at) ->
         if Lifecycle.park_claim_live?(at, DateTime.utc_now()) do
           {:error, :sandbox_parking}
         else
-          probe_reusable_sandbox(sandbox, sandbox_id)
+          recover_stale_park(sandbox, sandbox_id, user_id)
         end
 
       %{status: status, machine_name: name} = sandbox
@@ -135,6 +139,108 @@ defmodule Fountain.Conversations.Wake do
         # unreachable for 70 s with nine `ready` rows behind it.
         Logger.warning(
           "sprite probe failed for #{status} sandbox #{sandbox_id}: #{inspect(reason)}"
+        )
+
+        {:error, :sprite_probe_failed}
+    end
+  end
+
+  # A leaf of maybe_reuse_sandbox/1's stale-claim clause (#2286 round 4
+  # finding 2). A stale claim means the reaper's run ended — crashed, or
+  # lost its own race for the second (finalize) lock — without recording
+  # what actually happened at the provider. Reconciles against the
+  # provider's own report rather than trusting the row, under the same
+  # quota reservation `wake_suspended_sandbox/2` takes (`exclude:
+  # sandbox_id`, so this sandbox does not count against its own capacity
+  # check) — the same lock, because resuming a genuinely parked machine is
+  # exactly `wake_suspended_sandbox/2`'s own case, just discovered late.
+  defp recover_stale_park(sandbox, sandbox_id, user_id) do
+    provider = Conversations.sandbox_provider_atom(sandbox)
+
+    if provider != Fountain.SandboxProviders.default_provider() and
+         not Fountain.SandboxProviders.enabled?(provider) do
+      Logger.warning(
+        "sandbox #{sandbox_id} is on disabled provider #{provider}; refusing to wake or retire"
+      )
+
+      {:error, {:sandbox_provider_disabled, provider}}
+    else
+      result =
+        Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
+          # ownership: sandbox_id and user_id both came from maybe_reuse_sandbox/1's
+          # already tenant-scoped conv; this re-read is under the lock above.
+          case Conversations._unsafe_get_sandbox(sandbox_id) do
+            %Sandbox{status: "ready", park_claimed_at: at} = fresh when not is_nil(at) ->
+              reconcile_stale_park(fresh, provider, sandbox_id)
+
+            _ ->
+              # Someone else already resolved this row (a legitimate wake,
+              # or a fresh reaper claim) between the outer read above and
+              # this re-read under the lock.
+              {:ok, {:reuse, sandbox_id}}
+          end
+        end)
+
+      case result do
+        {:ok, outcome} -> outcome
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  # The provider status vocabulary (`Managoat.Sandbox.info/0`:
+  # `:running | :suspended | :unknown`) is the same across every adapter
+  # (sprites, e2b, daytona) — see deps/managoat_sandbox. `:suspended` here
+  # means the reaper's provider suspend call actually succeeded before it
+  # crashed (or lost its race): the resume it never got to record. Anything
+  # else means that call never reached (or never finished) the provider —
+  # the claim is simply stale, nothing to undo.
+  defp reconcile_stale_park(sandbox, provider, sandbox_id) do
+    handle = Managoat.Sandbox.build_handle(provider, sandbox.machine_name)
+
+    case Managoat.Sandbox.get(handle) do
+      {:ok, %{status: :suspended}} ->
+        case Managoat.Sandbox.resume(handle) do
+          {:ok, _} ->
+            now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+            {:ok, _updated} =
+              Conversations.update_sandbox(sandbox, %{
+                status: "ready",
+                # The machine was genuinely parked with nothing recording
+                # it: this is the resume the crashed reaper run never got
+                # to make, so the max-lifetime clock (anchored to
+                # last_resumed_at || inserted_at) restarts here rather than
+                # silently including the parked interval.
+                last_resumed_at: now,
+                park_claimed_at: nil
+              })
+
+            {:ok, {:reuse, sandbox_id}}
+
+          {:error, reason} ->
+            Logger.warning(
+              "resume failed recovering a stale park claim on #{sandbox_id} " <>
+                "(#{inspect(reason)}); leaving it parked at the provider"
+            )
+
+            {:error, :sprite_probe_failed}
+        end
+
+      {:ok, _info} ->
+        {:ok, updated} = Conversations.update_sandbox(sandbox, %{park_claimed_at: nil})
+        {:ok, {:reuse, updated.id}}
+
+      {:error, :not_found} ->
+        {:ok, :create_new}
+
+      {:error, {:unavailable, :runner_offline}} ->
+        {:error, :runner_offline}
+
+      {:error, reason} ->
+        Logger.warning(
+          "sprite probe failed recovering a stale park claim on #{sandbox_id}: " <>
+            "#{inspect(reason)}"
         )
 
         {:error, :sprite_probe_failed}
@@ -301,7 +407,36 @@ defmodule Fountain.Conversations.Wake do
                :ok <- Fountain.Billing.check_spend(conv.user_id),
                :ok <- check_saved_inference(conv, agent),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
+            # #2286 round 4 finding 1: maybe_reuse_sandbox/1's claim check
+            # above and server registration below are two different moments
+            # — the reaper's claim step can land in between, taking the
+            # sandbox's advisory lock and checking any_server_alive? under
+            # it. Re-checking the claim and registering the server inside
+            # that same lock makes the two atomic with each other: whichever
+            # of this wake or a reaper claim reaches the lock first is the
+            # one the other must see. `Horde.DynamicSupervisor.start_child/2`
+            # is a supervisor call, not provider I/O — the server's actual
+            # provisioning runs later in its own `handle_continue(:provision)`
+            # — so this does not violate the "no provider I/O under a lock"
+            # rule every other `with_sandbox_lock/2` caller follows.
+            # `await_registered` and all real provider work stay outside it.
+            # ownership: sandbox_id is conv's own sandbox_id, and conv was
+            # established tenant-scoped by this function's own caller.
+            case Conversations.with_sandbox_lock(sandbox_id, fn ->
+                   fresh = Conversations._unsafe_get_sandbox(sandbox_id)
+
+                   cond do
+                     is_nil(fresh) ->
+                       {:error, :sandbox_unavailable}
+
+                     not is_nil(fresh.park_claimed_at) and
+                         Lifecycle.park_claim_live?(fresh.park_claimed_at, DateTime.utc_now()) ->
+                       {:error, :sandbox_parking}
+
+                     true ->
+                       start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
+                   end
+                 end) do
               {:error, {:already_started, winner_pid}} ->
                 # Lost a concurrent wake of the same conversation to another
                 # caller reusing the same sandbox. Mirrors the handoff in
