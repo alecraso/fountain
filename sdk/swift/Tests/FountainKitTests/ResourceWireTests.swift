@@ -148,18 +148,29 @@ import Testing
     #expect(admin.insertedAt != nil && admin.metadata?["count"] == .number(0))
   }
 
-  /// An older server omits keys this SDK now exposes. Every property pinned in
-  /// the generator's OPTIONAL_COMPAT decodes from its absence; dropping a pin
-  /// fails here rather than at a consumer's whole response.
+  /// An older server omits keys this SDK now exposes. The resource pins in the
+  /// generator's OPTIONAL_COMPAT decode from their absence here, so dropping one
+  /// fails here rather than at a consumer's whole response. Sandbox and runner
+  /// pins are covered the same way in SandboxWireTests. This is not the whole
+  /// table: when you add a pin, add the omission that proves it, because a pin
+  /// whose key some fixture still supplies can be deleted with every gate green.
   @Test func payloadsFromAnOlderServerStillDecode() throws {
+    // The second entry and the empty sandbox_providers object decode the nested
+    // types with every pinned key absent; a supplied key proves nothing here.
     let catalog = try decode(
-      Catalog.self, #"{"runtimes":["claude"],"mcp_servers":[{"slug":"m1"}]}"#)
+      Catalog.self,
+      #"{"runtimes":["claude"],"mcp_servers":[{"slug":"m1"},{}],"sandbox_providers":{}}"#)
     #expect(catalog.firstRequest == nil && catalog.apps == nil && catalog.models == nil)
-    #expect(catalog.packageManagers == nil && catalog.sandboxProviders == nil)
+    #expect(catalog.packageManagers == nil)
+    #expect(catalog.sandboxProviders?.default == nil)
+    #expect(catalog.sandboxProviders?.enabled == nil)
     #expect(catalog.mcpServers?.first?.slug == "m1")
     #expect(catalog.mcpServers?.first?.verifiedOn == nil && catalog.mcpServers?.first?.dcr == nil)
     #expect(catalog.mcpServers?.first?.name == nil && catalog.mcpServers?.first?.url == nil)
-    #expect(try decode(Catalog.self, "{}").firstRequest == nil)
+    #expect(catalog.mcpServers?.last?.slug == nil)
+    let bareCatalog = try decode(Catalog.self, "{}")
+    #expect(bareCatalog.firstRequest == nil && bareCatalog.sandboxProviders == nil)
+    #expect(bareCatalog.mcpServers == nil && bareCatalog.runtimes == nil)
 
     let provider = try decode(
       ConnectionProvider.self,
@@ -168,6 +179,10 @@ import Testing
     #expect(provider.configured == true && provider.mcpURL == "https://mcp.example.test")
     #expect(provider.kind == nil && provider.platform == nil && provider.redirectURI == nil)
     #expect(provider.scopes == nil && provider.tokenHosts == nil)
+    let bareProvider = try decode(ConnectionProvider.self, #"{"id":"github"}"#)
+    #expect(bareProvider.name == nil && bareProvider.slug == nil)
+    #expect(bareProvider.configured == nil && bareProvider.envKey == nil)
+    #expect(bareProvider.connectURL == nil)
 
     let connection = try decode(Connection.self, #"{"id":"c1","provider":"github"}"#)
     #expect(connection.scopes == nil && connection.status == nil && connection.envKey == nil)

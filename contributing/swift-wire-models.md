@@ -31,10 +31,22 @@ exposes for the first time on a type that already shipped. The second kind is
 why a response from an older server still decodes rather than failing whole.
 The table is finite and auditable: it grew from 9 entries over 5 owner types
 (sandbox and runner models) to 55 over 21 as the resource families landed.
-Wholly new types take contract requiredness directly.
-`test_optional_compat_pins_reach_a_live_property` fails when a pin stops
-naming a live property, and `ResourceWireTests` decodes payloads that omit the
-pinned keys.
+
+A nested type reached through a newly exposed property is pinned the same way,
+because an older server reaches it with the same gaps: `CatalogMcpServersItem`
+is pinned although it never shipped by hand. `CatalogFirstRequest` is the
+exception and takes contract requiredness, because `first_request` arrived
+whole in #1443 and no server has ever emitted it partially. A type no older
+server can produce at all takes contract requiredness directly.
+
+Two guards, neither of them complete on its own.
+`test_optional_compat_pins_reach_a_live_property` fails when a pin stops naming
+a live property, which is how a contract rename turns a pin into a silent
+no-op; it cannot see a pin that was deleted. `ResourceWireTests` and
+`SandboxWireTests` decode payloads that omit pinned keys, which is what catches
+a deletion — but only for the pins their fixtures actually omit. A pin whose
+key some fixture still supplies can be dropped with every gate green, so a new
+pin needs the omission that proves it.
 
 The 19 `TYPE_OVERRIDES` entries retain existing `JSONValue` APIs for
 deliberately dynamic payloads: metadata, packages, networking config,
