@@ -1134,13 +1134,26 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15]
 
+    env:
+      SWIFT_VERSION: "6.1.3"
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      # setup-swift reuses the runner tool cache, but hosted runners start
+      # fresh. Persist its macOS installation, including the architecture's
+      # .complete marker. Keep an exact version/platform key: no fallbacks.
+      - name: Restore Swift toolchain cache
+        if: ${{ runner.os == 'macOS' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ${{ runner.tool_cache }}/swift-macOS/${{ env.SWIFT_VERSION }}
+          key: swift-toolchain-v1-${{ matrix.os }}-${{ runner.arch }}-${{ env.SWIFT_VERSION }}
 
       - name: Set up Swift
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
-          swift-version: "6.1"
+          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Check Swift SDK version
         run: |
