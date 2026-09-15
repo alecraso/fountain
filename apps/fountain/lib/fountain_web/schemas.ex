@@ -2038,11 +2038,8 @@ defmodule FountainWeb.Schemas do
           "conversation.\n\n" <>
           "Not every stream sends every optional field here; see each property's own " <>
           "description for which of `GET /api/conversations/:id/stream`, " <>
-          "`GET /api/events` and `GET /api/team/stream` include it.\n\n" <>
-          "The events and team streams also send `conversations`, `team` and " <>
-          "`schedule` change-signal frames — not log events at all, and not this " <>
-          "schema. Their body is only `{\"reason\": \"changed\"}`; see each operation's " <>
-          "own description.",
+          "`GET /api/events/stream` and `GET /api/team/stream` include it. The events " <>
+          "and team streams also send `StreamSignal` frames on the same connection.",
       type: :object,
       properties:
         LogEvent.schema().properties
@@ -2052,15 +2049,15 @@ defmodule FountainWeb.Schemas do
             type: :integer,
             nullable: true,
             description:
-              "Sent on `GET /api/events`. Not sent on `GET /api/conversations/:id/stream` " <>
-                "or `GET /api/team/stream`."
+              "Sent on `GET /api/events/stream`. Not sent on " <>
+                "`GET /api/conversations/:id/stream` or `GET /api/team/stream`."
           },
           conversation_id: %Schema{
             type: :string,
             format: :uuid,
             description:
-              "Which conversation this event belongs to. Sent on `GET /api/events` and " <>
-                "`GET /api/team/stream`; not sent on `GET /api/conversations/:id/stream`, " <>
+              "Which conversation this event belongs to. Sent on `GET /api/events/stream` " <>
+                "and `GET /api/team/stream`; not sent on `GET /api/conversations/:id/stream`, " <>
                 "whose URL already names the conversation."
           },
           agent_id: %Schema{
@@ -2072,6 +2069,29 @@ defmodule FountainWeb.Schemas do
           }
         }),
       required: LogEvent.schema().required -- [:id]
+    })
+  end
+
+  defmodule StreamSignal do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "StreamSignal",
+      description:
+        "A change-signal frame on the events or team SSE stream (#2297) — not a log " <>
+          "event, and no `conversation_id`/`agent_id`/anything else `StreamLogEvent` " <>
+          "declares. The event name says what changed: `conversations` on " <>
+          "`GET /api/events/stream` (the caller's conversation list changed — created, " <>
+          "titled, read, deleted, finished), `team` on `GET /api/team/stream` (the " <>
+          "roster changed) and `schedule` on `GET /api/team/stream` (a team schedule " <>
+          "was created, updated, deleted or fired). The client re-lists rather than " <>
+          "reading anything from the body.",
+      type: :object,
+      properties: %{
+        reason: %Schema{type: :string, enum: ~w(changed)}
+      },
+      required: [:reason]
     })
   end
 

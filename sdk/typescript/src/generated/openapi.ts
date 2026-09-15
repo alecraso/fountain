@@ -4712,9 +4712,7 @@ export interface components {
          * StreamLogEvent
          * @description One frame of the conversation, events or team SSE log stream (#2297). Same fields as `LogEvent` minus `id` — the frame's id travels in the SSE `id:` line, never the JSON body — plus `conversation_id` and `agent_id`, which the REST log feed never sends because its URL or list item already names the conversation.
          *
-         *     Not every stream sends every optional field here; see each property's own description for which of `GET /api/conversations/:id/stream`, `GET /api/events` and `GET /api/team/stream` include it.
-         *
-         *     The events and team streams also send `conversations`, `team` and `schedule` change-signal frames — not log events at all, and not this schema. Their body is only `{"reason": "changed"}`; see each operation's own description.
+         *     Not every stream sends every optional field here; see each property's own description for which of `GET /api/conversations/:id/stream`, `GET /api/events/stream` and `GET /api/team/stream` include it. The events and team streams also send `StreamSignal` frames on the same connection.
          */
         StreamLogEvent: {
             /**
@@ -4726,12 +4724,12 @@ export interface components {
             blocks?: components["schemas"]["Block"][];
             /**
              * Format: uuid
-             * @description Which conversation this event belongs to. Sent on `GET /api/events` and `GET /api/team/stream`; not sent on `GET /api/conversations/:id/stream`, whose URL already names the conversation.
+             * @description Which conversation this event belongs to. Sent on `GET /api/events/stream` and `GET /api/team/stream`; not sent on `GET /api/conversations/:id/stream`, whose URL already names the conversation.
              */
             conversation_id?: string;
             /** @description Output text, or JSON-encoded metadata for stage events. */
             data?: string;
-            /** @description Sent on `GET /api/events`. Not sent on `GET /api/conversations/:id/stream` or `GET /api/team/stream`. */
+            /** @description Sent on `GET /api/events/stream`. Not sent on `GET /api/conversations/:id/stream` or `GET /api/team/stream`. */
             duration_ms?: number | null;
             /** @enum {string} */
             kind: "output" | "stage";
@@ -4748,6 +4746,14 @@ export interface components {
             ts: string;
             /** Format: uuid */
             turn_id?: string | null;
+        };
+        /**
+         * StreamSignal
+         * @description A change-signal frame on the events or team SSE stream (#2297) — not a log event, and no `conversation_id`/`agent_id`/anything else `StreamLogEvent` declares. The event name says what changed: `conversations` on `GET /api/events/stream` (the caller's conversation list changed — created, titled, read, deleted, finished), `team` on `GET /api/team/stream` (the roster changed) and `schedule` on `GET /api/team/stream` (a team schedule was created, updated, deleted or fired). The client re-lists rather than reading anything from the body.
+         */
+        StreamSignal: {
+            /** @enum {string} */
+            reason: "changed";
         };
         /**
          * StripeUrlResponse
@@ -12859,7 +12865,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["StreamLogEvent"];
+                    "text/event-stream": components["schemas"]["StreamLogEvent"] | components["schemas"]["StreamSignal"];
                 };
             };
             /** @description Unauthorized */
@@ -15209,7 +15215,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["StreamLogEvent"];
+                    "text/event-stream": components["schemas"]["StreamLogEvent"] | components["schemas"]["StreamSignal"];
                 };
             };
             /** @description Unauthorized */

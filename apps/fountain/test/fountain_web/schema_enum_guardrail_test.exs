@@ -193,7 +193,11 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       "manifest secret apply outcome — as above",
     # Health probe vocabulary, owned by the readiness endpoint.
     {FountainWeb.Schemas.ReadinessResponse, "status"} => "health probe vocabulary",
-    {FountainWeb.Schemas.ReadinessResponse, "checks.{}"} => "health probe vocabulary"
+    {FountainWeb.Schemas.ReadinessResponse, "checks.{}"} => "health probe vocabulary",
+    # The one value every stream signal frame carries (#2297); events_controller.ex
+    # and team_controller.ex build the literal inline, so there is no domain list.
+    {FountainWeb.Schemas.StreamSignal, "reason"} =>
+      "fixed SSE signal-frame vocabulary — built as a literal at each call site"
   }
 
   # Domain lists that are exposed on the wire but deliberately carry no enum

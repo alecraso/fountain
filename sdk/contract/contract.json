@@ -2558,7 +2558,14 @@
       "responses": {
         "200": {
           "text/event-stream": {
-            "ref": "StreamLogEvent"
+            "oneOf": [
+              {
+                "ref": "StreamLogEvent"
+              },
+              {
+                "ref": "StreamSignal"
+              }
+            ]
           }
         },
         "401": {
@@ -3448,7 +3455,14 @@
       "responses": {
         "200": {
           "text/event-stream": {
-            "ref": "StreamLogEvent"
+            "oneOf": [
+              {
+                "ref": "StreamLogEvent"
+              },
+              {
+                "ref": "StreamSignal"
+              }
+            ]
           }
         },
         "401": {
@@ -12462,6 +12476,18 @@
           "format": "uuid",
           "nullable": true,
           "required": false,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "StreamSignal": {
+      "properties": {
+        "reason": {
+          "enum": [
+            "changed"
+          ],
+          "required": true,
           "type": "string"
         }
       },

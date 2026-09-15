@@ -298,7 +298,9 @@ defmodule FountainWeb.TeamController do
       ]
     ],
     responses: [
-      ok: {"SSE stream", "text/event-stream", Schemas.StreamLogEvent}
+      ok:
+        {"SSE stream", "text/event-stream",
+         %OpenApiSpex.Schema{oneOf: [Schemas.StreamLogEvent, Schemas.StreamSignal]}}
     ]
   )
 

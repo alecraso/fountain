@@ -181,6 +181,22 @@ defmodule FountainWeb.EventsStreamTest do
       conn = Task.await(task, 6_000)
       assert length(Regex.scan(~r/event: conversations\n/, conn.resp_body)) == 1
       assert conn.resp_body =~ "from-new"
+
+      # #2297: the `conversations` frame is a StreamSignal, not a StreamLogEvent
+      # — it carries no `kind`/`ts`, which the operation's declared response
+      # union now has to account for.
+      [payload] =
+        Regex.run(~r/event: conversations\ndata: (\{[^\n]*\})/, conn.resp_body,
+          capture: :all_but_first
+        )
+
+      decoded = Jason.decode!(payload)
+
+      assert FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamSignal, decoded) ==
+               :ok
+
+      assert {:error, _} =
+               FountainWeb.SchemaGuard.validate_value(FountainWeb.Schemas.StreamLogEvent, decoded)
     end
 
     @tag :filtered_cursor_regression
