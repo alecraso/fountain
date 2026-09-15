@@ -55,10 +55,27 @@ for `git commit`; use `-s`, or install a `commit-msg` hook.
 
 ## Before you push
 
-During iteration, run checks for the files you changed. Documentation-only
-changes use the focused commands in [contributing/docs.md](contributing/docs.md);
-contributor-only Markdown needs no Elixir suite. For code, build configuration,
-CI policy or mixed changes, run the local gate:
+Run focused tests while iterating. Before pushing, choose the checks for the
+parts you changed; mixed changes take the union of the relevant rows.
+
+| Change | Local checks |
+|---|---|
+| Server or extension Elixir code, tests, dependencies, or runtime/build configuration | `mix precommit`, plus the tests covering the changed behavior |
+| Go CLI or Buzz CLI | In each affected module: `go test -mod=readonly -count=1 ./...` and `go vet -mod=readonly ./...`; format changed Go files with `gofmt`. Shared dependency changes need [both modules](#go-dependency-updates-span-two-modules) |
+| SDK implementation or packaging | That SDK's checks in [CI maintenance](scripts/ci/README.md#sdk-jobs); API changes also follow [Changing the API](#changing-the-api) |
+| CI decision logic or workflow wiring | `python3 -m unittest discover -s scripts/ci -p 'test_*.py'`; use `actionlint` for changed workflows and run the changed script's own checks |
+| Shell tooling | `shellcheck` and `bash -n` on changed Bash scripts, plus their focused regression tests |
+| Other tooling or integrations | The affected component's tests and lint commands from its README or CI job |
+| Documentation | The focused commands in [contributing/docs.md](contributing/docs.md) |
+
+Run `python3 scripts/conflict-markers.py`, `python3 scripts/changelog.py check`
+and `git diff --check` for every change. A Go-only, SDK-only or tooling-only
+change does not need the server's local Elixir gate. If a workflow or script
+changes how the server compiles, boots or runs tests, also run the relevant
+server stages or tests. CI remains the complete integration check for its
+selected plan.
+
+### The server's local gate
 
 ```bash
 mix precommit
@@ -67,8 +84,8 @@ mix precommit
 That runs `scripts/precommit.sh`: CI's Elixir static job, the sobelow scan and
 a prod release assemble, each stage its own process, in this order. The test
 suite is the last stage and is opt-in, `mix precommit --full` or
-`mix precommit test`: CI runs the whole suite on every PR and again in the
-merge queue, so the local run is for when you want its answer before pushing,
+`mix precommit test`: CI runs the suite on full server plans, so a full
+local run is useful when you want broader feedback before pushing,
 such as a change to `test/support`, a factory, a migration or `config/`.
 
 | Stage | Runs |
