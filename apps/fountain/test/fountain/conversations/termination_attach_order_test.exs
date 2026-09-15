@@ -5,6 +5,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Fountain.{Audit, Conversations}
   alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.Lifecycle
 
   for {first, barrier} <- [termination: :row, attachment: :row, termination: :machine] do
     test "#{first} wins the race between termination and a new co-tenant at #{barrier} lock" do
@@ -31,7 +32,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
 
       operation = fn
         :termination ->
-          Conversations._unsafe_fence_sandbox_for_teardown(sandbox,
+          Lifecycle.fence_sandbox_for_teardown(sandbox,
             terminating_conversation_id: conv.id,
             reason: "conversation_terminated"
           )

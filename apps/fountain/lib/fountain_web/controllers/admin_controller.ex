@@ -26,6 +26,7 @@ defmodule FountainWeb.AdminController do
 
   alias Fountain.{Accounts, Audit, Billing, Conversations, Quotas}
   alias Fountain.Accounts.Deletion
+  alias Fountain.Conversations.Termination
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -369,7 +370,7 @@ defmodule FountainWeb.AdminController do
 
     # ownership: admin surface — :require_admin_api gated this request. Reaping
     # is cross-tenant by nature; the sandbox is identified by id alone.
-    case Conversations._unsafe_reap_sandbox(id) do
+    case Termination.reap_sandbox(id) do
       {:ok, outcome} ->
         Audit.record_admin(%{
           actor_user_id: admin.id,

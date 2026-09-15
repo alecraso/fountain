@@ -2,6 +2,7 @@
 Code.require_file("scripts/verify-turn-deadline-races.exs")
 alias Fountain.{Conversations, Repo}
 alias Fountain.Conversations.{Conversation, ExecutionGuard, ExecutionLimits, Sandbox, Turn}
+alias Fountain.Conversations.Termination
 
 {:ok, _} = Application.ensure_all_started(:mimic)
 :ok = Mimic.copy(ExecutionLimits)
@@ -44,7 +45,7 @@ admission_outcomes =
 
     [release, admission] =
       DeadlineRace.concurrently([
-        fn -> Conversations._unsafe_release_conversation(conv.id) end,
+        fn -> Termination._unsafe_release_conversation(conv.id) end,
         fn -> Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox.id, :unbounded) end
       ])
 
@@ -71,13 +72,13 @@ for _ <- 1..20 do
 
   [{:error, :busy}, {:ok, _, _}] =
     DeadlineRace.concurrently([
-      fn -> Conversations._unsafe_release_conversation(conv.id) end,
+      fn -> Termination._unsafe_release_conversation(conv.id) end,
       fn -> Conversations._unsafe_orphan_turn(turn, "local_release_race") end
     ])
 
   "awaiting_identity" = ExecutionGuard._unsafe_for_turn(turn.id).state
   "idle" = Repo.get!(Conversation, conv.id).status
-  {:error, :busy} = Conversations._unsafe_release_conversation(conv.id)
+  {:error, :busy} = Termination._unsafe_release_conversation(conv.id)
 end
 
 cleanup_outcomes =
@@ -100,7 +101,7 @@ cleanup_outcomes =
     # This is a synthetic acknowledgment, not provider termination evidence.
     [release, {:ok, _}] =
       DeadlineRace.concurrently([
-        fn -> Conversations._unsafe_release_conversation(conv.id) end,
+        fn -> Termination._unsafe_release_conversation(conv.id) end,
         fn -> ExecutionGuard._unsafe_record_termination(execution.id, claimed.attempt_id, :ok) end
       ])
 
@@ -113,7 +114,7 @@ cleanup_outcomes =
 
       {:error, :busy} ->
         "running" = Repo.get!(Conversation, conv.id).status
-        :ok = Conversations._unsafe_release_conversation(conv.id)
+        :ok = Termination._unsafe_release_conversation(conv.id)
         "release_before_cleanup"
     end
   end

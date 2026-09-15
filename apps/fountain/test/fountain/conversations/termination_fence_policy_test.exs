@@ -3,6 +3,7 @@ defmodule Fountain.Conversations.TerminationFencePolicyTest do
   use Mimic
 
   alias Fountain.{Audit, Conversations}
+  alias Fountain.Conversations.Lifecycle
 
   setup do
     user = insert_verified_user()
@@ -88,7 +89,7 @@ defmodule Fountain.Conversations.TerminationFencePolicyTest do
   end
 
   defp fence(ctx) do
-    Conversations._unsafe_fence_sandbox_for_teardown(ctx.sandbox,
+    Lifecycle.fence_sandbox_for_teardown(ctx.sandbox,
       terminating_conversation_id: ctx.conv.id,
       actor: "ui",
       reason: "conversation_terminated"

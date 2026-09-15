@@ -24,6 +24,7 @@ defmodule Fountain.Accounts do
   alias Fountain.Repo
   alias Fountain.Accounts.{User, ApiKey, UserDataKey, OauthIdentity}
   alias Fountain.Audit
+  alias Fountain.Conversations.Termination
   alias Fountain.Crypto
 
   ## Users
@@ -1152,7 +1153,7 @@ defmodule Fountain.Accounts do
       # Ownership: admin/system suspension flow — the %User{} being acted on
       # IS the tenant whose sandboxes are reaped; there is no requesting user
       # to scope by.
-      reaped = Fountain.Conversations._unsafe_reap_all_for_user(user.id)
+      reaped = Termination.reap_all_for_user(user.id)
 
       # Best-effort notification (#450): before this the user's only signal
       # was "account currently unavailable" at their next login attempt. The

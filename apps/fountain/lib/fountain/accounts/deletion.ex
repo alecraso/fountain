@@ -57,7 +57,7 @@ defmodule Fountain.Accounts.Deletion do
   require Logger
 
   alias Fountain.Accounts.User
-  alias Fountain.Conversations.{ConversationServer, Sandbox, Termination}
+  alias Fountain.Conversations.{ConversationServer, Lifecycle, Sandbox, Termination}
   alias Fountain.{Audit, Conversations, Repo}
 
   # Includes `suspended`: parked sprites are excluded from the concurrency
@@ -234,7 +234,7 @@ defmodule Fountain.Accounts.Deletion do
     user_id
     |> live_sandboxes()
     |> Enum.each(fn sandbox ->
-      case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+      case Lifecycle.fence_sandbox_for_teardown(sandbox, opts) do
         {:ok, _} ->
           :ok
 
@@ -268,7 +268,7 @@ defmodule Fountain.Accounts.Deletion do
     user_id
     |> live_sandboxes()
     |> Enum.reduce_while(0, fn sandbox, count ->
-      case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+      case Lifecycle.fence_sandbox_for_teardown(sandbox, opts) do
         {:ok, %{status: status} = fenced} when status in @non_terminal ->
           {:cont, count + if(destroy_sprite(fenced), do: 1, else: 0)}
 

@@ -3,6 +3,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
   use Mimic
 
   alias Fountain.{Agents, Audit, Conversations}
+  alias Fountain.Conversations.{Lifecycle, Termination}
 
   setup do
     user = insert_verified_user()
@@ -25,7 +26,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
     end)
 
     assert {:ok, fenced} =
-             Conversations._unsafe_fence_sandbox_for_teardown(ctx.home,
+             Lifecycle.fence_sandbox_for_teardown(ctx.home,
                actor: "ui",
                request_ip: "192.0.2.1",
                reason: "agent_deleted"
@@ -41,7 +42,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
     assert event.resource_id == ctx.home.id
     assert event.metadata == %{"reason" => "agent_deleted", "provider" => ctx.home.provider}
 
-    assert {:ok, repeated} = Conversations._unsafe_fence_sandbox_for_teardown(ctx.home)
+    assert {:ok, repeated} = Lifecycle.fence_sandbox_for_teardown(ctx.home)
     assert repeated.reset_requested_at == fenced.reset_requested_at
     assert repeated.teardown_requested_at == fenced.teardown_requested_at
     assert [^event] = events(ctx)
@@ -53,7 +54,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
       reject(Audit, :record, 1)
       reject(Managoat.Sandbox.Sprites, :destroy, 1)
 
-      assert {:ok, retired} = Conversations._unsafe_fence_sandbox_for_teardown(ctx.home)
+      assert {:ok, retired} = Lifecycle.fence_sandbox_for_teardown(ctx.home)
       assert retired.status == unquote(status)
       refute retired.reset_requested_at
       refute retired.teardown_requested_at
@@ -68,13 +69,13 @@ defmodule Fountain.Conversations.TeardownFenceTest do
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
 
     assert {:ok, fenced} =
-             Conversations._unsafe_fence_sandbox_for_teardown(ctx.home, actor: "ui")
+             Lifecycle.fence_sandbox_for_teardown(ctx.home, actor: "ui")
 
     assert fenced.reset_requested_at == requested_at
     assert DateTime.compare(fenced.teardown_requested_at, requested_at) == :gt
     assert [event] = events(ctx)
     assert event.actor == "ui"
-    assert {:ok, repeated} = Conversations._unsafe_fence_sandbox_for_teardown(ctx.home)
+    assert {:ok, repeated} = Lifecycle.fence_sandbox_for_teardown(ctx.home)
     assert repeated.teardown_requested_at == fenced.teardown_requested_at
     assert [^event] = events(ctx)
   end
@@ -88,7 +89,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
   end
 
   test "general sandbox attributes cannot forge or clear forced intent", ctx do
-    assert {:ok, fenced} = Conversations._unsafe_fence_sandbox_for_teardown(ctx.home)
+    assert {:ok, fenced} = Lifecycle.fence_sandbox_for_teardown(ctx.home)
 
     for value <- [nil, DateTime.add(DateTime.utc_now(), 60)] do
       changeset =
@@ -105,7 +106,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
     Repo.delete!(ctx.home)
     reject(Audit, :record, 1)
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
-    assert {:error, :not_found} = Conversations._unsafe_fence_sandbox_for_teardown(ctx.home)
+    assert {:error, :not_found} = Lifecycle.fence_sandbox_for_teardown(ctx.home)
     assert events(ctx) == []
   end
 
@@ -115,7 +116,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
 
     assert {:ok, {:error, :provider_transaction_open}} =
              Repo.transaction(fn ->
-               Conversations._unsafe_fence_sandbox_for_teardown(ctx.home)
+               Lifecycle.fence_sandbox_for_teardown(ctx.home)
              end)
 
     refute Repo.reload!(ctx.home).reset_requested_at
@@ -158,7 +159,7 @@ defmodule Fountain.Conversations.TeardownFenceTest do
     Repo.delete!(ctx.home)
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
 
-    assert {:error, :not_found} = Conversations._unsafe_destroy_home(ctx.home)
+    assert {:error, :not_found} = Termination.destroy_home(ctx.home)
     assert events(ctx) == []
   end
 
