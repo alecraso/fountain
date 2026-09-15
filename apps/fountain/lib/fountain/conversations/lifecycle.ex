@@ -588,6 +588,34 @@ defmodule Fountain.Conversations.Lifecycle do
     live_conversation_ids(sandbox) != []
   end
 
+  # Park claim (#2286): a durable claim on `sandboxes.park_claimed_at` that
+  # `Workers.SandboxReaper` takes before parking a `ready` sandbox with no
+  # live server, so a wake or an attach racing the reaper's own provider
+  # checkpoint/suspend call (which runs outside any database lock, and can
+  # take longer than the sandbox's advisory lock is ever held for) can see
+  # the park in flight and refuse retryably instead of reattaching to a
+  # machine the reaper is about to pause. The TTL bounds how long a claim
+  # from a run that never finalized (crashed, or lost its own race) can keep
+  # blocking a legitimate wake; one definition here so the reaper's own
+  # "still ours to finish" recheck and every caller's "is this live" check
+  # agree on what "stale" means.
+  @park_claim_ttl_minutes 10
+
+  @doc "How long a park claim is honored before it is treated as stale, in seconds."
+  @spec park_claim_ttl() :: pos_integer()
+  def park_claim_ttl, do: @park_claim_ttl_minutes * 60
+
+  @doc """
+  Whether `park_claimed_at` (a sandbox's `park_claimed_at`, or `nil`) is
+  still a live claim as of `now` — set, and within `park_claim_ttl/0`.
+  """
+  @spec park_claim_live?(DateTime.t() | nil, DateTime.t()) :: boolean()
+  def park_claim_live?(nil, _now), do: false
+
+  def park_claim_live?(%DateTime{} = park_claimed_at, %DateTime{} = now) do
+    DateTime.diff(now, park_claimed_at, :second) < @park_claim_ttl_minutes * 60
+  end
+
   # Teardown fence (#2258): the machine-policy rule an admin reap, a
   # forced account deletion, and the destroy-home path all refuse or
   # commit against, plus the "is anyone else on this machine" predicate

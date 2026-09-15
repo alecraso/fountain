@@ -648,6 +648,23 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # The reaper has a durable park claim on this sandbox (#2286): it is
+  # mid-checkpoint or mid-provider-suspend-call outside any database lock,
+  # so a wake or an attach here would race that call rather than reattach to
+  # a settled row. Same shape as :sprite_probe_failed — nothing was changed,
+  # retry — with a short window because a claim this fresh almost always
+  # finalizes well inside it (see Lifecycle.park_claim_ttl/0 for the outer
+  # bound a stale claim is ignored at).
+  def call(conn, {:error, :sandbox_parking}) do
+    conn
+    |> put_resp_header("retry-after", "5")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "sandbox_parking",
+      message: "the sandbox is being parked; retry shortly"
+    })
+  end
+
   # A runner-backed sandbox whose machine is not connected (#834). Same
   # shape as the probe failure — nothing was changed, retry — but named, so
   # a client can say "the machine is off" and the retry hint is honest: it

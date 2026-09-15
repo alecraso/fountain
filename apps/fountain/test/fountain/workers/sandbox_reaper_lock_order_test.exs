@@ -30,7 +30,7 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
   use Mimic
 
   alias Ecto.Adapters.SQL.Sandbox, as: DBSandbox
-  alias Fountain.Conversations.{Conversation, Sandbox, Turn}
+  alias Fountain.Conversations.{Conversation, Sandbox, Turn, Wake}
   alias Fountain.Repo
   alias Fountain.Workers.SandboxReaper
 
@@ -310,6 +310,183 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
         Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
         Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
       end)
+    end
+
+    test "admission wins: a refreshed updated_at under the lock is protected by the grace window" do
+      # #2286 finding 2: the outer scan requires updated_at < grace_cutoff,
+      # but the locked recheck did not, so a row bookkeeping refreshed
+      # (a wake, or anything else that just touches updated_at — no new turn,
+      # no live server) while the reaper waited on the lock could still be
+      # parked once the lock came free. ready_abandoned?/3 now recomputes the
+      # same grace cutoff fresh, from its own `now`.
+      DBSandbox.unboxed_run(Repo, fn ->
+        reject(&Managoat.Sandbox.Sprites.suspend/1)
+
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "ready")
+        conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+        insert_turn(conv, %{status: "completed"})
+        sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+        commit = fn ->
+          Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+            set: [updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+          )
+        end
+
+        {reaper_result, holder_result} =
+          with_bounds(
+            [sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24],
+            fn ->
+              race(
+                sandbox.id,
+                commit,
+                fn -> SandboxReaper.sweep_abandoned_sandboxes() end,
+                fn -> assert Repo.reload!(sandbox).status == "ready" end
+              )
+            end
+          )
+
+        assert reaper_result == {0, 0}
+        assert holder_result == {:ok, :ok}
+
+        reloaded = Repo.reload!(sandbox)
+        assert reloaded.status == "ready"
+        refute reloaded.park_claimed_at
+        assert sandbox_audit(user.id) == []
+
+        Repo.delete_all(from c in Conversation, where: c.id == ^conv.id)
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
+    end
+  end
+
+  describe "the durable park claim (#2286 round 3)" do
+    test "the row carries a live claim while the provider call is in flight, then finalizes" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      owner = self()
+
+      stub(Managoat.Sandbox.Sprites, :suspend, fn _handle ->
+        send(owner, :suspend_called)
+
+        receive do
+          :continue -> :ok
+        after
+          5_000 -> raise "suspend call never released"
+        end
+      end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        reaper = Task.async(fn -> SandboxReaper.sweep_abandoned_sandboxes() end)
+
+        assert_receive :suspend_called, 5_000
+
+        # The provider call is genuinely in flight: the row is not yet
+        # `suspended` (that only happens once the call is known to have
+        # succeeded), but it does carry this run's claim.
+        mid_flight = Repo.reload!(sandbox)
+        assert mid_flight.status == "ready"
+        assert mid_flight.park_claimed_at
+
+        # A wake racing this window is refused, not raced.
+        assert {:error, :sandbox_parking} = Wake.maybe_reuse_sandbox(conv)
+
+        send(reaper.pid, :continue)
+        assert Task.await(reaper, 5_000) == {1, 0}
+      end)
+
+      reloaded = Repo.reload!(sandbox)
+      assert reloaded.status == "suspended"
+      refute reloaded.park_claimed_at
+      assert [%{action: "sandbox.suspended"}] = sandbox_audit(user.id)
+    end
+
+    test "a claim cleared by a competing owner while the provider call is in flight is left alone" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      owner = self()
+
+      stub(Managoat.Sandbox.Sprites, :suspend, fn _handle ->
+        send(owner, :suspend_called)
+
+        receive do
+          :continue -> :ok
+        after
+          5_000 -> raise "suspend call never released"
+        end
+      end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        reaper = Task.async(fn -> SandboxReaper.sweep_abandoned_sandboxes() end)
+
+        assert_receive :suspend_called, 5_000
+
+        # Simulating a competing owner: something else cleared this run's
+        # claim while its provider call was still in flight.
+        Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+          set: [park_claimed_at: nil]
+        )
+
+        send(reaper.pid, :continue)
+        assert Task.await(reaper, 5_000) == {0, 0}
+      end)
+
+      reloaded = Repo.reload!(sandbox)
+      assert reloaded.status == "ready"
+      refute reloaded.park_claimed_at
+      assert sandbox_audit(user.id) == []
+    end
+
+    test "a provider suspend failure terminates the row and clears the claim" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+      stub(Managoat.Sandbox.Sprites, :suspend, fn _handle -> {:error, :boom} end)
+
+      result =
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+      assert result == {0, 1}
+
+      reloaded = Repo.reload!(sandbox)
+      assert reloaded.status == "terminated"
+      refute reloaded.park_claimed_at
+      assert [%{action: "sandbox.expired"}] = sandbox_audit(user.id)
+    end
+  end
+
+  describe "chronological, not structural, DateTime comparison (#2286 finding 3)" do
+    test "DateTime.before?/2 is not fooled by a day-of-month inversion across a month boundary" do
+      # Elixir compares two DateTime STRUCTS with `<` field-by-field in
+      # alphabetical key order, so :day is compared before :month and
+      # :year — Sept 30 (day 30) then reads as "greater than" Oct 1
+      # (day 1) though it is chronologically earlier. stuck_eligible?/2 and
+      # ready_abandoned?/3 (both private; this is the comparison itself,
+      # the same one they call verbatim) use DateTime.before?/2 instead,
+      # never `<`, for exactly this reason.
+      earlier = ~U[2026-09-30 12:00:00.000000Z]
+      later = ~U[2026-10-01 00:00:00.000000Z]
+
+      refute earlier < later
+
+      assert DateTime.before?(earlier, later)
+      refute DateTime.before?(later, earlier)
     end
   end
 

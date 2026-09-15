@@ -136,7 +136,7 @@ defmodule Fountain.Workers.SandboxReaper do
   # get marked `failed` once the reaper's own turn at the lock comes up.
   defp stuck_eligible?(%Sandbox{} = sandbox, cutoff) do
     sandbox.status in @active_statuses and is_nil(sandbox.reset_requested_at) and
-      sandbox.updated_at < cutoff and not Lifecycle.any_server_alive?(sandbox)
+      DateTime.before?(sandbox.updated_at, cutoff) and not Lifecycle.any_server_alive?(sandbox)
   end
 
   defp release_one_stuck(sandbox, cutoff) do
@@ -177,11 +177,7 @@ defmodule Fountain.Workers.SandboxReaper do
         :released
 
       :skipped ->
-        Logger.info(
-          "reaper: sandbox #{sandbox.id} became active under the lock; left alone"
-        )
-
-        :skipped
+        log_became_active(sandbox.id)
     end
   end
 
@@ -321,16 +317,23 @@ defmodule Fountain.Workers.SandboxReaper do
     |> Enum.max(DateTime)
   end
 
-  # The scan (`Enum.reject(&Lifecycle.any_server_alive?/1)`, `check_bounds/2`
-  # above) and this recheck must apply the exact same test for the same
-  # reason `stuck_eligible?/2` does: admission can win the sandbox's advisory
-  # lock and commit a running turn after the scan and before the reaper's
-  # own turn at that lock. `expected_verdict` pins the recheck to the bound
-  # the caller classified this candidate under, so a row that has since
-  # moved between bounds (idle vs. max-lifetime) is left for the next run
-  # rather than acted on under a verdict that is no longer current either.
+  # The scan (`updated_at < grace_cutoff` in the query, `Enum.reject(&Lifecycle.any_server_alive?/1)`,
+  # `check_bounds/2` above) and this recheck must apply the exact same test
+  # for the same reason `stuck_eligible?/2` does: admission can win the
+  # sandbox's advisory lock and commit a running turn — or simply a fresh
+  # `updated_at` from an ordinary wake — after the scan and before the
+  # reaper's own turn at that lock. Recomputing the grace cutoff from the
+  # recheck's own `now` (rather than threading the scan's) only widens the
+  # protection, since the recheck always runs at or after the scan.
+  # `expected_verdict` pins the recheck to the bound the caller classified
+  # this candidate under, so a row that has since moved between bounds (idle
+  # vs. max-lifetime) is left for the next run rather than acted on under a
+  # verdict that is no longer current either.
   defp ready_abandoned?(%Sandbox{} = sandbox, expected_verdict, now) do
+    grace_cutoff = DateTime.add(now, -@abandoned_grace_minutes * 60, :second)
+
     sandbox.status == "ready" and is_nil(sandbox.reset_requested_at) and
+      DateTime.before?(sandbox.updated_at, grace_cutoff) and
       not Lifecycle.any_server_alive?(sandbox) and check_bounds(sandbox, now) == expected_verdict
   end
 
@@ -351,22 +354,29 @@ defmodule Fountain.Workers.SandboxReaper do
 
       :suspend ->
         case claim_for_suspend(sandbox) do
-          {:claimed, claimed} -> suspend_claimed(claimed, provider)
+          {:claimed, claimed, stamp} -> suspend_claimed(claimed, stamp, provider)
           :skipped -> log_became_active(sandbox.id)
         end
     end
   end
 
-  # The claim: revalidate fresh under the lock and, only if still eligible,
-  # write `suspended` right there. No provider I/O runs under the lock (the
-  # rule every `with_sandbox_lock/2` caller follows) — but the row write
-  # itself is the fence once it commits: `suspended` is a state admission's
-  # `update_sandbox` guards do not refuse (a legitimate later wake reattaches
-  # to it, same as any ordinary park), while an admission racing for this
-  # same lock either already committed before we got here (so the fresh read
-  # sees its live server or turn and this returns `:skipped`) or is still
-  # queued behind us (and proceeds against the `suspended` row we leave,
-  # which is exactly what a wake after a park looks like).
+  # The claim (#2286 round 3): a durable marker (`sandboxes.park_claimed_at`)
+  # written under the lock, not the park itself. Provider I/O — the
+  # checkpoint and the suspend call — runs outside any lock and can take
+  # longer than the sandbox's advisory lock is ever otherwise held for, so
+  # writing `suspended` here (as an earlier round of this fix did) would
+  # already have committed the park before the machine was actually paused:
+  # a wake racing that window would reattach to a row that says `suspended`
+  # while the sprite is still very much running. The row instead stays
+  # `ready` and carries `park_claimed_at`, which `Wake.maybe_reuse_sandbox/1`
+  # and `Launch`'s attach check both refuse against while live
+  # (`Lifecycle.park_claim_live?/2`) — so a concurrent wake is told to retry
+  # rather than racing the provider call, and `finalize_park/2` below is the
+  # only writer of `suspended`, after that call is known to have finished.
+  #
+  # `park_claimed_at` nil-or-stale is required (not just absent) so a claim
+  # from a run that crashed or lost its own race before finalizing does not
+  # permanently strand the row — the next pass simply claims over it.
   defp claim_for_suspend(sandbox) do
     now = DateTime.utc_now()
 
@@ -374,9 +384,10 @@ defmodule Fountain.Workers.SandboxReaper do
       Conversations.with_sandbox_lock(sandbox.id, fn ->
         fresh = reload_with_conversations(sandbox.id)
 
-        if fresh && ready_abandoned?(fresh, {:expired, :idle}, now) do
-          {:ok, updated} = Conversations.update_sandbox(fresh, %{status: "suspended"})
-          {:ok, {:claimed, updated}}
+        if fresh && ready_abandoned?(fresh, {:expired, :idle}, now) &&
+             not Lifecycle.park_claim_live?(fresh.park_claimed_at, now) do
+          {:ok, updated} = Conversations.update_sandbox(fresh, %{park_claimed_at: now})
+          {:ok, {:claimed, updated, now}}
         else
           {:ok, :skipped}
         end
@@ -385,23 +396,14 @@ defmodule Fountain.Workers.SandboxReaper do
     result
   end
 
-  # Provider I/O for a sandbox this run already claimed as `suspended` above
-  # — never inside the lock. A checkpoint or suspend failure cannot revive
-  # the row (`suspended` already committed); it can only leave the sprite
-  # itself out of step with a row that says it is parked, which the explicit
-  # fallback below corrects the same way the pre-lock code did.
-  defp suspend_claimed(claimed, provider) do
+  # Provider I/O for a sandbox this run has claimed above — never inside the
+  # lock. `stamp` identifies this run's claim through to `finalize_park/2`.
+  defp suspend_claimed(claimed, stamp, provider) do
     Fountain.Conversations.HomeCheckpoint.on_park(claimed)
 
     case Managoat.Sandbox.suspend(Managoat.Sandbox.build_handle(provider, claimed.machine_name)) do
       :ok ->
-        Logger.info(
-          "reaper: parked idle sandbox #{claimed.id} (#{claimed.machine_name}) — " <>
-            "ready with no live server past the idle bound"
-        )
-
-        record_reap(claimed, "sandbox.suspended", %{"reason" => "idle with no live server"})
-        :parked
+        finalize_park(claimed, stamp)
 
       {:error, reason} ->
         Logger.warning(
@@ -409,23 +411,100 @@ defmodule Fountain.Workers.SandboxReaper do
             "expiring instead"
         )
 
-        expire_after_failed_suspend(claimed, "idle; suspend call failed")
+        expire_after_failed_suspend(claimed, stamp, "idle; suspend call failed")
     end
   end
 
-  # The provider suspend call above failed, so this run's own `suspended`
-  # claim is corrected to `terminated` (an unparked sandbox keeps billing) —
-  # unless a legitimate wake already moved the row on while that provider
-  # call was in flight, in which case there is nothing to correct and the
-  # now-active sandbox is left alone.
-  defp expire_after_failed_suspend(claimed, reason) do
-    case expire_locked(claimed.id, &(&1.status == "suspended")) do
+  # The second lock: only now, with the provider call known to have
+  # succeeded, does the row actually become `suspended` — and only if this
+  # run's claim is still the one on it. Three outcomes:
+  #
+  #   * still `ready`, still our stamp, still no live server: park — write
+  #     `suspended` and clear the claim, the ordinary case.
+  #   * the claim no longer matches (cleared, overwritten by a later claim,
+  #     or the row moved on entirely): someone else already resolved this
+  #     sandbox one way or another; write nothing.
+  #   * still our stamp, but a server is now live: a wake accepted a claim
+  #     that had gone stale while this run's provider call was still in
+  #     flight (the accepted window past `Lifecycle.park_claim_ttl/0`) and
+  #     is now using the machine we just told the provider to pause. Clear
+  #     the claim without touching status, and best-effort resume the
+  #     machine to undo a suspend that may have already landed under it.
+  defp finalize_park(claimed, stamp) do
+    {:ok, result} =
+      Conversations.with_sandbox_lock(claimed.id, fn ->
+        fresh = reload_with_conversations(claimed.id)
+
+        cond do
+          is_nil(fresh) or fresh.status != "ready" or fresh.park_claimed_at != stamp ->
+            {:ok, :claim_lost}
+
+          Lifecycle.any_server_alive?(fresh) ->
+            {:ok, updated} = Conversations.update_sandbox(fresh, %{park_claimed_at: nil})
+            {:ok, {:reclaimed_by_wake, updated}}
+
+          true ->
+            {:ok, updated} =
+              Conversations.update_sandbox(fresh, %{status: "suspended", park_claimed_at: nil})
+
+            {:ok, {:parked, updated}}
+        end
+      end)
+
+    case result do
+      {:parked, updated} ->
+        Logger.info(
+          "reaper: parked idle sandbox #{updated.id} (#{updated.machine_name}) — " <>
+            "ready with no live server past the idle bound"
+        )
+
+        record_reap(updated, "sandbox.suspended", %{"reason" => "idle with no live server"})
+        :parked
+
+      {:reclaimed_by_wake, updated} ->
+        Logger.warning(
+          "reaper: #{updated.id} was woken while its provider suspend call was still in " <>
+            "flight; clearing the park claim and undoing the suspend"
+        )
+
+        # Outside the lock, best-effort: the row already says `ready` again
+        # (the wake owns it), so a resume failure here leaves the sprite
+        # paused for a moment rather than the database wrong about anything.
+        provider = Conversations.sandbox_provider_atom(updated)
+        handle = Managoat.Sandbox.build_handle(provider, updated.machine_name)
+
+        case Managoat.Sandbox.resume(handle) do
+          {:ok, _} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "reaper: resume after a lost park claim failed for #{updated.machine_name} " <>
+                "(#{inspect(reason)})"
+            )
+        end
+
+        :skipped
+
+      :claim_lost ->
+        log_claim_lost(claimed.id)
+    end
+  end
+
+  # The provider suspend call above failed, so this run's own claim is
+  # corrected to `terminated` (an unparked sandbox keeps billing) — unless
+  # the claim no longer matches (a legitimate wake already cleared it, or a
+  # later claim overwrote it), in which case there is nothing to correct.
+  defp expire_after_failed_suspend(claimed, stamp, reason) do
+    eligible? = &(&1.status == "ready" and &1.park_claimed_at == stamp)
+
+    case expire_locked(claimed.id, eligible?) do
       {:expired, updated} ->
         finish_expire(updated, reason)
         :expired
 
       :skipped ->
-        log_became_active(claimed.id)
+        log_claim_lost(claimed.id)
     end
   end
 
@@ -451,7 +530,12 @@ defmodule Fountain.Workers.SandboxReaper do
           {:ok, updated} =
             Conversations.update_sandbox(fresh, %{
               status: "terminated",
-              terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+              terminated_at: DateTime.utc_now() |> DateTime.truncate(:second),
+              # Harmless when there was never a claim (the plain idle-without-
+              # suspend and max-lifetime paths): a nil field cleared to nil.
+              # Not harmless to skip on the failed-suspend fallback path,
+              # whose whole point is to retire this run's own left-behind claim.
+              park_claimed_at: nil
             })
 
           {:ok, {:expired, updated}}
@@ -481,6 +565,11 @@ defmodule Fountain.Workers.SandboxReaper do
 
   defp log_became_active(sandbox_id) do
     Logger.info("reaper: sandbox #{sandbox_id} became active under the lock; left alone")
+    :skipped
+  end
+
+  defp log_claim_lost(sandbox_id) do
+    Logger.info("reaper: park claim lost for #{sandbox_id}; leaving row alone")
     :skipped
   end
 

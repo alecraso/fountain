@@ -55,7 +55,7 @@ defmodule Fountain.SandboxQueue do
   # request goes back in line rather than burning its prompt on a condition
   # that clears by itself. `Fountain.Workers.TeamScheduleRun` snoozes on
   # exactly this list, for exactly this reason.
-  @transient_errors ~w(busy provisioning runner_offline sandbox_at_capacity)a
+  @transient_errors ~w(busy provisioning runner_offline sandbox_at_capacity sandbox_parking)a
 
   # Every replay and every terminal write the drain makes is attributed to the
   # queue, not to whoever originally asked. The audit vocabulary is closed

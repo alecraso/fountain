@@ -47,6 +47,14 @@ defmodule Fountain.Conversations.Sandbox do
     field :reset_requested_at, :utc_datetime_usec
     # Forced teardown intent; admission still uses the shared reset fence.
     field :teardown_requested_at, :utc_datetime_usec
+
+    # The reaper's durable park claim (#2286, `Fountain.Conversations.Lifecycle.park_claim_live?/2`):
+    # set under the sandbox's advisory lock before it checkpoints and calls
+    # the provider's suspend outside any lock, cleared when it finalizes the
+    # park (or reclaims a wake that raced it). A `ready` row with a live
+    # claim refuses a reattach retryably rather than racing that provider
+    # call.
+    field :park_claimed_at, :utc_datetime_usec
     # A digest of the Environment fields provisioning turned into disk state:
     # packages, repositories, the setup script and the network policy. Written
     # when the machine reaches `ready`, so a later reapply can tell whether the
@@ -85,6 +93,7 @@ defmodule Fountain.Conversations.Sandbox do
       :mode,
       :terminated_at,
       :last_resumed_at,
+      :park_claimed_at,
       :build_fingerprint,
       :applied_skills,
       :environment_id,

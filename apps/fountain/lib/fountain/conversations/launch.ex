@@ -27,6 +27,7 @@ defmodule Fountain.Conversations.Launch do
     ConversationServer,
     ExecutionAllowance,
     InferenceBinding,
+    Lifecycle,
     Sandbox
   }
 
@@ -562,7 +563,29 @@ defmodule Fountain.Conversations.Launch do
        when status not in ["ready", "suspended"],
        do: {:error, {:sandbox_not_attachable, status}}
 
+  # The reaper's park claim (#2286): a `ready` sandbox it has committed to
+  # suspending. Attaching here is the same race wake refuses in
+  # `Wake.maybe_reuse_sandbox/1` — a stale claim falls through to the
+  # ordinary identity check below, unchanged.
+  defp check_attachable(
+         %Sandbox{status: "ready", park_claimed_at: at} = sandbox,
+         agent,
+         vault_id,
+         env_id
+       )
+       when not is_nil(at) do
+    if Lifecycle.park_claim_live?(at, DateTime.utc_now()) do
+      {:error, :sandbox_parking}
+    else
+      check_attachable_identity(sandbox, agent, vault_id, env_id)
+    end
+  end
+
   defp check_attachable(%Sandbox{} = sandbox, %Agents.Agent{} = agent, vault_id, env_id) do
+    check_attachable_identity(sandbox, agent, vault_id, env_id)
+  end
+
+  defp check_attachable_identity(%Sandbox{} = sandbox, %Agents.Agent{} = agent, vault_id, env_id) do
     cond do
       sandbox.agent_id != agent.id ->
         {:error, :sandbox_identity_mismatch}

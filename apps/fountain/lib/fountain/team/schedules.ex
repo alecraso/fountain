@@ -417,6 +417,7 @@ defmodule Fountain.Team.Schedules do
   def describe_error(:fleet_full), do: "sandbox fleet is full"
   def describe_error(:runner_offline), do: "teammate's machine is offline"
   def describe_error(:sprite_probe_failed), do: "could not reach the sandbox provider"
+  def describe_error(:sandbox_parking), do: "the sandbox is being parked; retry shortly"
 
   def describe_error({:sandbox_quota_exceeded, %{count: c, limit: l}}),
     do: "sandbox quota: #{c}/#{l}"

@@ -33,6 +33,7 @@ defmodule Fountain.Conversations.Wake do
     Conversation,
     ConversationServer,
     Launch,
+    Lifecycle,
     MachineEvents,
     Reattachment,
     Sandbox
@@ -53,6 +54,21 @@ defmodule Fountain.Conversations.Wake do
       %Sandbox{reset_requested_at: at, status: status}
       when not is_nil(at) and status not in ["terminated", "failed"] ->
         {:error, :sandbox_reset_pending}
+
+      # The reaper's park claim (`Workers.SandboxReaper`, #2286): a `ready`
+      # row it has committed to suspending, mid-checkpoint or mid-provider-
+      # suspend-call. Reattaching here would race that suspend outside any
+      # lock, so a live claim refuses retryably rather than probing through
+      # it. A stale claim (the claiming run died, or outlasted the TTL) is
+      # ignored — the next reaper pass overwrites it, and this wake probes
+      # exactly as it would with no claim at all.
+      %Sandbox{status: "ready", park_claimed_at: at} = sandbox
+      when not is_nil(at) ->
+        if Lifecycle.park_claim_live?(at, DateTime.utc_now()) do
+          {:error, :sandbox_parking}
+        else
+          probe_reusable_sandbox(sandbox, sandbox_id)
+        end
 
       %{status: status, machine_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->

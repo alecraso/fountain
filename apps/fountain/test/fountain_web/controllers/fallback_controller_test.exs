@@ -105,6 +105,17 @@ defmodule FountainWeb.FallbackControllerTest do
     end
   end
 
+  describe "{:error, :sandbox_parking} → 503 (#2286)" do
+    test "a wake or an attach racing the reaper's park claim is retryable, not a 422", %{
+      conn: conn
+    } do
+      conn = FountainWeb.FallbackController.call(conn, {:error, :sandbox_parking})
+      assert conn.status == 503
+      assert get_resp_header(conn, "retry-after") == ["5"]
+      assert %{"error" => "sandbox_parking"} = Jason.decode!(conn.resp_body)
+    end
+  end
+
   describe "{:error, :not_found} → 404" do
     test "GET /api/agents/:id with a nonexistent UUID returns 404 with error body", %{conn: conn} do
       user = insert_verified_user()

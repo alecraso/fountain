@@ -46,6 +46,23 @@ defmodule Fountain.SandboxQueueDrainTest do
     agent
   end
 
+  # A persistent agent whose home the reaper has claimed for parking (#2286):
+  # a start for it attaches onto that home (`Launch.home_or_new/5`) and reads
+  # `{:error, :sandbox_parking}` — transient the same way `:provisioning` is.
+  defp agent_home_parking(user) do
+    agent = insert_agent(user_id: user.id, sandbox_mode: "persistent")
+
+    insert_sandbox(
+      user_id: user.id,
+      agent_id: agent.id,
+      mode: "persistent",
+      status: "ready",
+      park_claimed_at: DateTime.utc_now()
+    )
+
+    agent
+  end
+
   # The conversation row and the sandbox reservation are what this module is
   # about; the runtime behind them is not. Stubbing the supervisor keeps the
   # replay a database fact rather than a provisioning race.
@@ -155,6 +172,19 @@ defmodule Fountain.SandboxQueueDrainTest do
     test "a transient failure goes back in line instead of burning the prompt" do
       user = insert_active_user()
       agent = agent_mid_provision(user)
+      request = enqueue!(user, agent)
+
+      assert %{started: 0, failed: 0, expired: 0} = SandboxQueue.drain(user.id)
+
+      reloaded = Repo.get!(Request, request.id)
+      assert reloaded.status == "queued"
+      assert reloaded.error == nil
+      assert reloaded.attrs["prompt"] == "hi"
+    end
+
+    test "a park-claimed home goes back in line instead of burning the prompt (#2286)" do
+      user = insert_active_user()
+      agent = agent_home_parking(user)
       request = enqueue!(user, agent)
 
       assert %{started: 0, failed: 0, expired: 0} = SandboxQueue.drain(user.id)

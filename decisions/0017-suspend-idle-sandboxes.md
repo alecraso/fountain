@@ -113,3 +113,32 @@ destroyed the moment it is woken.
 - The production `SANDBOX_IDLE_TIMEOUT_MINUTES=240` override (#664) is
   reverted: suspension is lossless, so the stock idle bound no longer
   endangers human-gated incident conversations.
+
+## Park claim (2026-09-15, #2286)
+
+The reaper's idle-park write and its provider I/O are not the same moment.
+Checkpointing a persistent home and calling the provider's suspend operation
+happen outside any database lock — deliberately, so a slow provider call
+never holds the sandbox's advisory lock — and can together run longer than
+that lock is ever otherwise held for. Writing `suspended` before that I/O
+(an earlier round of #2286) let a wake land on a `ready`-looking row while
+the sprite was still mid-suspend at the provider; writing it only after
+raced the opposite way, since nothing told a concurrent wake the park was
+already underway.
+
+The fix is a durable claim, `sandboxes.park_claimed_at` (nullable,
+microsecond timestamp): the reaper takes it under the advisory lock before
+any provider call, the row stays `ready` while the claim is live, and only
+a second locked write — after the provider call is known to have
+succeeded — actually flips the row to `suspended` and clears the claim.
+While a claim is live, `Fountain.Conversations.Wake.maybe_reuse_sandbox/1`
+and the attach path (`Launch.check_attachable/4`) both refuse a reattach
+with a retryable `:sandbox_parking` rather than probing through the park in
+flight. `Fountain.Conversations.Lifecycle.park_claim_live?/2` is the one
+definition of "live" both the reaper and its callers use, bounded by
+`park_claim_ttl/0` (ten minutes) so a claim from a run that crashed before
+finalizing cannot strand the row — the next reaper pass claims over a stale
+one. If a wake nonetheless lands inside that window (a provider call that
+outran the TTL), the reaper's finalize step detects the now-live server,
+clears its own claim without touching status, and best-effort resumes the
+machine to undo a suspend that may have already reached the provider.
