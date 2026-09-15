@@ -3713,7 +3713,7 @@ export interface components {
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             runtime_session_id?: string | null;
-            sandbox?: components["schemas"]["Sandbox"] | null;
+            sandbox?: (components["schemas"]["Sandbox"] | (null)) | null;
             /**
              * @description Immutable sandbox callback credential policy. none never issues a callback token.
              * @enum {string}
@@ -5083,7 +5083,7 @@ export interface components {
                 prompt?: string;
                 status?: string;
                 turn_number?: number;
-                usage?: components["schemas"]["TurnUsage"] | null;
+                usage?: (components["schemas"]["TurnUsage"] | (null)) | null;
             } | null;
             /** @description What the teammate is called: the conversation's title, else the agent's name. */
             name: string;
@@ -5166,7 +5166,7 @@ export interface components {
             status: "pending" | "running" | "completed" | "failed" | "interrupted";
             turn_number: number;
             /** @description The end-of-turn token figure; null while the turn runs, when the runtime reported none, or on turns that predate the field. */
-            usage?: components["schemas"]["TurnUsage"] | null;
+            usage?: (components["schemas"]["TurnUsage"] | (null)) | null;
             /** @description The turn ended with a permission request still open (#1635): the agent answered with stop reason `waiting`, the turn is `completed` and the request is on the conversation as a `pending_requests` entry. */
             waiting?: boolean;
         };

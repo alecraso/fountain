@@ -10695,12 +10695,22 @@
           "type": "string"
         },
         "sandbox": {
-          "nullable": true,
-          "oneOf": [
+          "anyOf": [
             {
-              "ref": "Sandbox"
+              "allOf": [
+                {
+                  "ref": "Sandbox"
+                }
+              ]
+            },
+            {
+              "enum": [
+                "None"
+              ],
+              "nullable": true
             }
           ],
+          "nullable": true,
           "required": false
         },
         "sandbox_api_access": {
@@ -13728,12 +13738,22 @@
               "type": "integer"
             },
             "usage": {
-              "nullable": true,
-              "oneOf": [
+              "anyOf": [
                 {
-                  "ref": "TurnUsage"
+                  "allOf": [
+                    {
+                      "ref": "TurnUsage"
+                    }
+                  ]
+                },
+                {
+                  "enum": [
+                    "None"
+                  ],
+                  "nullable": true
                 }
               ],
+              "nullable": true,
               "required": false
             }
           },
@@ -13966,12 +13986,22 @@
           "type": "integer"
         },
         "usage": {
-          "nullable": true,
-          "oneOf": [
+          "anyOf": [
             {
-              "ref": "TurnUsage"
+              "allOf": [
+                {
+                  "ref": "TurnUsage"
+                }
+              ]
+            },
+            {
+              "enum": [
+                "None"
+              ],
+              "nullable": true
             }
           ],
+          "nullable": true,
           "required": false
         },
         "waiting": {

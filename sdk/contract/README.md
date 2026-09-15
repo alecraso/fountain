@@ -151,11 +151,9 @@ and the composition would still reject null (`check_nullable_composition`, over
 the exported document rather than the projection). The repair is to put
 `nullable: true` on the referenced schema itself, or to give the union an
 explicit null-only branch; adding `type: object` to the wrapper does not work.
-`PermissionPolicy` is the shape done right. Two properties already in the
-broken state, `Conversation.sandbox` and `Turn.usage`, are recorded in the
-guard's `KNOWN_NOT_NULLABLE` ratchet and tracked in
-[#2189](https://github.com/managoat/fountain/issues/2189); the list only
-shrinks, and a stale entry fails the build too. The projection records a named
+`PermissionPolicy` is the shape done right. The original `Conversation.sandbox` and `Turn.usage` exceptions (#2189)
+now carry explicit null-only union branches; `KNOWN_NOT_NULLABLE` is empty.
+The projection records a named
 schema's own `nullable` for the same reason — without it, hoisting the flag
 onto a component diffs `contract.json` to nothing.
 
