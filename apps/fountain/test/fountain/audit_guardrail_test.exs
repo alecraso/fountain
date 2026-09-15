@@ -36,6 +36,15 @@ defmodule Fountain.AuditGuardrailTest do
     Webhooks
   }
 
+  alias Fountain.Conversations.ConversationServer
+
+  defmodule OkProbe do
+    @moduledoc false
+    use GenServer
+    def init(state), do: {:ok, state}
+    def handle_call(_message, _from, state), do: {:reply, :ok, state}
+  end
+
   # {label, fun/1 taking the user, expected action}
   #
   # Each entry performs the mutation and names the event it must leave. The
@@ -70,6 +79,14 @@ defmodule Fountain.AuditGuardrailTest do
     {"credential set default", &__MODULE__.do_set_default/1,
      "inference_credential_set.default_changed"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
+    # The lifecycle verbs (#2209). These were recorded by a private GenServer
+    # client function until the client halves moved to
+    # `Conversations.Termination`; the four entries are what keeps them in the
+    # context and out of any caller.
+    {"conversation prompt", &__MODULE__.do_conv_prompt/1, "conversation.prompted"},
+    {"conversation interrupt", &__MODULE__.do_conv_interrupt/1, "conversation.interrupted"},
+    {"conversation terminate", &__MODULE__.do_conv_terminate/1, "conversation.terminated"},
+    {"conversation release", &__MODULE__.do_conv_release/1, "conversation.released"},
     {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
     {"conversation configuration reapply", &__MODULE__.do_conv_reapply/1,
      "conversation.configuration_reapplied"},
@@ -490,6 +507,59 @@ defmodule Fountain.AuditGuardrailTest do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
     {:ok, _} = Conversations.delete_conversation(conv)
+  end
+
+  # Prompt and interrupt need a server or a wake; the trail is the point here,
+  # not the turn pipeline, so the wake is stubbed and the actor is a probe
+  # that answers any call with `:ok`. Terminate and release take their
+  # no-server paths, which write the rows for real.
+  def do_conv_prompt(user) do
+    conv = insert_conversation(user_id: user.id, agent: insert_agent(user_id: user.id))
+    stub(Conversations, :wake_conversation, fn _id, _prompt -> {:ok, conv} end)
+    :ok = ConversationServer.send_prompt(conv.id, "hello", [], actor: "ui")
+  end
+
+  def do_conv_interrupt(user) do
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+    conv =
+      insert_conversation(
+        user_id: user.id,
+        agent: insert_agent(user_id: user.id),
+        sandbox_id: sandbox.id,
+        status: "running"
+      )
+
+    {:ok, probe} = GenServer.start_link(OkProbe, nil)
+    stub(Conversations, :wake_for_interrupt, fn _id -> {:ok, probe} end)
+    :ok = ConversationServer.interrupt(conv.id, actor: "ui")
+  end
+
+  def do_conv_terminate(user) do
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+    conv =
+      insert_conversation(
+        user_id: user.id,
+        agent: insert_agent(user_id: user.id),
+        sandbox_id: sandbox.id
+      )
+
+    :ok = ConversationServer.terminate_conversation(conv.id, actor: "ui")
+  end
+
+  def do_conv_release(user) do
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+    conv =
+      insert_conversation(
+        user_id: user.id,
+        agent: insert_agent(user_id: user.id),
+        sandbox_id: sandbox.id,
+        status: "idle"
+      )
+
+    :ok = ConversationServer.release_conversation(conv.id, actor: "ui")
   end
 
   def do_allowance_creation(user) do
