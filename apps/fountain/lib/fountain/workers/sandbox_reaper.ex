@@ -126,31 +126,74 @@ defmodule Fountain.Workers.SandboxReaper do
     )
     |> Repo.all()
     |> Repo.preload(:conversations)
-    |> Enum.reject(&Lifecycle.any_server_alive?/1)
-    |> Enum.map(fn sandbox ->
-      was = sandbox.status
+    |> Enum.filter(&stuck_eligible?(&1, cutoff))
+    |> Enum.count(&(release_one_stuck(&1, cutoff) == :released))
+  end
 
-      {:ok, _} =
-        Conversations.with_sandbox_lock(sandbox.id, fn ->
-          Conversations.update_sandbox(sandbox, %{
-            status: "failed",
-            terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-          })
-        end)
+  # The scan above and this recheck must apply the exact same test, or a row
+  # that stopped being a stuck-provision row between the two (turn admission
+  # won the sandbox's advisory lock and finished provisioning it) would still
+  # get marked `failed` once the reaper's own turn at the lock comes up.
+  defp stuck_eligible?(%Sandbox{} = sandbox, cutoff) do
+    sandbox.status in @active_statuses and is_nil(sandbox.reset_requested_at) and
+      sandbox.updated_at < cutoff and not Lifecycle.any_server_alive?(sandbox)
+  end
 
-      Logger.info(
-        "reaper: released stuck sandbox #{sandbox.id} (#{sandbox.machine_name}) " <>
-          "after #{@stuck_after_minutes}m in #{sandbox.status}"
-      )
+  defp release_one_stuck(sandbox, cutoff) do
+    was = sandbox.status
 
-      record_reap(sandbox, "sandbox.released_stuck", %{
-        "previous_status" => was,
-        "stuck_after_minutes" => @stuck_after_minutes
-      })
+    {:ok, result} =
+      Conversations.with_sandbox_lock(sandbox.id, fn ->
+        # ownership: sandbox is our own scan's candidate above; a system
+        # sweep re-reads it fresh under the lock because admission can win
+        # the race to finish provisioning it between that scan and this lock.
+        fresh = reload_with_conversations(sandbox.id)
 
-      sandbox
-    end)
-    |> length()
+        if fresh && stuck_eligible?(fresh, cutoff) do
+          {:ok, updated} =
+            Conversations.update_sandbox(fresh, %{
+              status: "failed",
+              terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
+
+          {:ok, {:released, updated}}
+        else
+          {:ok, :skipped}
+        end
+      end)
+
+    case result do
+      {:released, updated} ->
+        Logger.info(
+          "reaper: released stuck sandbox #{updated.id} (#{updated.machine_name}) " <>
+            "after #{@stuck_after_minutes}m in #{was}"
+        )
+
+        record_reap(updated, "sandbox.released_stuck", %{
+          "previous_status" => was,
+          "stuck_after_minutes" => @stuck_after_minutes
+        })
+
+        :released
+
+      :skipped ->
+        Logger.info(
+          "reaper: sandbox #{sandbox.id} became active under the lock; left alone"
+        )
+
+        :skipped
+    end
+  end
+
+  # A fresh, `:conversations`-preloaded read of a sandbox this module already
+  # holds a stale copy of, taken under `Conversations.with_sandbox_lock/2` so
+  # every recheck below sees exactly what a concurrent admission committed
+  # (or did not) while racing for that same lock. `nil` when the row is gone.
+  defp reload_with_conversations(sandbox_id) do
+    case Conversations._unsafe_get_sandbox(sandbox_id) do
+      nil -> nil
+      sandbox -> Repo.preload(sandbox, :conversations)
+    end
   end
 
   # A live ConversationServer means provisioning is still in flight somewhere in
@@ -237,11 +280,14 @@ defmodule Fountain.Workers.SandboxReaper do
             case idle_sweep(sandbox) do
               :parked -> {p + 1, e}
               :expired -> {p, e + 1}
+              :skipped -> {p, e}
             end
 
           {sandbox, {:expired, :max_lifetime}}, {p, e} ->
-            expire(sandbox, "past max lifetime")
-            {p, e + 1}
+            case expire(sandbox, "past max lifetime", {:expired, :max_lifetime}) do
+              :expired -> {p, e + 1}
+              :skipped -> {p, e}
+            end
 
           {_sandbox, :ok}, acc ->
             acc
@@ -275,65 +321,149 @@ defmodule Fountain.Workers.SandboxReaper do
     |> Enum.max(DateTime)
   end
 
+  # The scan (`Enum.reject(&Lifecycle.any_server_alive?/1)`, `check_bounds/2`
+  # above) and this recheck must apply the exact same test for the same
+  # reason `stuck_eligible?/2` does: admission can win the sandbox's advisory
+  # lock and commit a running turn after the scan and before the reaper's
+  # own turn at that lock. `expected_verdict` pins the recheck to the bound
+  # the caller classified this candidate under, so a row that has since
+  # moved between bounds (idle vs. max-lifetime) is left for the next run
+  # rather than acted on under a verdict that is no longer current either.
+  defp ready_abandoned?(%Sandbox{} = sandbox, expected_verdict, now) do
+    sandbox.status == "ready" and is_nil(sandbox.reset_requested_at) and
+      not Lifecycle.any_server_alive?(sandbox) and check_bounds(sandbox, now) == expected_verdict
+  end
+
   # Idle with no server: park where the provider can preserve the disk,
   # expire where it cannot — the same Lifecycle.idle_action/1 decision the
   # ConversationServer applies, and the same degradation when the explicit
-  # suspend call fails (an unparked sandbox keeps billing).
+  # suspend call fails (an unparked sandbox keeps billing). `idle_action/1`
+  # is a pure provider-capability check, safe to ask before the lock.
   defp idle_sweep(sandbox) do
     provider = Conversations.sandbox_provider_atom(sandbox)
 
-    with :suspend <- Lifecycle.idle_action(provider),
-         :ok <-
-           Managoat.Sandbox.suspend(Managoat.Sandbox.build_handle(provider, sandbox.machine_name)) do
-      park(sandbox)
-      :parked
-    else
+    case Lifecycle.idle_action(provider) do
       :destroy ->
-        expire(sandbox, "idle on a provider without suspend")
-        :expired
+        case expire(sandbox, "idle on a provider without suspend", {:expired, :idle}) do
+          :expired -> :expired
+          :skipped -> :skipped
+        end
 
-      {:error, reason} ->
-        Logger.warning(
-          "reaper: suspend call failed for #{sandbox.machine_name} (#{inspect(reason)}); " <>
-            "expiring instead"
-        )
-
-        expire(sandbox, "idle; suspend call failed")
-        :expired
+      :suspend ->
+        case claim_for_suspend(sandbox) do
+          {:claimed, claimed} -> suspend_claimed(claimed, provider)
+          :skipped -> log_became_active(sandbox.id)
+        end
     end
   end
 
-  # Reversible bookkeeping — the sandbox stays parked at the provider, and
-  # the next prompt wakes it through the ordinary reattach path.
-  defp park(sandbox) do
-    # A home is checkpointed at its quietest moment, where the provider can
-    # (ADR 0023, #1073); ephemeral sandboxes and failures skip straight on.
-    Fountain.Conversations.HomeCheckpoint.on_park(sandbox)
+  # The claim: revalidate fresh under the lock and, only if still eligible,
+  # write `suspended` right there. No provider I/O runs under the lock (the
+  # rule every `with_sandbox_lock/2` caller follows) — but the row write
+  # itself is the fence once it commits: `suspended` is a state admission's
+  # `update_sandbox` guards do not refuse (a legitimate later wake reattaches
+  # to it, same as any ordinary park), while an admission racing for this
+  # same lock either already committed before we got here (so the fresh read
+  # sees its live server or turn and this returns `:skipped`) or is still
+  # queued behind us (and proceeds against the `suspended` row we leave,
+  # which is exactly what a wake after a park looks like).
+  defp claim_for_suspend(sandbox) do
+    now = DateTime.utc_now()
 
-    {:ok, _} =
+    {:ok, result} =
       Conversations.with_sandbox_lock(sandbox.id, fn ->
-        Conversations.update_sandbox(sandbox, %{status: "suspended"})
+        fresh = reload_with_conversations(sandbox.id)
+
+        if fresh && ready_abandoned?(fresh, {:expired, :idle}, now) do
+          {:ok, updated} = Conversations.update_sandbox(fresh, %{status: "suspended"})
+          {:ok, {:claimed, updated}}
+        else
+          {:ok, :skipped}
+        end
       end)
 
-    Logger.info(
-      "reaper: parked idle sandbox #{sandbox.id} (#{sandbox.machine_name}) — " <>
-        "ready with no live server past the idle bound"
-    )
-
-    record_reap(sandbox, "sandbox.suspended", %{"reason" => "idle with no live server"})
-
-    sandbox
+    result
   end
 
-  defp expire(sandbox, reason) do
-    {:ok, _} =
-      Conversations.with_sandbox_lock(sandbox.id, fn ->
-        Conversations.update_sandbox(sandbox, %{
-          status: "terminated",
-          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
+  # Provider I/O for a sandbox this run already claimed as `suspended` above
+  # — never inside the lock. A checkpoint or suspend failure cannot revive
+  # the row (`suspended` already committed); it can only leave the sprite
+  # itself out of step with a row that says it is parked, which the explicit
+  # fallback below corrects the same way the pre-lock code did.
+  defp suspend_claimed(claimed, provider) do
+    Fountain.Conversations.HomeCheckpoint.on_park(claimed)
+
+    case Managoat.Sandbox.suspend(Managoat.Sandbox.build_handle(provider, claimed.machine_name)) do
+      :ok ->
+        Logger.info(
+          "reaper: parked idle sandbox #{claimed.id} (#{claimed.machine_name}) — " <>
+            "ready with no live server past the idle bound"
+        )
+
+        record_reap(claimed, "sandbox.suspended", %{"reason" => "idle with no live server"})
+        :parked
+
+      {:error, reason} ->
+        Logger.warning(
+          "reaper: suspend call failed for #{claimed.machine_name} (#{inspect(reason)}); " <>
+            "expiring instead"
+        )
+
+        expire_after_failed_suspend(claimed, "idle; suspend call failed")
+    end
+  end
+
+  # The provider suspend call above failed, so this run's own `suspended`
+  # claim is corrected to `terminated` (an unparked sandbox keeps billing) —
+  # unless a legitimate wake already moved the row on while that provider
+  # call was in flight, in which case there is nothing to correct and the
+  # now-active sandbox is left alone.
+  defp expire_after_failed_suspend(claimed, reason) do
+    case expire_locked(claimed.id, &(&1.status == "suspended")) do
+      {:expired, updated} ->
+        finish_expire(updated, reason)
+        :expired
+
+      :skipped ->
+        log_became_active(claimed.id)
+    end
+  end
+
+  defp expire(sandbox, reason, expected_verdict) do
+    now = DateTime.utc_now()
+
+    case expire_locked(sandbox.id, &ready_abandoned?(&1, expected_verdict, now)) do
+      {:expired, updated} ->
+        finish_expire(updated, reason)
+        :expired
+
+      :skipped ->
+        log_became_active(sandbox.id)
+    end
+  end
+
+  defp expire_locked(sandbox_id, eligible?) do
+    {:ok, result} =
+      Conversations.with_sandbox_lock(sandbox_id, fn ->
+        fresh = reload_with_conversations(sandbox_id)
+
+        if fresh && eligible?.(fresh) do
+          {:ok, updated} =
+            Conversations.update_sandbox(fresh, %{
+              status: "terminated",
+              terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
+
+          {:ok, {:expired, updated}}
+        else
+          {:ok, :skipped}
+        end
       end)
 
+    result
+  end
+
+  defp finish_expire(sandbox, reason) do
     Logger.info(
       "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.machine_name}) — " <>
         "ready with no live server, #{reason}"
@@ -347,6 +477,11 @@ defmodule Fountain.Workers.SandboxReaper do
     # The sandbox itself is destroyed by pass 2 on this same run, now that the
     # row is terminal.
     sandbox
+  end
+
+  defp log_became_active(sandbox_id) do
+    Logger.info("reaper: sandbox #{sandbox_id} became active under the lock; left alone")
+    :skipped
   end
 
   # ── pass 2: terminal rows whose sprite is still there ─────────────────────

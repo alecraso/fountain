@@ -2,19 +2,39 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
   @moduledoc """
   The reaper's terminal writes (#2255 decision 3) take the same advisory xact
   lock admission does (`Fountain.Conversations.with_sandbox_lock/2`), so they
-  cannot race an admission holding it. Each case here holds that lock on an
-  independent connection first, then runs the reaper pass that would touch
-  the locked sandbox and shows its write is blocked at the database — not
-  merely slow — until the lock is released, landing in the same state the
-  pass produced before this change.
+  cannot race an admission holding it. But holding the same lock is not
+  enough on its own: a reaper pass reads its candidates and their liveness
+  and activity *before* it ever reaches the lock, so a fresh admission that
+  wins the race and commits between that read and the reaper's own turn at
+  the lock must not be overwritten by a now-stale verdict — the review that
+  found this called it out directly (adversarial review on #2286).
+
+  Each "admission wins" case here holds the sandbox's advisory lock on an
+  independent connection, and — still holding it — commits (or, for
+  liveness, simply makes true) exactly what a concurrent admission would:
+  a status/`updated_at` change out of the stuck window for the stuck-release
+  path; a running conversation and turn with fresh activity for the idle
+  path, which the idle bound measures against; and a freshly registered
+  `ConversationServer` for the max-lifetime path, whose clock is anchored to
+  `inserted_at`/`last_resumed_at` and so is not reset by activity alone.
+  Releasing the lock then lets the reaper's own turn proceed, and each case
+  asserts the reaper left the row (and any turn) untouched, recorded no
+  audit, and — for the idle path — made no provider call.
+
+  Each "unaffected" case holds the same lock but changes nothing under it,
+  and asserts the write still happens exactly as it did before revalidation
+  was added — the behaviour this file existed to prove in the first place.
   """
 
   use Fountain.DataCase, async: false
+  use Mimic
 
   alias Ecto.Adapters.SQL.Sandbox, as: DBSandbox
-  alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.{Conversation, Sandbox, Turn}
   alias Fountain.Repo
   alias Fountain.Workers.SandboxReaper
+
+  setup :set_mimic_global
 
   @lock_namespace 4316
 
@@ -27,129 +47,35 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
     %{sandbox | updated_at: ts}
   end
 
-  test "release_stuck_sandboxes waits for another holder's advisory lock" do
-    DBSandbox.unboxed_run(Repo, fn ->
-      user = insert_verified_user()
-      sandbox = insert_sandbox(user_id: user.id, status: "starting") |> age_sandbox(120)
-      owner = self()
+  defp age_ready_sandbox(sandbox, conv, minutes) do
+    ts = minutes_ago(minutes)
 
-      holder = hold_lock(sandbox.id, owner)
-      assert_receive {:holder_backend, holder_backend}, 5_000
-      assert_receive :locked, 5_000
+    Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+      set: [inserted_at: ts, updated_at: ts]
+    )
 
-      reaper =
-        Task.async(fn ->
-          DBSandbox.unboxed_run(Repo, fn ->
-            %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
-            send(owner, {:reaper_backend, backend})
-            SandboxReaper.release_stuck_sandboxes()
-          end)
-        end)
+    Repo.update_all(from(t in Turn, where: t.conversation_id == ^conv.id), set: [inserted_at: ts])
 
-      try do
-        assert_receive {:reaper_backend, reaper_backend}, 5_000
-
-        await_blocked(
-          reaper_backend,
-          holder_backend,
-          System.monotonic_time(:millisecond) + 5_000
-        )
-
-        # Blocked at the database, not merely slow: the write has not
-        # committed while the lock is held.
-        assert Repo.reload!(sandbox).status == "starting"
-
-        send(holder.pid, :release)
-
-        assert Task.await(reaper, 5_000) == 1
-        assert Task.await(holder, 5_000) == {:ok, :ok}
-
-        assert %{status: "failed", terminated_at: %DateTime{}} = Repo.reload!(sandbox)
-      after
-        Task.shutdown(reaper, :brutal_kill)
-        Task.shutdown(holder, :brutal_kill)
-        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
-        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
-        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
-      end
-    end)
+    Repo.reload!(sandbox)
   end
 
-  test "sweep_abandoned_sandboxes' park write waits for another holder's advisory lock" do
-    DBSandbox.unboxed_run(Repo, fn ->
-      user = insert_verified_user()
-      sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
-      insert_turn(conv, %{status: "completed"})
+  defp with_bounds(pairs, fun) do
+    previous = Enum.map(pairs, fn {k, _} -> {k, Application.get_env(:fountain, k)} end)
+    Enum.each(pairs, fn {k, v} -> Application.put_env(:fountain, k, v) end)
 
-      ts = minutes_ago(60 * 5)
-
-      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
-        set: [inserted_at: ts, updated_at: ts]
-      )
-
-      Repo.update_all(
-        from(t in Fountain.Conversations.Turn, where: t.conversation_id == ^conv.id),
-        set: [inserted_at: ts]
-      )
-
-      previous = Application.get_env(:fountain, :sandbox_idle_timeout_minutes)
-      previous_lifetime = Application.get_env(:fountain, :sandbox_max_lifetime_hours)
-      Application.put_env(:fountain, :sandbox_idle_timeout_minutes, 60)
-      Application.put_env(:fountain, :sandbox_max_lifetime_hours, 24)
-
-      owner = self()
-
-      holder = hold_lock(sandbox.id, owner)
-      assert_receive {:holder_backend, holder_backend}, 5_000
-      assert_receive :locked, 5_000
-
-      reaper =
-        Task.async(fn ->
-          DBSandbox.unboxed_run(Repo, fn ->
-            %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
-            send(owner, {:reaper_backend, backend})
-            SandboxReaper.sweep_abandoned_sandboxes()
-          end)
-        end)
-
-      try do
-        assert_receive {:reaper_backend, reaper_backend}, 5_000
-
-        await_blocked(
-          reaper_backend,
-          holder_backend,
-          System.monotonic_time(:millisecond) + 5_000
-        )
-
-        assert Repo.reload!(sandbox).status == "ready"
-
-        send(holder.pid, :release)
-
-        assert Task.await(reaper, 5_000) == {1, 0}
-        assert Task.await(holder, 5_000) == {:ok, :ok}
-
-        reloaded = Repo.reload!(sandbox)
-        assert reloaded.status == "suspended"
-        refute reloaded.terminated_at
-      after
-        Task.shutdown(reaper, :brutal_kill)
-        Task.shutdown(holder, :brutal_kill)
-        Application.put_env(:fountain, :sandbox_idle_timeout_minutes, previous)
-        Application.put_env(:fountain, :sandbox_max_lifetime_hours, previous_lifetime)
-        Repo.delete_all(from c in Fountain.Conversations.Conversation, where: c.id == ^conv.id)
-        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
-        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
-        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
-      end
-    end)
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn {k, v} -> Application.put_env(:fountain, k, v) end)
+    end
   end
 
   # Takes the same advisory lock `Conversations.with_sandbox_lock/2` does, on
-  # an independent connection, and holds it until told to release — the same
+  # an independent connection, runs `commit` while still holding it (a no-op
+  # by default), then holds the lock open until told to release — the same
   # shape `channel_allowance_lock_order_test.exs` and
   # `termination_attach_order_test.exs` use to prove a write waits on it.
-  defp hold_lock(sandbox_id, owner) do
+  defp hold_lock(sandbox_id, owner, commit) do
     Task.async(fn ->
       DBSandbox.unboxed_run(Repo, fn ->
         %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
@@ -161,6 +87,7 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
             :erlang.phash2(sandbox_id)
           ])
 
+          commit.()
           send(owner, :locked)
 
           receive do
@@ -169,6 +96,16 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
             10_000 -> raise "lock not released"
           end
         end)
+      end)
+    end)
+  end
+
+  defp run_reaper(owner, fun) do
+    Task.async(fn ->
+      DBSandbox.unboxed_run(Repo, fn ->
+        %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
+        send(owner, {:reaper_backend, backend})
+        fun.()
       end)
     end)
   end
@@ -182,6 +119,285 @@ defmodule Fountain.Workers.SandboxReaperLockOrderTest do
 
       Process.sleep(5)
       await_blocked(waiter, holder, deadline)
+    end
+  end
+
+  # Starts the holder and the reaper, waits until the reaper is genuinely
+  # blocked on the holder's connection, hands control to `during` for
+  # mid-block assertions, releases the holder, then returns
+  # `{reaper_result, holder_result}` for post-release assertions.
+  defp race(sandbox_id, commit, reaper_fun, during) do
+    owner = self()
+    holder = hold_lock(sandbox_id, owner, commit)
+    assert_receive {:holder_backend, holder_backend}, 5_000
+    assert_receive :locked, 5_000
+
+    reaper = run_reaper(owner, reaper_fun)
+
+    try do
+      assert_receive {:reaper_backend, reaper_backend}, 5_000
+      await_blocked(reaper_backend, holder_backend, System.monotonic_time(:millisecond) + 5_000)
+      during.()
+      send(holder.pid, :release)
+      {Task.await(reaper, 5_000), Task.await(holder, 5_000)}
+    after
+      Task.shutdown(reaper, :brutal_kill)
+      Task.shutdown(holder, :brutal_kill)
+    end
+  end
+
+  defp sandbox_audit(user_id) do
+    Fountain.Audit.list_for_user(user_id, action_prefix: "sandbox.")
+  end
+
+  describe "stuck release" do
+    test "nothing changes under the lock: the stuck write still happens" do
+      DBSandbox.unboxed_run(Repo, fn ->
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "starting") |> age_sandbox(120)
+
+        {reaper_result, holder_result} =
+          race(sandbox.id, fn -> :ok end, fn -> SandboxReaper.release_stuck_sandboxes() end, fn ->
+            assert Repo.reload!(sandbox).status == "starting"
+          end)
+
+        assert reaper_result == 1
+        assert holder_result == {:ok, :ok}
+        assert %{status: "failed", terminated_at: %DateTime{}} = Repo.reload!(sandbox)
+        assert [_] = sandbox_audit(user.id)
+
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
+    end
+
+    test "admission wins: a sandbox that finished provisioning under the lock is left alone" do
+      DBSandbox.unboxed_run(Repo, fn ->
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "starting") |> age_sandbox(120)
+
+        commit = fn ->
+          # What admission/provisioning finishing would commit while holding
+          # this same lock: the row is no longer stuck by either measure —
+          # its status left `@active_statuses` and its clock reset.
+          Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id),
+            set: [status: "ready", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+          )
+        end
+
+        {reaper_result, holder_result} =
+          race(sandbox.id, commit, fn -> SandboxReaper.release_stuck_sandboxes() end, fn ->
+            assert Repo.reload!(sandbox).status == "starting"
+          end)
+
+        assert reaper_result == 0
+        assert holder_result == {:ok, :ok}
+
+        reloaded = Repo.reload!(sandbox)
+        assert reloaded.status == "ready"
+        refute reloaded.terminated_at
+        assert sandbox_audit(user.id) == []
+
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
+    end
+  end
+
+  describe "idle park" do
+    test "nothing changes under the lock: the park write still happens" do
+      DBSandbox.unboxed_run(Repo, fn ->
+        # The real Sprites.suspend/1 is a no-op ack (`def suspend(%Handle{}),
+        # do: :ok`) — no stub needed for the happy path.
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "ready")
+        conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+        insert_turn(conv, %{status: "completed"})
+        sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+        {reaper_result, holder_result} =
+          with_bounds(
+            [sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24],
+            fn ->
+              race(
+                sandbox.id,
+                fn -> :ok end,
+                fn -> SandboxReaper.sweep_abandoned_sandboxes() end,
+                fn -> assert Repo.reload!(sandbox).status == "ready" end
+              )
+            end
+          )
+
+        assert reaper_result == {1, 0}
+        assert holder_result == {:ok, :ok}
+
+        reloaded = Repo.reload!(sandbox)
+        assert reloaded.status == "suspended"
+        refute reloaded.terminated_at
+        assert [_] = sandbox_audit(user.id)
+
+        Repo.delete_all(from c in Conversation, where: c.id == ^conv.id)
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
+    end
+
+    test "admission wins: a sandbox admission just resumed under the lock is left alone" do
+      DBSandbox.unboxed_run(Repo, fn ->
+        # Proves the reaper never reaches the provider call, not just that it
+        # left the row alone.
+        reject(&Managoat.Sandbox.Sprites.suspend/1)
+
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "ready")
+        conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+        insert_turn(conv, %{status: "completed"})
+        sandbox = age_ready_sandbox(sandbox, conv, 60 * 5)
+
+        commit = fn ->
+          # What turn admission commits while holding this same lock: the
+          # conversation runs again and its turn is fresh activity.
+          Repo.update_all(from(c in Conversation, where: c.id == ^conv.id),
+            set: [status: "running"]
+          )
+
+          %Turn{}
+          |> Turn.changeset(%{
+            conversation_id: conv.id,
+            turn_number: 2,
+            status: "running",
+            prompt: "admission wins",
+            started_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          })
+          |> Repo.insert!()
+        end
+
+        {reaper_result, holder_result} =
+          with_bounds(
+            [sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24],
+            fn ->
+              race(
+                sandbox.id,
+                commit,
+                fn -> SandboxReaper.sweep_abandoned_sandboxes() end,
+                fn -> assert Repo.reload!(sandbox).status == "ready" end
+              )
+            end
+          )
+
+        assert reaper_result == {0, 0}
+        assert holder_result == {:ok, :ok}
+
+        reloaded = Repo.reload!(sandbox)
+        assert reloaded.status == "ready"
+        refute reloaded.terminated_at
+        assert Repo.reload!(conv).status == "running"
+
+        assert [%{turn_number: 1, status: "completed"}, %{turn_number: 2} = fresh_turn] =
+                 Repo.all(
+                   from t in Turn, where: t.conversation_id == ^conv.id, order_by: t.turn_number
+                 )
+
+        assert fresh_turn.status == "running"
+        assert sandbox_audit(user.id) == []
+
+        Repo.delete_all(from t in Turn, where: t.conversation_id == ^conv.id)
+        Repo.delete_all(from c in Conversation, where: c.id == ^conv.id)
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
+    end
+  end
+
+  describe "expiry" do
+    test "nothing changes under the lock: the expire write still happens" do
+      DBSandbox.unboxed_run(Repo, fn ->
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "ready")
+        conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+        insert_turn(conv, %{status: "completed"})
+        sandbox = age_ready_sandbox(sandbox, conv, 60 * 24 * 83)
+
+        {reaper_result, holder_result} =
+          with_bounds(
+            [sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24],
+            fn ->
+              race(
+                sandbox.id,
+                fn -> :ok end,
+                fn -> SandboxReaper.sweep_abandoned_sandboxes() end,
+                fn -> assert Repo.reload!(sandbox).status == "ready" end
+              )
+            end
+          )
+
+        assert reaper_result == {0, 1}
+        assert holder_result == {:ok, :ok}
+        assert Repo.reload!(sandbox).status == "terminated"
+        assert Repo.reload!(conv).status == "idle"
+        assert [_] = sandbox_audit(user.id)
+
+        Repo.delete_all(from c in Conversation, where: c.id == ^conv.id)
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
+    end
+
+    test "admission wins: a server that registered under the lock is left unexpired" do
+      # The max-lifetime clock is anchored to `inserted_at`/`last_resumed_at`
+      # (a continuous run), not last activity — a fresh turn alone would not
+      # reset it, so the race worth proving here is liveness: a server that
+      # registers (a reattach in flight) between the scan and the lock, which
+      # is exactly what `Lifecycle.any_server_alive?/1` exists to catch fresh.
+      DBSandbox.unboxed_run(Repo, fn ->
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "ready")
+        conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+        insert_turn(conv, %{status: "completed"})
+        sandbox = age_ready_sandbox(sandbox, conv, 60 * 24 * 83)
+
+        {reaper_result, holder_result} =
+          with_bounds(
+            [sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24],
+            fn ->
+              race(
+                sandbox.id,
+                fn -> :ok end,
+                fn -> SandboxReaper.sweep_abandoned_sandboxes() end,
+                fn ->
+                  assert Repo.reload!(sandbox).status == "ready"
+
+                  # Mimic's global mode only lets the test process itself
+                  # define a stub, so this runs here rather than inside the
+                  # holder task — timed exactly the same way regardless: the
+                  # reaper's scan has already run and it is already blocked
+                  # on the lock, so this is "the server registered while we
+                  # were waiting," not "before we ever looked."
+                  stub(Fountain.Conversations.ConversationServer, :whereis, fn id ->
+                    if id == conv.id, do: self(), else: nil
+                  end)
+                end
+              )
+            end
+          )
+
+        assert reaper_result == {0, 0}
+        assert holder_result == {:ok, :ok}
+        assert Repo.reload!(sandbox).status == "ready"
+        refute Repo.reload!(sandbox).terminated_at
+        assert Repo.reload!(conv).status == "idle"
+        assert sandbox_audit(user.id) == []
+
+        Repo.delete_all(from c in Conversation, where: c.id == ^conv.id)
+        Repo.delete_all(from s in Sandbox, where: s.id == ^sandbox.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end)
     end
   end
 end
