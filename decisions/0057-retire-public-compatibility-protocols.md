@@ -38,10 +38,14 @@ Built so far, in the change that carries this status line:
   route went, and now gone. Nothing publishes a `caller_tool` stage any more,
   so the retired event vocabulary is the only trace left of the bridge.
 
-Not yet built, in the next change of the same stack: removing the
-`openai_compat` flag, which still exists here and gates nothing. **This section
-is updated by each of those**, so it always describes the tree it is merged
-into.
+- The `openai_compat` flag, which by then gated nothing. `FEATURE_FLAGS_ON`
+  itself stays: a deployment drops the `openai_compat` entry and keeps any
+  other, because `connections` still decides the Connections creation rollout
+  wherever PostHog answers flags. Only a deployment without PostHog has no
+  shipped feature left that needs a key in it.
+
+Nothing of the retirement itself is left unbuilt. **This section was updated by
+each change of the stack**, so it describes the tree it is merged into.
 
 Outside the stack entirely, with their own gates: the physical
 `conversations.caller_tools` column, which

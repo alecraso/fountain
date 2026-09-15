@@ -10,14 +10,6 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id)
     {_key, raw} = insert_api_key(user)
-    flags = Application.get_env(:fountain, :feature_flag_overrides)
-    Application.put_env(:fountain, :feature_flag_overrides, %{"openai_compat" => true})
-
-    on_exit(fn ->
-      if flags,
-        do: Application.put_env(:fountain, :feature_flag_overrides, flags),
-        else: Application.delete_env(:fountain, :feature_flag_overrides)
-    end)
 
     owner = self()
     stub(ConversationServer, :queue_initial_prompt, fn _, _ -> send(owner, :queued) end)
