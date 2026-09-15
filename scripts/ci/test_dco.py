@@ -28,7 +28,8 @@ class Fixture(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=self.root, check=True,
                               capture_output=True, text=True)
 
-    def commit(self, name: str, text: str, *, signoff: bool, trailer: str | None = None):
+    def commit(self, name: str, text: str, *, signoff: bool, trailer: str | None = None,
+               cleanup: str | None = None):
         path = self.root / name
         path.write_text(text)
         self.git("add", "--", name)
@@ -37,7 +38,11 @@ class Fixture(unittest.TestCase):
             message += f"\n\n{trailer}"
         elif signoff:
             message += "\n\nSigned-off-by: t <t@example.com>"
-        self.git("commit", "--quiet", "-m", message)
+        args = ["commit", "--quiet"]
+        if cleanup:
+            args.append(f"--cleanup={cleanup}")
+        args += ["-m", message]
+        self.git(*args)
         return self.git("rev-parse", "HEAD").stdout.strip()
 
     def run_script(self, base: str, head: str = "HEAD"):
@@ -88,6 +93,27 @@ class DcoTest(Fixture):
         result = self.run_script(self.base)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("1 commit judged", result.stdout)
+
+    def test_a_prose_mention_of_the_trailer_is_not_a_trailer(self):
+        # "Signed-off-by: ..." appears in the message but mid-sentence, not
+        # as the message's trailing trailer block; a whole-message regex
+        # would wrongly accept this.
+        sha = self.commit(
+            "a.txt", "a\n", signoff=False,
+            trailer="Body mentions Signed-off-by: Example <example@example.com> in passing.",
+        )
+        result = self.run_script(self.base)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(sha[:7], result.stderr)
+
+    def test_a_whitespace_only_trailer_value_fails(self):
+        # --cleanup=verbatim keeps the trailing whitespace a normal commit
+        # would strip, reproducing a trailer with no real value.
+        sha = self.commit("a.txt", "a\n", signoff=False,
+                           trailer="Signed-off-by:" + "   ", cleanup="verbatim")
+        result = self.run_script(self.base)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(sha[:7], result.stderr)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,16 @@ Two decisions, settled on #2290:
   branch is not itself a contribution, so this walks
   `git rev-list --no-merges base..head`.
 
+"Presence" means a real trailer, not a string match on the whole message:
+this parses only the message's trailing trailer block with
+`git interpret-trailers --parse`, the same algorithm `git commit -s`
+itself writes to, and requires a `Signed-off-by` value that is non-empty
+after trimming. A regex over the full message would also pass a commit
+whose *prose* happens to contain the words "Signed-off-by: someone", or
+one whose trailer has an empty value (`Signed-off-by:` with nothing but
+whitespace after it, which `--cleanup=verbatim` can leave behind); both
+were caught in review of the first version of this script.
+
 Run from the repository root:
 
     python3 scripts/ci/dco.py --base <base-sha> --head <head-sha>
@@ -32,11 +42,8 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import subprocess
 import sys
-
-TRAILER_RE = re.compile(r"^Signed-off-by: .+", re.MULTILINE)
 
 
 def commits(root: str, base: str, head: str) -> list[str]:
@@ -63,10 +70,33 @@ def subject(root: str, sha: str) -> str:
     return result.stdout.strip()
 
 
+def trailers(root: str, sha: str) -> list[str]:
+    """The commit's trailing trailer block, one "Key: value" line each.
+
+    `--parse --only-trailers` is git's own trailer detector: it looks only
+    at the message's final paragraph and requires it to read as a trailer
+    block, so a sentence elsewhere in the body that merely contains the
+    words "Signed-off-by: ..." produces no trailer at all.
+    """
+    result = subprocess.run(
+        ["git", "interpret-trailers", "--parse", "--only-trailers"],
+        input=message(root, sha), cwd=root, capture_output=True, text=True, check=True,
+    )
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def has_signoff(root: str, sha: str) -> bool:
+    for line in trailers(root, sha):
+        key, _, value = line.partition(":")
+        if key.strip() == "Signed-off-by" and value.strip():
+            return True
+    return False
+
+
 def unsigned_commits(root: str, base: str, head: str) -> tuple[list[str], list[str]]:
     """Return (every non-merge commit, the ones missing a sign-off trailer)."""
     shas = commits(root, base, head)
-    missing = [sha for sha in shas if not TRAILER_RE.search(message(root, sha))]
+    missing = [sha for sha in shas if not has_signoff(root, sha)]
     return shas, missing
 
 
