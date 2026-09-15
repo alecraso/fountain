@@ -101,9 +101,14 @@ essentially 100%, and build-in-PR-and-retag becomes possible for the first
 time (its own prerequisite, `BUILD_SHA` baked into the image, is unchanged and
 still has to be injected at deploy time).
 
-Merging stops being instant. A lone PR waits up to five minutes for company
-before it even builds, which is the cost of batching under the job ceiling.
-Nothing should wait on a queued PR synchronously.
+Merging stops being instant. Every queued PR gets its own `merge_group`
+build and one builds at a time, which is the job-ceiling cost, so a queued PR
+waits for the entries ahead of it and merges when its own build passes. (The
+queue first shipped with merge limits of two entries and a five-minute wait,
+on the belief that they batched builds. GitHub's merge limits only delay a
+merge after a build passes and never combine builds, so the wait held a green
+entry for up to five minutes and saved nothing; it was removed in September
+2026.) Nothing should wait on a queued PR synchronously.
 
 A queued PR can be ejected. That is the mechanism working: the failure is the
 change against a main it had never been tested with. It stays open with the

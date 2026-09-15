@@ -25,11 +25,16 @@ def api(path, payload=None, method="PUT"):
 # while also starving every open PR. Raise this only after the concurrency
 # ceiling does.
 #
-# min_entries_to_merge: 2 with a 5 minute wait — batching is the only lever
-# that buys throughput under that same ceiling, because five PRs merged as one
-# group cost one 26-job run instead of five. In a burst the group fills at once
-# and nothing waits; in a quiet hour a lone PR waits up to five minutes, which
-# is the hour where nobody is blocked on it.
+# min_entries_to_merge: 1 with no wait — an entry merges as soon as its own
+# build passes. The merge limits govern merging only: GitHub dispatches one
+# merge_group build per queued entry regardless ("Merge limits do not
+# combine merge_group builds"), and max_entries_to_build is the only setting
+# that throttles builds. So a minimum of 2 with a 5 minute wait never saved a
+# CI run; it held a green entry for up to five minutes waiting for a second
+# green entry, and a stacked PR, which lands one stage at a time, paid that
+# hold at every stage. Over 44 merge groups in September 2026 nothing was
+# ejected and nothing was batched. CI cost is one full run per merged PR
+# under either setting.
 #
 # ALLGREEN, not HEADGREEN: a group merges only when every entry passed, which
 # is the entire reason to run a queue over a tree nobody tested.
@@ -39,8 +44,8 @@ MERGE_QUEUE = {
     "max_entries_to_build": 1,
     "max_entries_to_merge": 5,
     "merge_method": "SQUASH",
-    "min_entries_to_merge": 2,
-    "min_entries_to_merge_wait_minutes": 5,
+    "min_entries_to_merge": 1,
+    "min_entries_to_merge_wait_minutes": 0,
 }
 
 
