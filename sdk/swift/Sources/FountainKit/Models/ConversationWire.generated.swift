@@ -423,6 +423,838 @@ public struct ConversationTreeNode: Sendable, Decodable, Hashable, Identifiable 
   }
 }
 
+public struct Agent: Sendable, Decodable, Hashable, Identifiable {
+  public var acp: Bool?
+  public var allowedEnvironmentIDs: [String]?
+  public var allowedInferenceCredentialIDs: [String]?
+  public var allowedVaultIDs: [String]?
+  public var avatarMediaType: String?
+  public var conversationCount: Int?
+  public var description: String?
+  public var environmentID: String?
+  public var id: String
+  public var inferenceCredentialID: String?
+  public var insertedAt: Date?
+  public var mcpServers: JSONValue?
+  public var metadata: JSONValue?
+  public var model: String?
+  public var name: String
+  public var permissionPolicyValues: [String: JSONValue]?
+  public var runtime: Runtime
+  public var runtimeCommand: String?
+  public var sandboxMode: SandboxMode?
+  public var sandboxProvider: SandboxProvider?
+  public var skills: [Skill]?
+  public var system: String?
+  public var updatedAt: Date?
+
+  /// String verdicts for compatibility. Use permissionPolicyValues for numeric policy values.
+  public var permissionPolicy: [String: String]? {
+    get { permissionPolicyValues?.compactMapValues(\.stringValue) }
+    set { permissionPolicyValues = newValue?.mapValues(JSONValue.string) }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case acp = "acp"
+    case allowedEnvironmentIDs = "allowed_environment_ids"
+    case allowedInferenceCredentialIDs = "allowed_inference_credential_ids"
+    case allowedVaultIDs = "allowed_vault_ids"
+    case avatarMediaType = "avatar_media_type"
+    case conversationCount = "conversation_count"
+    case description = "description"
+    case environmentID = "environment_id"
+    case id = "id"
+    case inferenceCredentialID = "inference_credential_id"
+    case insertedAt = "inserted_at"
+    case mcpServers = "mcp_servers"
+    case metadata = "metadata"
+    case model = "model"
+    case name = "name"
+    case permissionPolicyValues = "permission_policy"
+    case runtime = "runtime"
+    case runtimeCommand = "runtime_command"
+    case sandboxMode = "sandbox_mode"
+    case sandboxProvider = "sandbox_provider"
+    case skills = "skills"
+    case system = "system"
+    case updatedAt = "updated_at"
+  }
+}
+
+public struct AgentVersion: Sendable, Decodable, Hashable, Identifiable {
+  public var agentID: String
+  public var config: JSONValue?
+  public var id: String
+  public var insertedAt: Date?
+  public var version: Int
+
+  enum CodingKeys: String, CodingKey {
+    case agentID = "agent_id"
+    case config = "config"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case version = "version"
+  }
+}
+
+public struct AgentInput: Sendable, Encodable {
+  private var _allowedEnvironmentIDs: ConversationInputField<[String]> = .omitted
+  public var allowedEnvironmentIDs: [String]? {
+    get { _allowedEnvironmentIDs.value }
+    set { _allowedEnvironmentIDs = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _allowedInferenceCredentialIDs: ConversationInputField<[String]> = .omitted
+  public var allowedInferenceCredentialIDs: [String]? {
+    get { _allowedInferenceCredentialIDs.value }
+    set { _allowedInferenceCredentialIDs = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _allowedVaultIDs: ConversationInputField<[String]> = .omitted
+  public var allowedVaultIDs: [String]? {
+    get { _allowedVaultIDs.value }
+    set { _allowedVaultIDs = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _description: ConversationInputField<String> = .omitted
+  public var description: String? {
+    get { _description.value }
+    set { _description = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _environmentID: ConversationInputField<String> = .omitted
+  public var environmentID: String? {
+    get { _environmentID.value }
+    set { _environmentID = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _inferenceCredentialID: ConversationInputField<String> = .omitted
+  public var inferenceCredentialID: String? {
+    get { _inferenceCredentialID.value }
+    set { _inferenceCredentialID = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _mcpServers: ConversationInputField<JSONValue> = .omitted
+  public var mcpServers: JSONValue? {
+    get { _mcpServers.value }
+    set { _mcpServers = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _metadata: ConversationInputField<JSONValue> = .omitted
+  public var metadata: JSONValue? {
+    get { _metadata.value }
+    set { _metadata = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _model: ConversationInputField<String> = .omitted
+  public var model: String? {
+    get { _model.value }
+    set { _model = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _name: ConversationInputField<String> = .omitted
+  public var name: String? {
+    get { _name.value }
+    set { _name = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _permissionPolicyValues: ConversationInputField<[String: JSONValue]> = .omitted
+  public var permissionPolicyValues: [String: JSONValue]? {
+    get { _permissionPolicyValues.value }
+    set { _permissionPolicyValues = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _runtime: ConversationInputField<Runtime> = .omitted
+  public var runtime: Runtime? {
+    get { _runtime.value }
+    set { _runtime = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _runtimeCommand: ConversationInputField<String> = .omitted
+  public var runtimeCommand: String? {
+    get { _runtimeCommand.value }
+    set { _runtimeCommand = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _sandboxMode: ConversationInputField<SandboxMode> = .omitted
+  public var sandboxMode: SandboxMode? {
+    get { _sandboxMode.value }
+    set { _sandboxMode = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _sandboxProvider: ConversationInputField<SandboxProvider> = .omitted
+  public var sandboxProvider: SandboxProvider? {
+    get { _sandboxProvider.value }
+    set { _sandboxProvider = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _skills: ConversationInputField<[Skill]> = .omitted
+  public var skills: [Skill]? {
+    get { _skills.value }
+    set { _skills = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _system: ConversationInputField<String> = .omitted
+  public var system: String? {
+    get { _system.value }
+    set { _system = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+
+  /// String verdicts for compatibility. Use permissionPolicyValues for numeric policy values.
+  public var permissionPolicy: [String: String]? {
+    get { permissionPolicyValues?.compactMapValues(\.stringValue) }
+    set { permissionPolicyValues = newValue?.mapValues(JSONValue.string) }
+  }
+
+  public init(
+    name: String? = nil,
+    description: String? = nil,
+    system: String? = nil,
+    model: String? = nil,
+    runtime: Runtime? = nil,
+    runtimeCommand: String? = nil,
+    sandboxProvider: SandboxProvider? = nil,
+    sandboxMode: SandboxMode? = nil,
+    environmentID: String? = nil,
+    permissionPolicy: [String: String]? = nil,
+    skills: [Skill]? = nil,
+    mcpServers: JSONValue? = nil,
+    metadata: JSONValue? = nil,
+    allowedVaultIDs: [String]? = nil,
+    allowedEnvironmentIDs: [String]? = nil,
+    allowedInferenceCredentialIDs: [String]? = nil,
+    inferenceCredentialID: String? = nil
+  ) {
+    self.name = name
+    self.description = description
+    self.system = system
+    self.model = model
+    self.runtime = runtime
+    self.runtimeCommand = runtimeCommand
+    self.sandboxProvider = sandboxProvider
+    self.sandboxMode = sandboxMode
+    self.environmentID = environmentID
+    self.permissionPolicyValues = permissionPolicy?.mapValues(JSONValue.string)
+    self.skills = skills
+    self.mcpServers = mcpServers
+    self.metadata = metadata
+    self.allowedVaultIDs = allowedVaultIDs
+    self.allowedEnvironmentIDs = allowedEnvironmentIDs
+    self.allowedInferenceCredentialIDs = allowedInferenceCredentialIDs
+    self.inferenceCredentialID = inferenceCredentialID
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case allowedEnvironmentIDs = "allowed_environment_ids"
+    case allowedInferenceCredentialIDs = "allowed_inference_credential_ids"
+    case allowedVaultIDs = "allowed_vault_ids"
+    case description = "description"
+    case environmentID = "environment_id"
+    case inferenceCredentialID = "inference_credential_id"
+    case mcpServers = "mcp_servers"
+    case metadata = "metadata"
+    case model = "model"
+    case name = "name"
+    case permissionPolicyValues = "permission_policy"
+    case runtime = "runtime"
+    case runtimeCommand = "runtime_command"
+    case sandboxMode = "sandbox_mode"
+    case sandboxProvider = "sandbox_provider"
+    case skills = "skills"
+    case system = "system"
+  }
+
+  /// Fields for which the API accepts an explicit JSON null.
+  public enum NullableField: Sendable {
+    case allowedEnvironmentIDs
+    case allowedInferenceCredentialIDs
+    case allowedVaultIDs
+    case environmentID
+    case inferenceCredentialID
+    case model
+    case permissionPolicyValues
+    case runtimeCommand
+    case sandboxProvider
+  }
+
+  /// Send null. Assigning the property nil again restores omission.
+  public mutating func setNull(_ field: NullableField) {
+    switch field {
+    case .allowedEnvironmentIDs: _allowedEnvironmentIDs = .null
+    case .allowedInferenceCredentialIDs: _allowedInferenceCredentialIDs = .null
+    case .allowedVaultIDs: _allowedVaultIDs = .null
+    case .environmentID: _environmentID = .null
+    case .inferenceCredentialID: _inferenceCredentialID = .null
+    case .model: _model = .null
+    case .permissionPolicyValues: _permissionPolicyValues = .null
+    case .runtimeCommand: _runtimeCommand = .null
+    case .sandboxProvider: _sandboxProvider = .null
+    }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try _allowedEnvironmentIDs.encode(into: &container, forKey: .allowedEnvironmentIDs)
+    try _allowedInferenceCredentialIDs.encode(
+      into: &container, forKey: .allowedInferenceCredentialIDs)
+    try _allowedVaultIDs.encode(into: &container, forKey: .allowedVaultIDs)
+    try _description.encode(into: &container, forKey: .description)
+    try _environmentID.encode(into: &container, forKey: .environmentID)
+    try _inferenceCredentialID.encode(into: &container, forKey: .inferenceCredentialID)
+    try _mcpServers.encode(into: &container, forKey: .mcpServers)
+    try _metadata.encode(into: &container, forKey: .metadata)
+    try _model.encode(into: &container, forKey: .model)
+    try _name.encode(into: &container, forKey: .name)
+    try _permissionPolicyValues.encode(into: &container, forKey: .permissionPolicyValues)
+    try _runtime.encode(into: &container, forKey: .runtime)
+    try _runtimeCommand.encode(into: &container, forKey: .runtimeCommand)
+    try _sandboxMode.encode(into: &container, forKey: .sandboxMode)
+    try _sandboxProvider.encode(into: &container, forKey: .sandboxProvider)
+    try _skills.encode(into: &container, forKey: .skills)
+    try _system.encode(into: &container, forKey: .system)
+  }
+}
+
+public struct Environment: Sendable, Decodable, Hashable, Identifiable {
+  public var agentCount: Int?
+  public var envVars: [String: String]?
+  public var id: String
+  public var insertedAt: Date?
+  public var metadata: JSONValue?
+  public var name: String
+  public var networkingConfig: JSONValue?
+  public var networkingType: NetworkingType?
+  public var packages: JSONValue?
+  public var repositories: [JSONValue]?
+  public var secretCount: Int?
+  public var setupScript: String?
+  public var setupTimeoutSeconds: Int?
+  public var updatedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case agentCount = "agent_count"
+    case envVars = "env_vars"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case metadata = "metadata"
+    case name = "name"
+    case networkingConfig = "networking_config"
+    case networkingType = "networking_type"
+    case packages = "packages"
+    case repositories = "repositories"
+    case secretCount = "secret_count"
+    case setupScript = "setup_script"
+    case setupTimeoutSeconds = "setup_timeout_seconds"
+    case updatedAt = "updated_at"
+  }
+}
+
+public struct EnvironmentInput: Sendable, Encodable {
+  public var envVars: [String: String]?
+  public var metadata: JSONValue?
+  public var name: String?
+  public var networkingConfig: JSONValue?
+  public var networkingType: NetworkingType?
+  public var packages: JSONValue?
+  public var repositories: [JSONValue]?
+  public var setupScript: String?
+  public var setupTimeoutSeconds: Int?
+
+  public init(
+    name: String? = nil,
+    packages: JSONValue? = nil,
+    envVars: [String: String]? = nil,
+    setupScript: String? = nil,
+    setupTimeoutSeconds: Int? = nil,
+    networkingType: NetworkingType? = nil,
+    networkingConfig: JSONValue? = nil,
+    repositories: [JSONValue]? = nil,
+    metadata: JSONValue? = nil
+  ) {
+    self.name = name
+    self.packages = packages
+    self.envVars = envVars
+    self.setupScript = setupScript
+    self.setupTimeoutSeconds = setupTimeoutSeconds
+    self.networkingType = networkingType
+    self.networkingConfig = networkingConfig
+    self.repositories = repositories
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case envVars = "env_vars"
+    case metadata = "metadata"
+    case name = "name"
+    case networkingConfig = "networking_config"
+    case networkingType = "networking_type"
+    case packages = "packages"
+    case repositories = "repositories"
+    case setupScript = "setup_script"
+    case setupTimeoutSeconds = "setup_timeout_seconds"
+  }
+}
+
+public struct Vault: Sendable, Decodable, Hashable, Identifiable {
+  public var description: String?
+  public var id: String
+  public var insertedAt: Date?
+  public var metadata: JSONValue?
+  public var name: String
+  public var secretCount: Int?
+  public var updatedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case description = "description"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case metadata = "metadata"
+    case name = "name"
+    case secretCount = "secret_count"
+    case updatedAt = "updated_at"
+  }
+}
+
+public struct VaultInput: Sendable, Encodable {
+  public var description: String?
+  public var metadata: JSONValue?
+  public var name: String?
+
+  public init(
+    name: String? = nil,
+    description: String? = nil,
+    metadata: JSONValue? = nil
+  ) {
+    self.name = name
+    self.description = description
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case description = "description"
+    case metadata = "metadata"
+    case name = "name"
+  }
+}
+
+public struct Secret: Sendable, Decodable, Hashable, Identifiable {
+  public var environmentID: String?
+  public var expiresAt: Date?
+  public var id: String
+  public var insertedAt: Date?
+  public var key: String
+  public var updatedAt: Date?
+  public var vaultID: String?
+
+  enum CodingKeys: String, CodingKey {
+    case environmentID = "environment_id"
+    case expiresAt = "expires_at"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case key = "key"
+    case updatedAt = "updated_at"
+    case vaultID = "vault_id"
+  }
+}
+
+public struct Connection: Sendable, Decodable, Hashable, Identifiable {
+  public var accountEmail: String?
+  public var createdAt: Date?
+  public var envKey: String?
+  public var expiresAt: Date?
+  public var id: String
+  public var provider: String
+  public var providerID: String?
+  public var revokedAt: Date?
+  public var scopes: [String]?
+  public var status: ConnectionStatus?
+  public var updatedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case accountEmail = "account_email"
+    case createdAt = "created_at"
+    case envKey = "env_key"
+    case expiresAt = "expires_at"
+    case id = "id"
+    case provider = "provider"
+    case providerID = "provider_id"
+    case revokedAt = "revoked_at"
+    case scopes = "scopes"
+    case status = "status"
+    case updatedAt = "updated_at"
+  }
+}
+
+public struct ConnectionProvider: Sendable, Decodable, Hashable, Identifiable {
+  public var accountLabelPath: String?
+  public var authorizeURL: String?
+  public var clientID: String?
+  public var clientSource: String?
+  public var configured: Bool?
+  public var connectURL: String?
+  public var createdAt: Date?
+  public var envKey: String?
+  public var hasClientSecret: Bool?
+  public var id: String
+  public var issuer: String?
+  public var kind: String?
+  public var mcpURL: String?
+  public var name: String?
+  public var pkce: Bool?
+  public var platform: Bool?
+  public var redirectURI: String?
+  public var registrationEndpoint: String?
+  public var revokeURL: String?
+  public var scopes: [String]?
+  public var slug: String?
+  public var tokenEndpointAuth: String?
+  public var tokenHosts: [String]?
+  public var tokenURL: String?
+  public var updatedAt: Date?
+  public var userinfoURL: String?
+
+  enum CodingKeys: String, CodingKey {
+    case accountLabelPath = "account_label_path"
+    case authorizeURL = "authorize_url"
+    case clientID = "client_id"
+    case clientSource = "client_source"
+    case configured = "configured"
+    case connectURL = "connect_url"
+    case createdAt = "created_at"
+    case envKey = "env_key"
+    case hasClientSecret = "has_client_secret"
+    case id = "id"
+    case issuer = "issuer"
+    case kind = "kind"
+    case mcpURL = "mcp_url"
+    case name = "name"
+    case pkce = "pkce"
+    case platform = "platform"
+    case redirectURI = "redirect_uri"
+    case registrationEndpoint = "registration_endpoint"
+    case revokeURL = "revoke_url"
+    case scopes = "scopes"
+    case slug = "slug"
+    case tokenEndpointAuth = "token_endpoint_auth"
+    case tokenHosts = "token_hosts"
+    case tokenURL = "token_url"
+    case updatedAt = "updated_at"
+    case userinfoURL = "userinfo_url"
+  }
+}
+
+public struct Teammate: Sendable, Decodable, Hashable, Identifiable {
+  public var agent: Agent
+  public var agentID: String
+  public var conversation: Conversation
+  public var lastTurn: Teammate.LastTurn?
+  public var name: String
+  public var presence: Teammate.Presence
+  public var preview: Teammate.Preview?
+  public var unread: Bool
+  public var usageTotal: Usage?
+  public var id: String { agentID }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case agentID = "agent_id"
+    case conversation = "conversation"
+    case lastTurn = "last_turn"
+    case name = "name"
+    case presence = "presence"
+    case preview = "preview"
+    case unread = "unread"
+    case usageTotal = "usage_total"
+  }
+}
+
+public struct TeamSchedule: Sendable, Decodable, Hashable, Identifiable {
+  public var agentID: String
+  public var cron: String
+  public var enabled: Bool?
+  public var id: String
+  public var insertedAt: Date?
+  public var lastConversationID: String?
+  public var lastError: String?
+  public var lastRunAt: Date?
+  public var name: String?
+  public var nextRunAt: Date?
+  public var oneOff: Bool?
+  public var prompt: String
+  public var updatedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case agentID = "agent_id"
+    case cron = "cron"
+    case enabled = "enabled"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case lastConversationID = "last_conversation_id"
+    case lastError = "last_error"
+    case lastRunAt = "last_run_at"
+    case name = "name"
+    case nextRunAt = "next_run_at"
+    case oneOff = "one_off"
+    case prompt = "prompt"
+    case updatedAt = "updated_at"
+  }
+}
+
+public struct TeamScheduleInput: Sendable, Encodable {
+  private var _cron: ConversationInputField<String> = .omitted
+  public var cron: String? {
+    get { _cron.value }
+    set { _cron = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _enabled: ConversationInputField<Bool> = .omitted
+  public var enabled: Bool? {
+    get { _enabled.value }
+    set { _enabled = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _name: ConversationInputField<String> = .omitted
+  public var name: String? {
+    get { _name.value }
+    set { _name = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _oneOff: ConversationInputField<Bool> = .omitted
+  public var oneOff: Bool? {
+    get { _oneOff.value }
+    set { _oneOff = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+  private var _prompt: ConversationInputField<String> = .omitted
+  public var prompt: String? {
+    get { _prompt.value }
+    set { _prompt = newValue.map(ConversationInputField.value) ?? .omitted }
+  }
+
+  public init(
+    cron: String? = nil,
+    prompt: String? = nil,
+    name: String? = nil,
+    oneOff: Bool? = nil,
+    enabled: Bool? = nil
+  ) {
+    self.cron = cron
+    self.prompt = prompt
+    self.name = name
+    self.oneOff = oneOff
+    self.enabled = enabled
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cron = "cron"
+    case enabled = "enabled"
+    case name = "name"
+    case oneOff = "one_off"
+    case prompt = "prompt"
+  }
+
+  /// Fields for which the API accepts an explicit JSON null.
+  public enum NullableField: Sendable {
+    case name
+  }
+
+  /// Send null. Assigning the property nil again restores omission.
+  public mutating func setNull(_ field: NullableField) {
+    switch field {
+    case .name: _name = .null
+    }
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try _cron.encode(into: &container, forKey: .cron)
+    try _enabled.encode(into: &container, forKey: .enabled)
+    try _name.encode(into: &container, forKey: .name)
+    try _oneOff.encode(into: &container, forKey: .oneOff)
+    try _prompt.encode(into: &container, forKey: .prompt)
+  }
+}
+
+public struct APIKey: Sendable, Decodable, Hashable, Identifiable {
+  public var createdAt: Date?
+  public var expiresAt: Date?
+  public var id: String
+  public var lastUsedAt: Date?
+  public var name: String
+  public var prefix: String?
+  public var scopes: [String]?
+
+  enum CodingKeys: String, CodingKey {
+    case createdAt = "created_at"
+    case expiresAt = "expires_at"
+    case id = "id"
+    case lastUsedAt = "last_used_at"
+    case name = "name"
+    case prefix = "prefix"
+    case scopes = "scopes"
+  }
+}
+
+public struct CreatedAPIKey: Sendable, Decodable, Hashable, Identifiable {
+  public var createdAt: Date?
+  public var id: String
+  public var key: String
+  public var name: String?
+  public var prefix: String?
+
+  enum CodingKeys: String, CodingKey {
+    case createdAt = "created_at"
+    case id = "id"
+    case key = "key"
+    case name = "name"
+    case prefix = "prefix"
+  }
+}
+
+public struct AuditEvent: Sendable, Decodable, Hashable, Identifiable {
+  public var action: String
+  public var actor: String?
+  public var id: Int
+  public var insertedAt: Date?
+  public var metadata: JSONValue?
+  public var requestIP: String?
+  public var resourceID: String?
+  public var resourceType: String?
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case actor = "actor"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case metadata = "metadata"
+    case requestIP = "request_ip"
+    case resourceID = "resource_id"
+    case resourceType = "resource_type"
+  }
+}
+
+public struct SearchHit: Sendable, Decodable, Hashable {
+  public var agentID: String?
+  public var conversationID: String
+  public var kind: SearchHitKind
+  public var snippet: String?
+  public var ts: Date?
+  public var turnID: String?
+  public var turnNumber: Int?
+
+  enum CodingKeys: String, CodingKey {
+    case agentID = "agent_id"
+    case conversationID = "conversation_id"
+    case kind = "kind"
+    case snippet = "snippet"
+    case ts = "ts"
+    case turnID = "turn_id"
+    case turnNumber = "turn_number"
+  }
+}
+
+public struct Catalog: Sendable, Decodable, Hashable {
+  public var apps: Catalog.Apps?
+  public var firstRequest: CatalogFirstRequest?
+  public var mcpServers: [CatalogMcpServersItem]?
+  public var modelProviders: [String]?
+  public var models: [String: [String]]?
+  public var packageManagers: [String]?
+  public var runtimes: [String]?
+  public var sandboxAPIAccess: [String]?
+  public var sandboxProviders: Catalog.SandboxProviders?
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case firstRequest = "first_request"
+    case mcpServers = "mcp_servers"
+    case modelProviders = "model_providers"
+    case models = "models"
+    case packageManagers = "package_managers"
+    case runtimes = "runtimes"
+    case sandboxAPIAccess = "sandbox_api_access"
+    case sandboxProviders = "sandbox_providers"
+  }
+}
+
+public struct ApplyResult: Sendable, Decodable, Hashable {
+  public var action: String
+  public var errors: JSONValue?
+  public var kind: String
+  public var name: String
+  public var secret: String?
+  public var secrets: [ApplyResult.SecretResult]?
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case errors = "errors"
+    case kind = "kind"
+    case name = "name"
+    case secret = "secret"
+    case secrets = "secrets"
+  }
+}
+
+public struct AdminUser: Sendable, Decodable, Hashable, Identifiable {
+  public var activeSandboxes: Int?
+  public var comped: Bool?
+  public var creditBalanceCents: Int?
+  public var email: String
+  public var emailVerified: Bool?
+  public var emailVerifiedAt: Date?
+  public var hasStripeCustomer: Bool?
+  public var id: String
+  public var insertedAt: Date?
+  public var lastActivityAt: Date?
+  public var maxConcurrentSandboxes: Int?
+  public var onboardingCompletedAt: Date?
+  public var role: UserRole?
+  public var sandboxLimitOverride: Int?
+  public var suspended: Bool?
+  public var suspendedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case activeSandboxes = "active_sandboxes"
+    case comped = "comped"
+    case creditBalanceCents = "credit_balance_cents"
+    case email = "email"
+    case emailVerified = "email_verified"
+    case emailVerifiedAt = "email_verified_at"
+    case hasStripeCustomer = "has_stripe_customer"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case lastActivityAt = "last_activity_at"
+    case maxConcurrentSandboxes = "max_concurrent_sandboxes"
+    case onboardingCompletedAt = "onboarding_completed_at"
+    case role = "role"
+    case sandboxLimitOverride = "sandbox_limit_override"
+    case suspended = "suspended"
+    case suspendedAt = "suspended_at"
+  }
+}
+
+public struct AdminSandbox: Sendable, Decodable, Hashable, Identifiable {
+  public var conversationCount: Int?
+  public var id: String
+  public var insertedAt: Date?
+  public var provider: SandboxProvider?
+  public var spriteName: String?
+  public var status: SandboxStatus?
+  public var updatedAt: Date?
+  public var userEmail: String?
+  public var userID: String?
+
+  enum CodingKeys: String, CodingKey {
+    case conversationCount = "conversation_count"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case provider = "provider"
+    case spriteName = "sprite_name"
+    case status = "status"
+    case updatedAt = "updated_at"
+    case userEmail = "user_email"
+    case userID = "user_id"
+  }
+}
+
+public struct AdminEvent: Sendable, Decodable, Hashable, Identifiable {
+  public var actorUserID: String?
+  public var eventType: String
+  public var id: Int?
+  public var insertedAt: Date?
+  public var metadata: JSONValue?
+  public var targetUserID: String?
+
+  enum CodingKeys: String, CodingKey {
+    case actorUserID = "actor_user_id"
+    case eventType = "event_type"
+    case id = "id"
+    case insertedAt = "inserted_at"
+    case metadata = "metadata"
+    case targetUserID = "target_user_id"
+  }
+}
+
 public struct PendingPermissionRequest: Sendable, Decodable, Hashable {
   public var askedAt: Date?
   public var deadline: Date?
@@ -531,6 +1363,144 @@ extension Sandbox {
       case name = "name"
       case online = "online"
       case path = "path"
+    }
+  }
+}
+
+public struct Skill: Sendable, Codable, Hashable {
+  public var content: String?
+  public var name: String?
+  public var ref: String?
+  public var source: String?
+
+  public init(
+    name: String? = nil,
+    content: String? = nil,
+    source: String? = nil,
+    ref: String? = nil
+  ) {
+    self.name = name
+    self.content = content
+    self.source = source
+    self.ref = ref
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case content = "content"
+    case name = "name"
+    case ref = "ref"
+    case source = "source"
+  }
+}
+
+extension Teammate {
+  public struct LastTurn: Sendable, Decodable, Hashable, Identifiable {
+    public var id: String?
+    public var insertedAt: Date?
+    public var prompt: String?
+    public var status: TurnStatus?
+    public var turnNumber: Int?
+    public var usage: Usage?
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case insertedAt = "inserted_at"
+      case prompt = "prompt"
+      case status = "status"
+      case turnNumber = "turn_number"
+      case usage = "usage"
+    }
+  }
+}
+
+extension Teammate {
+  public struct Presence: Sendable, Decodable, Hashable {
+    public var label: String?
+    public var state: PresenceState
+
+    enum CodingKeys: String, CodingKey {
+      case label = "label"
+      case state = "state"
+    }
+  }
+}
+
+extension Teammate {
+  public struct Preview: Sendable, Decodable, Hashable {
+    public var kind: String?
+    public var text: String?
+
+    enum CodingKeys: String, CodingKey {
+      case kind = "kind"
+      case text = "text"
+    }
+  }
+}
+
+extension Catalog {
+  public struct Apps: Sendable, Decodable, Hashable {
+    public var conversations: String?
+    public var team: String?
+
+    enum CodingKeys: String, CodingKey {
+      case conversations = "conversations"
+      case team = "team"
+    }
+  }
+}
+
+public struct CatalogFirstRequest: Sendable, Decodable, Hashable {
+  public var curl: String
+  public var placeholders: [String]
+  public var prompt: String
+  public var typescript: String
+
+  enum CodingKeys: String, CodingKey {
+    case curl = "curl"
+    case placeholders = "placeholders"
+    case prompt = "prompt"
+    case typescript = "typescript"
+  }
+}
+
+public struct CatalogMcpServersItem: Sendable, Decodable, Hashable {
+  public var dcr: Bool?
+  public var name: String?
+  public var slug: String?
+  public var url: String?
+  public var verifiedOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case dcr = "dcr"
+    case name = "name"
+    case slug = "slug"
+    case url = "url"
+    case verifiedOn = "verified_on"
+  }
+}
+
+extension Catalog {
+  public struct SandboxProviders: Sendable, Decodable, Hashable {
+    public var `default`: String?
+    public var enabled: [String]?
+
+    enum CodingKeys: String, CodingKey {
+      case `default` = "default"
+      case enabled = "enabled"
+    }
+  }
+}
+
+extension ApplyResult {
+  public struct SecretResult: Sendable, Decodable, Hashable {
+    public var action: String
+    public var errors: JSONValue?
+    public var key: String
+
+    enum CodingKeys: String, CodingKey {
+      case action = "action"
+      case errors = "errors"
+      case key = "key"
     }
   }
 }

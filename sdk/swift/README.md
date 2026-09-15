@@ -93,11 +93,11 @@ names, optionality, dates and nullable request fields come from the contract.
 ## Install
 
 The remotely consumable `Package.swift` is at the repository root. Depend on
-Fountain 0.17.0 or newer:
+Fountain 0.17.1 or newer:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/managoat/fountain.git", from: "0.17.0")
+    .package(url: "https://github.com/managoat/fountain.git", from: "0.17.1")
 ]
 ```
 
@@ -110,10 +110,9 @@ watchOS 8, and Linux FoundationNetworking, with no third-party dependencies.
 
 ## The typed client
 
-The `runRequest` examples below require a revision containing #2240 (available
-on `main`); the v0.17.0 tag predates that API. The supported name-based `run`
-examples above remain available in v0.17.0. Rollout issue #2248 tracks the next
-tagged Swift release.
+The `runRequest` examples below require [v0.17.1](https://github.com/managoat/fountain/releases/tag/v0.17.1)
+or newer. Both Swift products ship from the server's versioned Swift package;
+the supported name-based `run` examples above also remain available.
 
 `FountainKit` is the same API with the JSON resolved into types: `Agent`,
 `Conversation`, `LogEvent`, `Block`, `AuthMe`, `AdminUser`, and a resource

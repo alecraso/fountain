@@ -9,25 +9,56 @@ The generator reads the committed contract and does not require Elixir to run.
 | Usage / UsageAccounting | Generated. Usage is the source-compatible union of TurnUsage and UsageTotal; either schema can add fields, and incompatible shared definitions fail generation |
 | Sandbox, SandboxDetail, Sandbox.Checkpoint, Sandbox.RunnerRef, SandboxDetail.SandboxConversation, Runner | Generated from the contract; the shared inline definitions must match |
 | ConversationTreeNode | Generated; no handwritten field/CodingKey declarations remain |
-| Agent, Skill, AgentVersion, AgentInput | Next resource batch: preserve names, initializer order, nullable policy values and the create/update convenience |
-| Environment, EnvironmentInput, Vault, VaultInput, Secret | Next resource batch: preserve JSONValue conveniences and the shared environment/vault secret shape |
-| Connection, ConnectionProvider, Teammate and nested types, TeamSchedule/Input | Next resource batch: retain unknown enum handling and derived teammate identity |
-| APIKey, CreatedAPIKey, AuditEvent, SearchHit, Catalog/nested types, ApplyResult/nested types, AdminUser, AdminSandbox, AdminEvent | Next resource batch: generate endpoint payload shapes, including shapes nested inside envelopes |
-| AuthMe | Requires a compatibility decision for `onboardingState`, which is absent from the current wire contract |
-| AdminUserPage | Keep the page/hasMore convenience; its envelope decoding can consume generated wire data |
-| ConversationBindingUpdate / ConversationReapplyRequest | Keep the public three-state binding behavior; the underlying wire body can use generated fields |
-| LogEvent, Block, PermissionOption, PermissionRequest | Keep stream normalization and behavior separate from generation; inventory the raw/normalized contract differences before replacing these models |
+| Agent, Skill, AgentVersion, AgentInput | Generated; preserve names, initializer order, numeric policy values, explicit nullable inputs and the create/update convenience |
+| Environment, EnvironmentInput, Vault, VaultInput, Secret | Generated; preserve JSONValue conveniences. Secret unions the environment/vault schemas and rejects conflicting shared definitions |
+| Connection, ConnectionProvider, Teammate and nested types, TeamSchedule/Input | Generated; retain unknown enum handling and derived teammate identity |
+| APIKey, CreatedAPIKey, AuditEvent, SearchHit, Catalog/nested types, ApplyResult/nested types, AdminUser, AdminSandbox, AdminEvent | Generated from endpoint payload shapes, including shapes nested inside envelopes |
+| AuthMe | Remaining migration [#2269](https://github.com/managoat/fountain/issues/2269): decide compatibility for `onboardingState`, absent from the current wire contract |
+| AdminUserPage | Remaining migration #2269: retain page/hasMore behavior while deriving its data/meta envelope |
+| ConversationBindingUpdate / ConversationReapplyRequest | Remaining migration #2269: retain three-state bindings while deriving underlying wire fields |
+| LogEvent, Block, PermissionOption, PermissionRequest | Remaining migration #2269: inventory raw/normalized differences and preserve custom decoding and stream/permission behavior |
 | JSONValue, ConversationInputField and WireValue / enum wrappers | Intentionally handwritten value/behavior types; their raw-string decoding preserves unknown server values |
 | Swift Fountain map product | Uses JSON objects rather than duplicated typed wire properties; remains supported |
+| PageMeta (`Client/APIClient.swift`), APIErrorBody (`Errors/FountainError.swift`), TeamResource request bodies | Contract-shaped but handwritten outside `Models/`; unmigrated and outside #2269's four seams |
 
 ## Compatibility rules
 
-Existing nested public names remain intact. The generator retains nine existing
-optional-property APIs in `OPTIONAL_COMPAT`: Sandbox and SandboxDetail spriteName
-and status, SandboxDetail conversations, Sandbox.RunnerRef online, and Runner
-createdAt, plus SandboxDetail.SandboxConversation status and midTurn. Their historically permissive decoding remains supported. This is a
-finite compatibility exception, not a list of fields to extend for new API work.
-New fields use contract requiredness/nullability directly.
+Existing nested public names and initializer order remain intact. A model that
+already shipped by hand must not become harder to decode, so `OPTIONAL_COMPAT`
+keeps two kinds of property optional even where the current server requires
+them: properties that were historically optional, and properties this SDK
+exposes for the first time on a type that already shipped. The second kind is
+why a response from an older server still decodes rather than failing whole.
+The table is finite and auditable: it grew from 9 entries over 5 owner types
+(sandbox and runner models) to 55 over 21 as the resource families landed.
+
+A nested type reached through a newly exposed property is pinned the same way,
+because an older server reaches it with the same gaps: `CatalogMcpServersItem`
+is pinned although it never shipped by hand. `CatalogFirstRequest` is the
+exception and takes contract requiredness, because `first_request` arrived
+whole in #1443 and no server has ever emitted it partially. A type no older
+server can produce at all takes contract requiredness directly.
+
+Two guards, neither of them complete on its own.
+`test_optional_compat_pins_reach_a_live_property` fails when a pin stops naming
+a live property, which is how a contract rename turns a pin into a silent
+no-op; it cannot see a pin that was deleted. `ResourceWireTests` and
+`SandboxWireTests` decode payloads that omit pinned keys, which is what catches
+a deletion — but only for the pins their fixtures actually omit. A pin whose
+key some fixture still supplies can be dropped with every gate green, so a new
+pin needs the omission that proves it.
+
+The 19 `TYPE_OVERRIDES` entries retain existing `JSONValue` APIs for
+deliberately dynamic payloads: metadata, packages, networking config,
+repositories, MCP servers, agent-version config and apply errors. Neither
+table is a registry to extend for ordinary API additions. Aliased Skill
+definitions must agree, and Secret reads both environment and vault schemas.
+Conflicting shared definitions fail generation.
+
+Agent inputs expose numeric policy values through `permissionPolicyValues`
+while retaining the string-only initializer/property. Nullable generated inputs
+use `setNull` for explicit JSON null; assigning nil restores omission. Endpoint
+create/update validation remains server-owned.
 
 Keep endpoint and behavioral contract assertions. Generation replaces field
 registrations, not evidence that resource methods call the correct routes or

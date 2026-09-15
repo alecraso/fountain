@@ -45,14 +45,18 @@ Read-only inventory of `managoat/demos` at
 
 Those apps own their thread persistence and streams, and some create promptless
 tabs. Replacing every creation call with `runRequest` would change behavior.
-[managoat/demos#76](https://github.com/managoat/demos/issues/76) owns generated
-input adoption, SDK upgrades and app-specific validation. This inventory is not
-a claim that those external applications were migrated.
+[managoat/demos#76](https://github.com/managoat/demos/issues/76) owned generated
+input adoption, SDK upgrades and app-specific validation; it closed with
+[managoat/demos#77](https://github.com/managoat/demos/pull/77), merged
+2026-09-15: SDK 5.2.1 pins, shared generated input types, app-owned launch
+policies, and regression tests. Merged there is not deployed here; this
+inventory still claims no deployed-app migration.
 
 ## Remaining gates
 
 The next genuine optional field should record the server changes, generated
 diffs and caller edits it actually needs. The foundation's current propagation
 evidence is a temporary synthetic field, not an invented public API field.
-Swift/CLI tagged release availability is tracked in
+Swift and CLI are available in [v0.17.1](https://github.com/managoat/fountain/releases/tag/v0.17.1).
+Release and real-field evidence remains tracked in
 [#2248](https://github.com/managoat/fountain/issues/2248).
