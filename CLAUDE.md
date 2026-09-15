@@ -41,7 +41,8 @@ mise install                        # Erlang/OTP 28 + Elixir 1.19.2, from .tool-
 mix deps.get && mix setup           # dev DB: create + migrate
 MIX_ENV=test mix ecto.create && MIX_ENV=test mix ecto.migrate
 mix test                            # core, ee/test and every sibling app
-mix precommit                       # full local gate for code, CI policy and mixed changes
+mix precommit                       # the local gate: static checks, sobelow, release assemble
+mix precommit --full                # the same plus the whole suite; CI runs the suite either way
 mix precommit --list                # its stages; `mix precommit credo test` runs a subset
 gh pr merge <N> --squash --auto     # queue a reviewed PR; never --admin
 ```
