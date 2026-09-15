@@ -130,6 +130,8 @@ ENUM_TYPES.update({
 TYPE_OVERRIDES = {
     ('Environment', 'packages'): 'JSONValue',
     ('Environment', 'networking_config'): 'JSONValue',
+    # Repositories stay dynamic: the typed Repository schema is deliberately
+    # unreachable here, matching the deleted handwritten `[JSONValue]?`.
     ('Environment', 'repositories'): '[JSONValue]',
     ('Environment', 'metadata'): 'JSONValue',
     ('EnvironmentUpdate', 'packages'): 'JSONValue',
@@ -187,6 +189,25 @@ OPTIONAL_COMPAT.update({
     ('TeammatePresence', 'label'),
 })
 
+# Properties this SDK exposes for the first time, on types that already
+# shipped handwritten. A payload an older server emits decoded before
+# generation; honouring contract requiredness here would fail the whole
+# response instead of the one field. Only wholly new types follow the
+# contract directly.
+OPTIONAL_COMPAT.update({
+    ('Catalog', 'first_request'),
+    ('CatalogMcpServersItem', 'dcr'),
+    ('CatalogMcpServersItem', 'name'),
+    ('CatalogMcpServersItem', 'slug'),
+    ('CatalogMcpServersItem', 'url'),
+    ('CatalogMcpServersItem', 'verified_on'),
+    ('ConnectionProvider', 'kind'),
+    ('ConnectionProvider', 'platform'),
+    ('ConnectionProvider', 'redirect_uri'),
+    ('ConnectionProvider', 'scopes'),
+    ('ConnectionProvider', 'token_hosts'),
+})
+
 INPUT_ORDERS = {
     'VaultUpdate': ['name', 'description', 'metadata'],
     'EnvironmentUpdate': ['name', 'packages', 'env_vars', 'setup_script', 'setup_timeout_seconds', 'networking_type', 'networking_config', 'repositories', 'metadata'],
@@ -197,7 +218,8 @@ INPUT_ORDERS = {
 
 def camel(key):
     first, *rest = key.split("_")
-    return first + "".join({"id": "ID", "ids": "IDs", "ip": "IP", "api": "API", "url": "URL"}.get(p, p.title()) for p in rest)
+    return first + "".join({"id": "ID", "ids": "IDs", "ip": "IP", "api": "API", "url": "URL",
+                            "uri": "URI", "uris": "URIs"}.get(p, p.title()) for p in rest)
 
 
 class Generator:
@@ -400,6 +422,9 @@ class Generator:
                 continue
             self.done.add(owner)
             models[owner] = self.fields(owner, self.schemas.get(owner, self.nested.get(owner)))
+        # Kept for the compatibility tables' own guard: a pin naming a property
+        # the contract no longer has stops applying silently.
+        self.models = models
         pending = list(self.encodable)
         while pending:
             owner = pending.pop()

@@ -881,18 +881,18 @@ public struct ConnectionProvider: Sendable, Decodable, Hashable, Identifiable {
   public var hasClientSecret: Bool?
   public var id: String
   public var issuer: String?
-  public var kind: String
+  public var kind: String?
   public var mcpURL: String?
   public var name: String?
   public var pkce: Bool?
-  public var platform: Bool
-  public var redirectUri: String
+  public var platform: Bool?
+  public var redirectURI: String?
   public var registrationEndpoint: String?
   public var revokeURL: String?
-  public var scopes: [String]
+  public var scopes: [String]?
   public var slug: String?
   public var tokenEndpointAuth: String?
-  public var tokenHosts: [String]
+  public var tokenHosts: [String]?
   public var tokenURL: String?
   public var updatedAt: Date?
   public var userinfoURL: String?
@@ -914,7 +914,7 @@ public struct ConnectionProvider: Sendable, Decodable, Hashable, Identifiable {
     case name = "name"
     case pkce = "pkce"
     case platform = "platform"
-    case redirectUri = "redirect_uri"
+    case redirectURI = "redirect_uri"
     case registrationEndpoint = "registration_endpoint"
     case revokeURL = "revoke_url"
     case scopes = "scopes"
@@ -1135,7 +1135,7 @@ public struct SearchHit: Sendable, Decodable, Hashable {
 
 public struct Catalog: Sendable, Decodable, Hashable {
   public var apps: Catalog.Apps?
-  public var firstRequest: CatalogFirstRequest
+  public var firstRequest: CatalogFirstRequest?
   public var mcpServers: [CatalogMcpServersItem]?
   public var modelProviders: [String]?
   public var models: [String: [String]]?
@@ -1464,11 +1464,11 @@ public struct CatalogFirstRequest: Sendable, Decodable, Hashable {
 }
 
 public struct CatalogMcpServersItem: Sendable, Decodable, Hashable {
-  public var dcr: Bool
-  public var name: String
-  public var slug: String
-  public var url: String
-  public var verifiedOn: String
+  public var dcr: Bool?
+  public var name: String?
+  public var slug: String?
+  public var url: String?
+  public var verifiedOn: String?
 
   enum CodingKeys: String, CodingKey {
     case dcr = "dcr"

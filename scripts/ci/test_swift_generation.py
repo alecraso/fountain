@@ -98,6 +98,18 @@ class SwiftGeneration(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Incompatible secret field: key"):
             swiftgen.Generator(self.contract).render()
 
+    def test_optional_compat_pins_reach_a_live_property(self):
+        # The table carries the whole backward-compatibility story. A pin whose
+        # owner or key the contract renamed stops applying in silence, flipping
+        # a public property back to non-Optional with every other gate green.
+        generator = swiftgen.Generator(self.contract)
+        generator.render()
+        for owner, key in sorted(swiftgen.OPTIONAL_COMPAT):
+            with self.subTest(owner=owner, key=key):
+                self.assertIn(owner, generator.models)
+                fields = {field[0]: field[3] for field in generator.models[owner]}
+                self.assertIn(key, fields)
+
     def test_generation_is_deterministic(self):
         self.assertEqual(swiftgen.Generator(self.contract).render(), swiftgen.Generator(self.contract).render())
 

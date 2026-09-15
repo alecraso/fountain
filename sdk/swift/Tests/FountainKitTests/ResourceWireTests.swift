@@ -106,6 +106,8 @@ import Testing
       #"{"id":"github","configured":false,"kind":"oauth","platform":false,"redirect_uri":"https://example.test/callback","scopes":[],"token_hosts":[]}"#
     )
     #expect(provider.configured == false && provider.name == nil)
+    #expect(provider.redirectURI == "https://example.test/callback")
+    #expect(provider.kind == "oauth" && provider.platform == false && provider.tokenHosts == [])
     let schedule = try decode(
       TeamSchedule.self,
       #"{"id":"s1","agent_id":"a1","cron":"* * * * *","prompt":"go","enabled":false,"next_run_at":"2026-09-16T10:00:00Z","last_error":null}"#
@@ -144,5 +146,35 @@ import Testing
       AdminEvent.self,
       #"{"event_type":"future_event","metadata":{"count":0},"inserted_at":"2026-09-15T10:00:00Z"}"#)
     #expect(admin.insertedAt != nil && admin.metadata?["count"] == .number(0))
+  }
+
+  /// An older server omits keys this SDK now exposes. Every property pinned in
+  /// the generator's OPTIONAL_COMPAT decodes from its absence; dropping a pin
+  /// fails here rather than at a consumer's whole response.
+  @Test func payloadsFromAnOlderServerStillDecode() throws {
+    let catalog = try decode(
+      Catalog.self, #"{"runtimes":["claude"],"mcp_servers":[{"slug":"m1"}]}"#)
+    #expect(catalog.firstRequest == nil && catalog.apps == nil && catalog.models == nil)
+    #expect(catalog.packageManagers == nil && catalog.sandboxProviders == nil)
+    #expect(catalog.mcpServers?.first?.slug == "m1")
+    #expect(catalog.mcpServers?.first?.verifiedOn == nil && catalog.mcpServers?.first?.dcr == nil)
+    #expect(catalog.mcpServers?.first?.name == nil && catalog.mcpServers?.first?.url == nil)
+    #expect(try decode(Catalog.self, "{}").firstRequest == nil)
+
+    let provider = try decode(
+      ConnectionProvider.self,
+      #"{"id":"github","name":"GitHub","slug":"github","configured":true,"env_key":"GITHUB_TOKEN","mcp_url":"https://mcp.example.test","connect_url":"https://connect.example.test"}"#
+    )
+    #expect(provider.configured == true && provider.mcpURL == "https://mcp.example.test")
+    #expect(provider.kind == nil && provider.platform == nil && provider.redirectURI == nil)
+    #expect(provider.scopes == nil && provider.tokenHosts == nil)
+
+    let connection = try decode(Connection.self, #"{"id":"c1","provider":"github"}"#)
+    #expect(connection.scopes == nil && connection.status == nil && connection.envKey == nil)
+    let key = try decode(APIKey.self, #"{"id":"k1","name":"key"}"#)
+    #expect(key.createdAt == nil && key.prefix == nil)
+    let schedule = try decode(
+      TeamSchedule.self, #"{"id":"s1","agent_id":"a1","cron":"* * * * *","prompt":"go"}"#)
+    #expect(schedule.enabled == nil && schedule.oneOff == nil)
   }
 }

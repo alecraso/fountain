@@ -19,21 +19,29 @@ The generator reads the committed contract and does not require Elixir to run.
 | LogEvent, Block, PermissionOption, PermissionRequest | Remaining migration #2269: inventory raw/normalized differences and preserve custom decoding and stream/permission behavior |
 | JSONValue, ConversationInputField and WireValue / enum wrappers | Intentionally handwritten value/behavior types; their raw-string decoding preserves unknown server values |
 | Swift Fountain map product | Uses JSON objects rather than duplicated typed wire properties; remains supported |
+| PageMeta (`Client/APIClient.swift`), APIErrorBody (`Errors/FountainError.swift`), TeamResource request bodies | Contract-shaped but handwritten outside `Models/`; unmigrated and outside #2269's four seams |
 
 ## Compatibility rules
 
-Existing nested public names and initializer order remain intact. The finite
-`OPTIONAL_COMPAT` exceptions retain historically optional properties across
-sandbox, resource and nested models, even when the current server requires
-those properties. New fields use contract requiredness/nullability directly;
-for example, the newly exposed `Catalog.firstRequest` is required. Old catalog
-test fixtures now include that contract-required field.
+Existing nested public names and initializer order remain intact. A model that
+already shipped by hand must not become harder to decode, so `OPTIONAL_COMPAT`
+keeps two kinds of property optional even where the current server requires
+them: properties that were historically optional, and properties this SDK
+exposes for the first time on a type that already shipped. The second kind is
+why a response from an older server still decodes rather than failing whole.
+The table is finite and auditable: it grew from 9 entries over 5 owner types
+(sandbox and runner models) to 55 over 21 as the resource families landed.
+Wholly new types take contract requiredness directly.
+`test_optional_compat_pins_reach_a_live_property` fails when a pin stops
+naming a live property, and `ResourceWireTests` decodes payloads that omit the
+pinned keys.
 
-`TYPE_OVERRIDES` retains existing `JSONValue` APIs for deliberately dynamic
-payloads (metadata, packages, MCP servers, repositories and apply errors).
-Neither table is a registry to extend for ordinary API additions. Aliased
-Skill definitions must agree, and Secret reads both environment and vault
-schemas. Conflicting shared definitions fail generation.
+The 19 `TYPE_OVERRIDES` entries retain existing `JSONValue` APIs for
+deliberately dynamic payloads: metadata, packages, networking config,
+repositories, MCP servers, agent-version config and apply errors. Neither
+table is a registry to extend for ordinary API additions. Aliased Skill
+definitions must agree, and Secret reads both environment and vault schemas.
+Conflicting shared definitions fail generation.
 
 Agent inputs expose numeric policy values through `permissionPolicyValues`
 while retaining the string-only initializer/property. Nullable generated inputs

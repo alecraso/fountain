@@ -45,11 +45,12 @@ Read-only inventory of `managoat/demos` at
 
 Those apps own their thread persistence and streams, and some create promptless
 tabs. Replacing every creation call with `runRequest` would change behavior.
-[managoat/demos#76](https://github.com/managoat/demos/issues/76) owns generated
-input adoption, SDK upgrades and app-specific validation. The migration is implemented in
-[managoat/demos#77](https://github.com/managoat/demos/pull/77): SDK 5.2.1 pins,
-shared generated input types, app-owned launch policies, and regression tests.
-It awaits review/merge; no deployed-app migration is claimed.
+[managoat/demos#76](https://github.com/managoat/demos/issues/76) owned generated
+input adoption, SDK upgrades and app-specific validation; it closed with
+[managoat/demos#77](https://github.com/managoat/demos/pull/77), merged
+2026-09-15: SDK 5.2.1 pins, shared generated input types, app-owned launch
+policies, and regression tests. Merged there is not deployed here; this
+inventory still claims no deployed-app migration.
 
 ## Remaining gates
 
