@@ -48,14 +48,14 @@ defmodule Fountain.Conversations.Termination do
       # ownership: callers established this conversation's tenant. Cleanup must
       # survive a blocked actor, failed provider teardown, or subsequent deletion.
       case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv_id) do
-        {:ok, _} -> terminate_after_retirement(conv_id, opts)
+        {:ok, _} -> terminate_after_journal_interrupt(conv_id, opts)
         {:error, :not_found} -> {:error, :not_running}
         {:error, _} = error -> error
       end
     end
   end
 
-  defp terminate_after_retirement(conv_id, opts) do
+  defp terminate_after_journal_interrupt(conv_id, opts) do
     result =
       case whereis(conv_id) do
         nil ->

@@ -1311,11 +1311,11 @@ defmodule Fountain.Conversations do
     # ownership: conv is the caller's tenant-scoped row. Persist cleanup before
     # any potentially blocking termination and before deleting that parent.
     with {:ok, _} <- Interruption.retire_journal_before_reattach(conv.id) do
-      delete_after_retirement(conv, opts)
+      delete_after_journal_interrupt(conv, opts)
     end
   end
 
-  defp delete_after_retirement(%Conversation{id: id, user_id: user_id} = conv, opts) do
+  defp delete_after_journal_interrupt(%Conversation{id: id, user_id: user_id} = conv, opts) do
     # `audit: false` on the cascade: this terminate is an implementation
     # detail of deleting, not a second thing the user asked for, and the
     # `conversation.deleted` below already accounts for the sandbox going
