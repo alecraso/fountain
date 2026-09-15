@@ -70,6 +70,68 @@ defmodule Fountain.RunTest do
   use ExUnit.Case
   alias Fountain.{Error, Run}
 
+  test "run_request forwards wire fields and leaves local options outside the body" do
+    parent = self()
+
+    server =
+      Fountain.TestServer.start(fn request ->
+        send(parent, {:wire_request, request})
+
+        case {request.method, request.path} do
+          {"POST", "/api/conversations"} ->
+            json(201, %{"data" => %{"id" => "c1", "status" => "running"}})
+
+          {"GET", "/api/conversations/c1/stream"} ->
+            {200, [{"content-type", "text/event-stream"}], run_events()}
+
+          {"GET", "/api/conversations/c1"} ->
+            json(200, %{"data" => %{"id" => "c1", "status" => "done"}})
+        end
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    client = Fountain.new(api_key: "key", base_url: server.url)
+
+    body = %{
+      "agent_id" => "agent-1",
+      "prompt" => "hello",
+      "title" => "",
+      "vault_id" => nil,
+      "fresh" => false,
+      "queue" => false,
+      "images" => [],
+      "labels" => %{"attempt" => "0"},
+      "permission_policy" => %{"ask_timeout" => 0},
+      "sandbox_api_access" => "none"
+    }
+
+    run = Fountain.run_request(client, body, timeout: 1_000, collect_events: true)
+    assert {:ok, result} = Run.await(run)
+    assert result.text == "Hello\n\nworld"
+    assert length(result.events) == 4
+    assert_receive {:wire_request, %{method: "POST", path: "/api/conversations", body: encoded}}
+    assert Jason.decode!(encoded) == body
+    refute_receive {:wire_request, %{path: "/api/agents"}}
+  end
+
+  test "run_request rejects ambiguous keys and unsupported lifecycles before HTTP" do
+    client = Fountain.new(api_key: "key", base_url: "http://127.0.0.1:1")
+
+    assert_raise ArgumentError, ~r/string keys/, fn ->
+      Fountain.run_request(client, %{agent_id: "a", prompt: "hi"})
+    end
+
+    for prompt <- [nil, "", "  "] do
+      assert_raise ArgumentError, ~r/non-empty prompt/, fn ->
+        Fountain.run_request(client, %{"agent_id" => "a", "prompt" => prompt})
+      end
+    end
+
+    assert_raise ArgumentError, ~r/queued/, fn ->
+      Fountain.run_request(client, %{"agent_id" => "a", "prompt" => "hi", "queue" => true})
+    end
+  end
+
   test "run starts immediately and broadcasts one underlying turn to late consumers" do
     parent = self()
 
