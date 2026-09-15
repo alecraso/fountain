@@ -89,12 +89,13 @@ jobs:
 
     outputs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
+      manual_docs: ${{ steps.filter.outputs.manual_docs }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
       tree: ${{ steps.tree.outputs.tree }}
-      sdk_elixir: ${{ steps.sdks.outputs.sdk_elixir }}
-      sdk_python: ${{ steps.sdks.outputs.sdk_python }}
-      sdk_typescript: ${{ steps.sdks.outputs.sdk_typescript }}
-      sdk_swift: ${{ steps.sdks.outputs.sdk_swift }}
+      sdk_elixir: ${{ steps.filter.outputs.sdk_elixir }}
+      sdk_python: ${{ steps.filter.outputs.sdk_python }}
+      sdk_typescript: ${{ steps.filter.outputs.sdk_typescript }}
+      sdk_swift: ${{ steps.filter.outputs.sdk_swift }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
@@ -107,19 +108,8 @@ jobs:
 
       - name: Classify the diff
         id: filter
-        # An ALLOWLIST, not an ignore list, and that direction is the whole
-        # safety argument: a path is docs-only if it is under docs/, and
-        # anything else — including this workflow — falls through to the
-        # full suite. A new top-level directory nobody
-        # thought about is therefore tested, not skipped. The failure mode is
-        # "ran too much", never "ran too little".
-        #
-        # Never fails: like the already-tested probe, every branch ends in a
-        # decision and the decision on any error is "run the full CI".
-        #
-        # CHANGELOG.md is NOT on the allowlist even though docs/changelog.md
-        # snippet-includes it — it is touched by the release-bump flow, where
-        # skipping the suite is not wanted.
+        # Resolve the same base for documentation and SDK selection. Unknown
+        # paths, failed diffs and manual dispatch select the full server plan.
         env:
           # Empty on pull_request, which is how the script picks its base.
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
@@ -127,18 +117,15 @@ jobs:
           set -u
           base=""
           decide() {
-            {
-              echo "diff_base=${base:-}"
-              echo "docs_only=$1"
-              echo "cli_docs=$2"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "diff_base=${base:-}" >> "$GITHUB_OUTPUT"
+            python3 scripts/ci/changes.py "${base:-}" >> "$GITHUB_OUTPUT"
+            exit "$?"
           }
 
           # A manual run requests complete validation, without a diff or
           # tree-reuse shortcut. An empty base selects every SDK too.
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            decide false false
+            decide
           fi
 
           # A merge group already knows the commit it was stacked onto, and
@@ -148,55 +135,24 @@ jobs:
             base="${MERGE_GROUP_BASE_SHA}"
             if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
               echo "merge group base ${base:0:7} is not in this checkout — running the full CI"
-              decide false false
+              base=""
+              decide
             fi
           else
             if ! git fetch --no-tags --quiet origin \
                  "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" 2>/dev/null; then
               echo "could not fetch base ${GITHUB_BASE_REF} — running the full CI"
-              decide false false
+              decide
             fi
 
             base="$(git merge-base "refs/remotes/origin/${GITHUB_BASE_REF}" HEAD 2>/dev/null || true)"
             if [ -z "${base}" ]; then
               echo "no merge base with ${GITHUB_BASE_REF} — running the full CI"
-              decide false false
+              decide
             fi
           fi
 
-          changed="$(git diff --name-only "${base}" HEAD 2>/dev/null || true)"
-          if [ -z "${changed}" ]; then
-            echo "empty diff against ${base:0:7} — running the full CI"
-            decide false false
-          fi
-
-          echo "changed against ${base:0:7}:"
-          printf '%s\n' "${changed}" | sed 's/^/  /'
-
-          # Both halves of the CLI reference: the hand-written index and the
-          # generated docs/cli/commands.md. The generated one matters here
-          # because a docs-only PR that hand-edits it would otherwise skip the
-          # Go tests entirely, and the staleness check lives in them.
-          cli_docs=false
-          if printf '%s\n' "${changed}" | grep -qE '^docs/cli\.md$|^docs/cli/'; then
-            cli_docs=true
-          fi
-
-          # grep -qv succeeds when ANY line falls outside the allowlist, so
-          # the negation is "every changed path is a docs path".
-          if printf '%s\n' "${changed}" | grep -qvE '^docs/'; then
-            echo "non-docs paths changed — running the full CI"
-            decide false "${cli_docs}"
-          fi
-
-          echo "docs-only — running the docs job instead of the Elixir suite"
-          decide true "${cli_docs}"
-
-      - name: Select SDKs from the same diff
-        id: sdks
-        env:
-          DIFF_BASE: ${{ steps.filter.outputs.diff_base }}
-        run: python3 scripts/ci/sdk_changes.py "$DIFF_BASE" >> "$GITHUB_OUTPUT"
+          decide
 
   test:
     name: Build and Test (partition ${{ matrix.partition }})
@@ -1527,26 +1483,16 @@ jobs:
         if: ${{ failure() && steps.pin.outputs.exists == 'true' }}
         run: docker compose logs --timestamps
 
-  # What a docs-only PR runs instead of the three test partitions, the
-  # coverage merge, static analysis and the two compose checks. It is not a
-  # weaker gate for docs, it is a stronger one: the docs gate did not run on a
-  # pull request at all before this job existed — the GitHub Pages workflow was
-  # push-to-main only — so a broken relative link or a page missing from the
-  # nav passed CI and failed after the merge, on main, where nobody was
-  # looking. That workflow is gone (#1008); this job is the gate.
-  #
-  # The compile step is the load-bearing one. Fountain.Docs embeds every page
-  # at compile time, so a snippet include pointing at a file that is not there
-  # kills `mix compile` — and, in the image, `mix release`, which is how #884
-  # shipped a commit that built no image at all while CI stayed green. The
-  # Dockerfile-COPY coverage test that now guards that lives in docs_test.exs
-  # and runs here.
+  # Published manuals share links, navigation and a renderer. Contributor-only
+  # Markdown needs no Elixir job; manual edits run the documentation suites.
   docs:
     name: Docs
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only == 'true' }}
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only == 'true'
+         && needs.changes.outputs.manual_docs == 'true' }}
 
     permissions:
       contents: read
@@ -1660,7 +1606,7 @@ jobs:
       # second renderer to build the pages strictly against.
       # docs_controller_test.exs: that the pages actually serve.
       - name: Docs tests
-        run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
+        run: bash scripts/test-docs.sh
 
       - name: Set up Go
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}

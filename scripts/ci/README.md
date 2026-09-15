@@ -23,7 +23,7 @@ name in a red build says which toolchain to look at:
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
-| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/sdk_changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
+| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `manual_docs` (which selects the published-manual tests), `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
 | **already-tested** | `Skip the re-run when a PR already tested this exact tree`: `scripts/ci/already-tested.sh` compares the checkout tree with a successful run's `tested-tree` artifact. Runs only on `push` and `merge_group`. Missing or expired artifacts and API failures leave `skip=false` |
 | **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
 | **python-sdk** (×2) | The Python SDK on 3.9 and 3.13, conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
@@ -34,7 +34,7 @@ name in a red build says which toolchain to look at:
 | **compose-fresh-clone** | `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file |
 | **compose-pinned-image-boot** | `scripts/compose-boot-check.sh` exercises the Compose quick start against its pinned release image. An unpublished pin that matches the version in `mix.exs` defers the boot check to `release.yml`; any other missing pin fails |
 | **sdk-checks** | A stable aggregate over the four SDK jobs. A selected SDK must succeed even on a docs-only server plan, because an SDK's own docs page selects it. Legs skip only for a reused tree or an unselected language |
-| **docs** | Compiles the embedded manual, runs `docs_test.exs` and `docs_controller_test.exs` and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` is true; skipped on `push` |
+| **docs** | Compiles the embedded manual, runs `scripts/test-docs.sh` (core and extension documentation suites), and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` and `manual_docs` are true and the tree is not reused; skipped on `push` |
 | **gate** | `CI required`: validates every expected job result and records a successful PR checkout tree |
 
 `mix hex.audit` is not one of these: `scripts/hex-audit-gate.exs` fails the
@@ -223,9 +223,28 @@ SDK job, also update `SDK_JOBS` and the `sdk-checks` dependencies. Run
 `test_gate.py` and `test_sdk_gate.py` to verify their agreement and every
 supported event plan.
 
+## Documentation path classification
+
+`changes.py` reads one NUL-delimited diff with rename detection disabled, then
+selects documentation and SDK checks from the same paths. The contributor-only
+allowlist is Markdown-specific; executable files and new extension directories
+select the full server plan. A move out of code retains the old code path in
+the diff. Missing bases, failed/empty diffs and malformed paths select full CI.
+
+`docs_only=true` skips the server suite. `manual_docs=true` additionally requires
+the `docs` job on that short path; contributor-only text needs no Elixir job.
+Both aggregates validate these booleans, and `cli_docs=true` requires manual
+checks. SDK README edits still select their language. The documentation job
+honors verified tree reuse on the merge queue, just like the server jobs.
+
+See [the manual contribution guide](../../contributing/docs.md#checks-for-documentation-changes)
+for the path table and matching local commands. Register an extension's docs
+in `MANUAL_EXTENSIONS` and `scripts/test-docs.sh` together; the routing tests
+check that the selected manuals have runnable documentation suites.
+
 ## SDK path classification
 
-`changes` reports four `sdk_<language>` outputs from `sdk_changes.py`, using
+`changes` reports four `sdk_<language>` outputs from `changes.py`, using
 its existing PR merge base or merge-group base. Each SDK job consumes its
 own output. The two gates independently validate the selection and exact job
 results. Missing or malformed outputs fail both gates; only explicit `false`

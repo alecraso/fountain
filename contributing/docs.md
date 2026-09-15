@@ -24,13 +24,51 @@ admonitions, relative `.md` links) and is inherited from the MkDocs site.
 Check a page at `/docs` if it uses anything fancier: start the server and
 open the route.
 
-## Structural rules, enforced by the suite
+## Checks for documentation changes
 
-`docs_test.exs` runs these on every PR. Run it directly while editing:
+| Change | CI checks |
+|---|---|
+| `CLAUDE.md`, `CONTRIBUTING.md`, `SETUP.md`, `scripts/ci/README.md`, Markdown under `contributing/` or `standards/` | Repository policy, alert fixtures, changelog and conflict-marker checks, plus the secret scan |
+| `README.md`, `docs/`, or the Buzz, Google, Microsoft or Slack manuals | Core rendering and structural tests, plus every extension's documentation and manual-integration tests |
+| An SDK's `README.md` or its page under `docs/` | That SDK's existing checks; published pages also get the manual tests |
+| `docs/cli.md` or `docs/cli/` | Manual tests and the CLI reference parity checks |
+| Code, configuration, unregistered paths, or mixed code/documentation changes | Full server validation and the selected SDK checks |
+
+The short paths apply to pull requests and merge groups. Main reuses a tested
+tree when possible; otherwise it runs full CI. A manual CI dispatch also runs
+full validation. ADRs retain their existing validation and full server path.
+
+For contributor-only Markdown, run:
 
 ```bash
-mix test apps/fountain/test/fountain/docs_test.exs
+python3 scripts/conflict-markers.py
+python3 scripts/changelog.py check
+git diff --check
 ```
+
+For published manual changes, use the pinned toolchain and run:
+
+```bash
+bash scripts/test-docs.sh
+```
+
+This runs the core and extension documentation suites, including navigation,
+rendering and links across manuals. It needs the usual migrated test database.
+A changed core heading can break an extension's link, so both sides are checked
+together. `README.md` participates because its diagram text has a docs test.
+While editing one page, its app's `docs_test.exs` is a useful narrower check.
+
+For CLI reference changes, also run:
+
+```bash
+go -C cli test -count=1 ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'
+```
+
+For SDK documentation, run that client's checks from
+[scripts/ci/README.md](../scripts/ci/README.md#sdk-jobs).
+`mix precommit` remains the full local gate for code, CI policy and mixed changes.
+
+## Structural rules
 
 - **The nav lives only in `docs/nav.yml`.** `Fountain.Docs` parses the
   `nav:` block at compile time. Keep to the two line shapes the parser reads

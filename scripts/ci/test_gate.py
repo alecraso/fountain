@@ -9,7 +9,7 @@ from gate import FULL_JOBS, JOBS, PROBES, SDK_JOBS, validate
 EVENTS = ("pull_request", "push", "merge_group", "workflow_dispatch")
 
 
-def plan(event="pull_request", docs=False, reuse=False, sdks=None):
+def plan(event="pull_request", docs=False, reuse=False, sdks=None, manual=True):
     if event == "workflow_dispatch":
         docs, sdks = False, SDK_JOBS
     if sdks is None:
@@ -23,15 +23,15 @@ def plan(event="pull_request", docs=False, reuse=False, sdks=None):
         jobs["already-tested"] = {"result": "success", "outputs": {"skip": str(reuse).lower()}}
     if "changes" in PROBES[event]:
         jobs["changes"] = {"result": "success", "outputs": {
-            "docs_only": str(docs).lower(),
+            "docs_only": str(docs).lower(), "manual_docs": str(manual).lower(),
             "cli_docs": "false", "tree": "a" * 40,
             **{"sdk_" + job.removesuffix("-sdk"): str(job in sdks).lower() for job in SDK_JOBS},
         }}
     if reuse:
         return jobs
-    if docs:
+    if docs and manual:
         jobs["docs"]["result"] = "success"
-    else:
+    elif not docs:
         for job in FULL_JOBS - SDK_JOBS:
             jobs[job]["result"] = "success"
     for job in sdks:
@@ -96,7 +96,7 @@ class GateTest(unittest.TestCase):
 
     def test_missing_classification_or_tree_is_not_a_docs_skip(self):
         for event in ("pull_request", "merge_group", "workflow_dispatch"):
-            for key in ("docs_only", "cli_docs", "tree"):
+            for key in ("docs_only", "manual_docs", "cli_docs", "tree"):
                 jobs = plan(event, docs=True)
                 del jobs["changes"]["outputs"][key]
                 with self.subTest(event=event, key=key):
