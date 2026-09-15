@@ -31,11 +31,18 @@ defmodule Fountain.Webhooks.EventsTest do
     "lib/fountain/conversations/pending.ex",
     "lib/fountain/conversations/lifecycle.ex",
     "lib/fountain/conversations/connection.ex",
-    "lib/fountain/conversations/output.ex"
+    "lib/fountain/conversations/output.ex",
+    "lib/fountain/conversations/home_checkpoint.ex"
   ]
 
   # publish_stage(<anything>, "<stage>", "<status>"
   @call_site ~r/publish_stage\(\s*[^,]+,\s*"([a-z_]+)",\s*"([a-z_]+)"/
+
+  # The looser cousin of @call_site: it reads the stage only, so a call site
+  # whose status is a variable or an expression — home_checkpoint.ex's
+  # `publish(sandbox, state, meta)`, or turn_machine.ex's `if(...)` — still
+  # shows up. It cannot tell us the status, only that the stage is live.
+  @stage_only ~r/publish_stage\(\s*[^,]+,\s*"([a-z_]+)"/
 
   defp app_dir do
     Application.app_dir(:fountain) |> Path.join("../../../../apps/fountain") |> Path.expand()
@@ -50,10 +57,58 @@ defmodule Fountain.Webhooks.EventsTest do
         do: {stage, status}
   end
 
+  # One entry per call site (not uniq), from the fixed @sources list, so the
+  # two frequency maps below line up: a stage whose stage-only count exceeds
+  # its literal-pair count has at least one call site the literal regex could
+  # not read the status of.
+  defp stage_call_sites(regex) do
+    for source <- @sources,
+        path = Path.join(app_dir(), source),
+        File.exists?(path),
+        stage <- stage_matches(regex, File.read!(path)),
+        do: stage
+  end
+
+  defp stage_matches(regex, content) do
+    Regex.scan(regex, content) |> Enum.map(fn [_, stage | _] -> stage end)
+  end
+
+  # Stages that have at least one call site among @sources where the status
+  # argument is not a literal string — @call_site cannot see these, so
+  # `published_pairs/0` under-reports them. A catalogue entry for one of
+  # these stages counts as producible even without a literal (stage, status)
+  # pair to point at.
+  defp non_literal_status_stages do
+    literal = Enum.frequencies(stage_call_sites(@call_site))
+    all = Enum.frequencies(stage_call_sites(@stage_only))
+
+    for {stage, count} <- all, count > Map.get(literal, stage, 0), into: MapSet.new() do
+      stage
+    end
+  end
+
+  # The independent, no-fixed-list version: every stage published anywhere
+  # under lib/fountain/, found with the stage-only regex. Unlike
+  # `published_pairs/0`, a brand new file calling `publish_stage/4` shows up
+  # here without anyone adding it to @sources first.
+  defp wildcard_stages do
+    pattern = Path.join(app_dir(), "lib/fountain/**/*.ex")
+
+    for path <- Path.wildcard(pattern),
+        stage <- stage_matches(@stage_only, File.read!(path)),
+        uniq: true,
+        do: stage
+  end
+
   test "the source actually reachable from here has publish_stage call sites" do
     # Guard the guard: a broken path or a changed call shape would make every
     # assertion below vacuously true.
     assert length(published_pairs()) > 20
+  end
+
+  test "guard the guard: the wildcard walk over lib/fountain/ finds stages too" do
+    # Same reasoning as above, for the walk that does not depend on @sources.
+    assert length(wildcard_stages()) > 10
   end
 
   defp retired_stages, do: MapSet.new(Events.retired(), fn {stage, _statuses} -> stage end)
@@ -107,19 +162,55 @@ defmodule Fountain.Webhooks.EventsTest do
     """
   end
 
+  test "every stage the wildcard walk finds is a catalogue or retired stage" do
+    # The independent net: a stage published anywhere under lib/fountain/,
+    # regardless of whether @sources names its file or its status is a
+    # literal. This is what would have caught `checkpoint` before anyone
+    # added home_checkpoint.ex to @sources by hand.
+    known = MapSet.new(Events.catalogue(), fn {stage, _statuses} -> stage end)
+    retired = retired_stages()
+
+    offenders =
+      wildcard_stages()
+      |> Enum.reject(&(MapSet.member?(known, &1) or MapSet.member?(retired, &1)))
+      |> Enum.sort()
+
+    assert offenders == [], """
+    These stages are published somewhere under lib/fountain/ but are not in
+    the webhook catalogue or the retired list:
+
+      #{Enum.join(offenders, "\n  ")}
+
+    A computed status kept them off the literal-pair walk above. Add them to
+    `Fountain.Webhooks.Events`, and to the table in docs/reference/webhooks.md.
+    """
+  end
+
   test "the catalogue names nothing the source cannot produce" do
     # The other direction. A stale entry is a documented event that never
     # arrives, which is worse than an undocumented one.
     published = MapSet.new(published_pairs(), fn {s, st} -> Events.type(s, st) end)
+    non_literal = non_literal_status_stages()
 
-    # `turn.done` and `turn.failed` also come from a conditional call site the
-    # regex cannot read, and both are in `published` from other call sites.
-    # A retired stage is deliberately absent from `types/0`, so it cannot be
-    # stale here; this direction only sees what the catalogue still names.
-    stale = Enum.reject(Events.types(), &MapSet.member?(published, &1))
+    # `turn.done`/`turn.failed` and `checkpoint.done`/`checkpoint.failed` come
+    # from call sites whose status is a variable, so the literal-pair regex
+    # cannot see them. A catalogue entry counts as producible when either its
+    # exact pair is literally published, or its stage has at least one
+    # call site the literal regex could not read the status of. A stage that
+    # appears at no call site at all is in neither set, so it still fails.
+    stale =
+      Events.types()
+      |> Enum.reject(fn type ->
+        MapSet.member?(published, type) or MapSet.member?(non_literal, stage_of(type))
+      end)
 
     assert stale == [],
            "these catalogue entries match no publish_stage call site: #{inspect(stale)}"
+  end
+
+  defp stage_of(type) do
+    ["conversation", stage, _status] = String.split(type, ".")
+    stage
   end
 
   describe "filters" do
