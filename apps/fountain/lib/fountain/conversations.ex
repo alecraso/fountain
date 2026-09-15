@@ -90,25 +90,11 @@ defmodule Fountain.Conversations do
   def _unsafe_get_sandbox(id), do: Repo.get(Sandbox, id)
   def _unsafe_get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
-  @doc """
-  Whether a conversation other than `conv_id` still holds `sandbox_id` — one
-  that is not `terminated`/`failed`. A sandbox normally has one conversation;
-  it gets a second when a teammate starts a fresh conversation on the same
-  computer (`Fountain.Conversations.Termination.release_conversation/2`, `Fountain.Team`),
-  and from then on the retired thread's lifecycle must not reach the disk
-  its successor is running on. `_unsafe_`: callers have established
-  ownership of `conv_id` already (a GenServer, or a scoped fetch before it).
-  """
-  def _unsafe_sandbox_held_by_other?(sandbox_id, conv_id)
-      when is_binary(sandbox_id) and is_binary(conv_id) do
-    Repo.exists?(
-      from(c in Conversation,
-        where:
-          c.sandbox_id == ^sandbox_id and c.id != ^conv_id and
-            c.status not in ["terminated", "failed"]
-      )
-    )
-  end
+  # The predicate moved to `Fountain.Conversations.Lifecycle` with the
+  # teardown fence it decides for (#2258; ADR 0023's "is anyone else on this
+  # machine" rule has one home); this keeps the name every other caller
+  # (`reapply.ex`, `conversation_server.ex`, the tests) calls.
+  defdelegate _unsafe_sandbox_held_by_other?(sandbox_id, conv_id), to: Lifecycle
 
   @doc """
   Load any tenant's conversation for the admin support view (#446).
@@ -2966,120 +2952,15 @@ defmodule Fountain.Conversations do
     end
   end
 
-  @doc """
-  Commit an admission fence before a caller tears down a sandbox. No provider
-  I/O runs here. The caller owns this row and must stop actors and clean up
-  the provider after success. Already admitted turns may be forcibly stopped.
-
-  Reuses the reset fence so every existing reuse path refuses the machine,
-  retaining capacity until retirement completes. `teardown_requested_at`
-  distinguishes forced teardown from an ordinary reset. A new forced intent
-  records `sandbox.teardown_requested` after commit; repeats preserve both
-  timestamps. Escalating an existing reset preserves its admission fence.
-  Refuses an enclosing transaction. `opts` carries actor, request_ip, reason and
-  `:metadata` — extra keys merged into the event, for a caller whose own delete
-  is about to nilify `user_id` on both the event and the sandbox it names.
-
-  With a terminating_conversation_id, first lock and verify that conversation's
-  current attachment and owner. A persistent home or another live conversation
-  returns {:error, :sandbox_kept} without a new fence. The sandbox row stays
-  locked through this decision and the fence, serializing supported attachments.
-  """
-  def _unsafe_fence_sandbox_for_teardown(%Sandbox{} = sandbox, opts \\ []) do
-    if Repo.in_transaction?() do
-      {:error, :provider_transaction_open}
-    else
-      case do_fence_sandbox_for_teardown(sandbox, Keyword.get(opts, :terminating_conversation_id)) do
-        {:ok, {fenced, true}} ->
-          Audit.record(%{
-            user_id: fenced.user_id,
-            action: "sandbox.teardown_requested",
-            resource_type: "sandbox",
-            resource_id: fenced.id,
-            # ADR 0013 keeps `admin:<operator_id>` for account deletion alone,
-            # so an operator reaping a machine from /admin/sandboxes records
-            # the plain `admin` the vocabulary allows here.
-            actor: teardown_actor(Keyword.get(opts, :actor, "self")),
-            request_ip: Keyword.get(opts, :request_ip),
-            metadata:
-              Map.merge(
-                %{
-                  "reason" => Keyword.get(opts, :reason, "teardown"),
-                  "provider" => fenced.provider
-                },
-                Keyword.get(opts, :metadata, %{})
-              )
-          })
-
-          {:ok, fenced}
-
-        {:ok, {fenced, false}} ->
-          {:ok, fenced}
-
-        {:error, _} = error ->
-          error
-      end
-    end
-  end
-
-  defp teardown_actor("admin:" <> _), do: "admin"
-  defp teardown_actor(actor), do: actor
-
-  defp do_fence_sandbox_for_teardown(sandbox, ending_id) do
-    Repo.transaction(fn ->
-      Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
-        @sandbox_lock_namespace,
-        :erlang.phash2(sandbox.id)
-      ])
-
-      # Match admission's advisory -> conversation -> sandbox lock order.
-      lock_terminating_conversation(sandbox, ending_id)
-
-      current =
-        Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE") ||
-          Repo.rollback(:not_found)
-
-      if not is_nil(ending_id) and
-           (current.mode == "persistent" or _unsafe_sandbox_held_by_other?(current.id, ending_id)) do
-        Repo.rollback(:sandbox_kept)
-      end
-
-      # Forced teardown may stop an admitted turn. Keep the admission fence
-      # and its timestamp when an ordinary reset is escalated to forced teardown.
-      cond do
-        current.status in @billable_terminal ->
-          {current, false}
-
-        is_nil(current.teardown_requested_at) ->
-          now = DateTime.utc_now()
-
-          fenced =
-            current
-            |> Ecto.Changeset.change(
-              reset_requested_at: current.reset_requested_at || now,
-              teardown_requested_at: now
-            )
-            |> Repo.update!()
-
-          {fenced, true}
-
-        true ->
-          {current, false}
-      end
-    end)
-  end
-
-  defp lock_terminating_conversation(_sandbox, nil), do: :ok
-
-  defp lock_terminating_conversation(sandbox, ending_id) when is_binary(ending_id) do
-    Repo.one(
-      from c in Conversation,
-        where:
-          c.id == ^ending_id and c.sandbox_id == ^sandbox.id and c.user_id == ^sandbox.user_id,
-        select: c.id,
-        lock: "FOR UPDATE"
-    ) || Repo.rollback(:sandbox_unavailable)
-  end
+  # The fence and its helpers moved to `Fountain.Conversations.Lifecycle`
+  # (#2258): the machine-policy module that already owns idle/lifetime
+  # policy, park and destroy is the fence's home too, and one of its own
+  # callers. This keeps the name every other caller
+  # (`Termination.retire_terminated_sandbox/2`, `Accounts.Deletion`,
+  # `conversation_server.ex`, the tests) calls.
+  defdelegate _unsafe_fence_sandbox_for_teardown(sandbox, opts \\ []),
+    to: Lifecycle,
+    as: :fence_sandbox_for_teardown
 
   # Destroy the sprite behind a home and retire its row. Best-effort on the
   # provider side: a destroy error is logged and the row still goes
