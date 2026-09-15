@@ -39,6 +39,27 @@ import Testing
     ).run("hello", agent: "a1")
   }
 
+  @Test func runRequestForwardsTheGeneratedBodyAndFollowsTheTurn() async throws {
+    let transport = FakeTransport([
+      .init(status: 201, json: #"{"data":{"id":"c1","status":"running","runtime":"claude"}}"#),
+      .init(json: Self.stream),
+      .init(json: #"{"data":{"id":"c1","status":"idle","runtime":"claude"}}"#),
+    ])
+    var request = ConversationCreateRequest(agentID: "a1", prompt: "hello", fresh: false)
+    request.labels = ["origin": "test"]
+    request.inferenceCredentialID = "credential"
+    request.setNull(.vaultID)
+    let expected = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(request))
+    let run = try await FountainClient.fake(transport).runRequest(request, timeout: 5)
+    request.labels = ["origin": "changed after launch"]
+    #expect(try await run.value().text == "Found it.")
+    let sent = try JSONDecoder().decode(
+      JSONValue.self, from: #require(transport.requests.first?.httpBody))
+    #expect(sent == expected)
+    #expect(sent["timeout"] == nil)
+    #expect(transport.requests.first?.url?.path == "/api/conversations")
+  }
+
   @Test(arguments: [false, true])
   func runTranscriptLinksUseTheAppOrDashboard(configured: Bool) async throws {
     let appURL = configured ? URL(string: "https://talk.fountain.test/base/")! : nil

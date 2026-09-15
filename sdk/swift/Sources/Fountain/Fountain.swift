@@ -99,6 +99,35 @@ public final class Fountain: @unchecked Sendable {
       }, timeout: timeout, collectEvents: collectEvents)
   }
 
+  /// Follow an API-shaped conversation request. Uses wire keys and IDs;
+  /// timeout and event collection are local options and never enter the body.
+  public func runRequest(
+    _ request: JSONObject,
+    timeout: TimeInterval? = nil,
+    collectEvents: Bool = false
+  ) throws -> Run {
+    guard let prompt = request["prompt"]?.stringValue,
+      !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw FountainError(.validation, "runRequest requires a nonblank prompt")
+    }
+    guard request["queue"] == nil || request["queue"] == .null || request["queue"] == .bool(false)
+    else {
+      throw FountainError(.validation, "runRequest does not support queued creation")
+    }
+    return Run(
+      http: api,
+      plan: RunPlan { [api] in
+        let conversation = try await api.data("POST", "/api/conversations", body: request)
+        var turnNumber = 1
+        if request["channel_id"]?.stringValue != nil, let id = conversation["id"]?.stringValue {
+          let turns = try await api.list("/api/conversations/\(id)/turns")
+          turnNumber = (turns.compactMap { $0["turn_number"]?.intValue }.max() ?? 0) + 1
+        }
+        return (conversation, turnNumber, 0)
+      }, timeout: timeout, collectEvents: collectEvents)
+  }
+
   public func resume(_ conversationID: String) -> Conversation {
     Conversation(http: api, id: conversationID)
   }

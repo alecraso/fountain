@@ -352,6 +352,30 @@ extension FountainClient {
     )
   }
 
+  /// Follow a generated conversation request without copying its fields.
+  /// A run needs a prompt and immediate creation; use the raw request API
+  /// for queued creation, whose response is a job rather than a conversation.
+  public func runRequest(
+    _ request: ConversationCreateRequest, timeout: TimeInterval? = nil
+  ) async throws -> Run {
+    guard let prompt = request.prompt,
+      !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw ConversationRunInputError(message: "runRequest requires a nonblank prompt")
+    }
+    guard request.queue != true else {
+      throw ConversationRunInputError(message: "runRequest does not support queued creation")
+    }
+    let opened = try await conversations.create(request)
+    var turnNumber = 1
+    if request.channelID != nil, opened.resumed {
+      turnNumber = try await nextTurnNumber(opened.conversation.id)
+    }
+    return Run(
+      client: api, conversation: opened.conversation, turnNumber: turnNumber,
+      after: 0, timeout: timeout)
+  }
+
   private func nextTurnNumber(_ id: String) async throws -> Int {
     (try await conversations.turns(id).map(\.turnNumber).max() ?? 0) + 1
   }

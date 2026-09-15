@@ -41,6 +41,50 @@ let next = fountain.resume(result.conversationID).send("Fix the worst three.")
 print(try await next.value().text)
 ```
 
+## API-shaped conversation requests
+
+`runRequest` accepts server field names and raw resource IDs in the `Fountain`
+product. It forwards the entire map; `timeout` and `collectEvents` stay local:
+
+```swift
+let run = try fountain.runRequest([
+    "agent_id": .string(agentID), "prompt": .string("Review this repo"),
+    "vault_id": .null, "fresh": .bool(false), "labels": .object([:])
+], timeout: 120, collectEvents: true)
+```
+
+In `FountainKit`, pass the generated `ConversationCreateRequest` directly:
+
+```swift
+var request = ConversationCreateRequest(agentID: agentID, prompt: "Review this repo")
+request.labels = ["origin": "desktop"]
+request.setNull(.vaultID)
+request.permissionPolicyValues = ["shell": .string("ask"), "ask_timeout": .number(0)]
+let run = try await client.runRequest(request, timeout: 120)
+```
+
+An optional property set to `nil` is omitted, including server-defaulted fields.
+`setNull` encodes JSON null for a nullable field. Assigning a value replaces null;
+assigning `nil` restores omission. False, zero, empty strings, arrays and objects
+are preserved. Existing initializer arguments and the string-only
+`permissionPolicy` property remain usable; `permissionPolicyValues` exposes the
+complete policy, including numeric values. Reading the legacy property returns
+only string entries; setting it replaces the complete policy.
+
+Both run paths reject a missing/blank prompt and `queue: true` before HTTP.
+Use the generic request API for queued creation; its 202 response is a job.
+`FountainKit.conversations.create` also rejects queued creation because it returns
+a conversation. Existing `run` convenience calls continue to resolve/build their
+usual requests.
+
+The conversation request, Conversation, Turn, images, usage and permission
+request models are generated from `sdk/contract/contract.json`. Regenerate with
+`python3 scripts/sdk-contract/generate-swift.py`; add `--check` to detect stale
+output. This needs Python and the package's Swift 6.1 formatter, without booting
+the server. The bounded generator reuses Sandbox and existing open-enum types;
+new unsupported union shapes fail with their schema/property name. Swift wire
+names, optionality, dates and nullable request fields come from the contract.
+
 ## Install
 
 The remotely consumable `Package.swift` is at the repository root. Depend on

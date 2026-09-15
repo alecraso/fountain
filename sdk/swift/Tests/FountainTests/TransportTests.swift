@@ -44,6 +44,63 @@ private func mockSession() -> URLSession { sharedMockSession }
 private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value) }
 
 @Suite(.serialized) struct TransportTests {
+  @Test func runRequestForwardsUnknownFieldsWithoutResolution() async throws {
+    let body: JSONObject = [
+      "agent_id": .string("raw-agent-id"), "prompt": .string("hello"),
+      "future_field": .object(["zero": .number(0), "empty": .array([])]),
+      "vault_id": .null, "fresh": .bool(false), "title": .string(""),
+    ]
+    MockURLProtocol.handler = { request, protocolInstance in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path == "/api/conversations")
+      // Deliberately stop at the create response: only the boundary is under test.
+      let data: Data
+      if let body = request.httpBody {
+        data = body
+      } else if let stream = request.httpBodyStream {
+        stream.open()
+        defer { stream.close() }
+        var bytes = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+          let count = stream.read(&buffer, maxLength: buffer.count)
+          if count <= 0 { break }
+          bytes.append(contentsOf: buffer.prefix(count))
+        }
+        data = bytes
+      } else {
+        data = Data()
+      }
+      #expect((try? JSONDecoder().decode(JSONObject.self, from: data)) == body)
+      protocolInstance.respond(status: 422, data: json(["error": "fixture_stop"] as JSONValue))
+    }
+    let fountain = try Fountain(
+      apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
+    let run = try fountain.runRequest(body, timeout: 5, collectEvents: true)
+    await #expect(throws: FountainError.self) { try await run.value() }
+  }
+
+  @Test func runRequestRejectsInvalidInputsBeforeHTTP() throws {
+    MockURLProtocol.handler = { _, instance in
+      Issue.record("Invalid run input reached HTTP")
+      instance.respond(status: 500)
+    }
+    let fountain = try Fountain(
+      apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
+    for prompt in [JSONValue.null, .string(""), .string(" \n")] {
+      #expect(throws: FountainError.self) {
+        try fountain.runRequest(["agent_id": .string("a1"), "prompt": prompt])
+      }
+    }
+    for queue in [JSONValue.bool(true), .number(0), .string("false")] {
+      #expect(throws: FountainError.self) {
+        try fountain.runRequest([
+          "agent_id": .string("a1"), "prompt": .string("hello"), "queue": queue,
+        ])
+      }
+    }
+  }
+
   @Test func httpClientBuildsAuthenticatedRequestAndTypedError() async throws {
     MockURLProtocol.handler = { request, protocolInstance in
       #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
