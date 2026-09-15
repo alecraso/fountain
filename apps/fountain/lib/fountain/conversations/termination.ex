@@ -11,9 +11,11 @@ defmodule Fountain.Conversations.Termination do
   `state.handle` or orders a row write against the reply. Everything here is a
   function over a conversation id, the registry and rows.
 
-  The row writes stay in `Fountain.Conversations`
-  (`_unsafe_release_conversation/2`, `_unsafe_finish_conversation_termination/2`).
-  The machine fence a forced teardown refuses or commits against is
+  This module also owns the terminated and released rows themselves
+  (`_unsafe_release_conversation/2`, `_unsafe_finish_conversation_termination/2`,
+  moved from `Fountain.Conversations` in #2268), the same way
+  `Fountain.Conversations.Interruption` owns the interrupted turn row
+  (#2244). The machine fence a forced teardown refuses or commits against is
   `Fountain.Conversations.Lifecycle`'s (#2258) — a rule about the sandbox,
   not a conversation verb; this module calls it, it does not own it.
 
@@ -30,7 +32,8 @@ defmodule Fountain.Conversations.Termination do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.{Conversation, Sandbox}
+  alias Fountain.Repo
 
   @doc """
   Terminate the conversation. If the GenServer is alive, it tears down the
@@ -111,7 +114,7 @@ defmodule Fountain.Conversations.Termination do
       case whereis(conv_id) do
         nil ->
           # ownership: established by the caller before release_conversation/2.
-          Conversations._unsafe_release_conversation(conv_id, actor_alive?: false)
+          _unsafe_release_conversation(conv_id, actor_alive?: false)
 
         pid ->
           call_server(pid, :release_conv)
@@ -259,15 +262,69 @@ defmodule Fountain.Conversations.Termination do
   end
 
   @doc """
-  The journal door for `Conversations._unsafe_release_conversation/2`: the
-  same durable-idle-parent release `ExecutionGuard._unsafe_release_parent/3`
+  The journal door for `_unsafe_release_conversation/2` below: the same
+  durable-idle-parent release `ExecutionGuard._unsafe_release_parent/3`
   performs, exposed so that module is the journal's only caller outside
   `ExecutionGuard` itself. Arguments and return are the guard's, unchanged.
   """
   def release_journal(conversation_id, writer, opts \\ []) do
-    # ownership: the caller (Conversations._unsafe_release_conversation/2)
-    # already received an owned conversation id from its own caller.
+    # ownership: the caller (_unsafe_release_conversation/2 below) already
+    # received an owned conversation id from its own caller.
     Fountain.Conversations.ExecutionGuard._unsafe_release_parent(conversation_id, writer, opts)
+  end
+
+  @doc "Terminate the owned conversation only when no turn or remote execution remains open."
+  def _unsafe_release_conversation(conversation_id, opts \\ []) do
+    # ownership: the lifecycle client/actor received an already-owned conversation.
+    result =
+      release_journal(
+        conversation_id,
+        fn current ->
+          current |> Conversation.changeset(%{status: "terminated"}) |> Repo.update()
+        end,
+        opts
+      )
+
+    case result do
+      {:ok, %{applied: true, conversation: conv}} ->
+        Conversations.broadcast_sidebar_update(conv.user_id)
+
+      _ ->
+        :ok
+    end
+
+    case result do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  @doc """
+  Finish an actor's termination only while the conversation is still bound to
+  its sandbox. The binding check and status write are one database statement,
+  so a reassignment during provider cleanup cannot terminate the new binding.
+
+  The actor owns both IDs. This is internal lifecycle bookkeeping; the public
+  `terminate_conversation/2` above records the action's audit once after a
+  successful reply. A missing or moved conversation returns a refusal.
+  """
+  def _unsafe_finish_conversation_termination(conversation_id, sandbox_id) do
+    query =
+      from(c in Conversation,
+        where: c.id == ^conversation_id and c.sandbox_id == ^sandbox_id,
+        select: c
+      )
+
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    case Repo.update_all(query, set: [status: "terminated", updated_at: now]) do
+      {1, [conv]} ->
+        Conversations.broadcast_sidebar_update(conv.user_id)
+        {:ok, conv}
+
+      {0, _} ->
+        {:error, :sandbox_unavailable}
+    end
   end
 
   # Records a lifecycle action against the conversation's owner.

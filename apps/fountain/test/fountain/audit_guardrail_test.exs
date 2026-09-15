@@ -191,7 +191,7 @@ defmodule Fountain.AuditGuardrailTest do
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
   # ever disagree, the moduledoc is the one to trust and this list is stale.
   @deliberately_silent %{
-    "Conversations._unsafe_finish_conversation_termination/2" =>
+    "Termination._unsafe_finish_conversation_termination/2" =>
       "internal conditional status write; terminate_conversation/2 audits the successful action once",
     "Conversations._unsafe_complete_turn/4" =>
       "conditional per-turn bookkeeping; the turn stage records completion outside its transaction",
