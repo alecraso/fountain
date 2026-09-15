@@ -182,15 +182,9 @@ defmodule Fountain.Webhooks.EventsTest do
     # catalogue assertion and the pin. Scan a tree holding one module the
     # inventory never heard of, publishing a retired stage two ways, and see
     # both reported — which is what fails the pin on the real tree.
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "events-test-#{System.pid()}-#{System.unique_integer([:positive])}"
-      )
-
+    root = Fountain.TmpDir.mkdir!("events-test")
     file = "lib/fountain/conversations/new_publisher.ex"
     File.mkdir_p!(Path.join(root, Path.dirname(file)))
-    on_exit(fn -> File.rm_rf!(root) end)
 
     File.write!(Path.join(root, file), """
     defmodule Fountain.Conversations.NewPublisher do
