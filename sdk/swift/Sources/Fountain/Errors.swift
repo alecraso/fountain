@@ -70,7 +70,8 @@ func fountainError(
   let kind: FountainError.Kind
   switch code {
   case "conversation_busy": kind = .conversationBusy
-  case "provisioning", "sprite_probe_failed", "fleet_full", "sandbox_unavailable", "sandbox_parking":
+  case "provisioning", "sprite_probe_failed", "fleet_full", "sandbox_unavailable",
+    "sandbox_parking":
     kind = .notReady
   case "sandbox_quota_exceeded": kind = .quotaExceeded
   case "insufficient_credits": kind = .insufficientCredits
