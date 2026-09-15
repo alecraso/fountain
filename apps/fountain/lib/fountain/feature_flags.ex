@@ -5,7 +5,7 @@ defmodule Fountain.FeatureFlags do
   `enabled?(flag, user)` answers a yes/no for one user. The sources, in order:
 
   1. **Static overrides** — `config :fountain, :feature_flag_overrides,
-     %{"openai_compat" => true}` (from `FEATURE_FLAGS_ON=openai_compat,...` in
+     %{"connections" => true}` (from `FEATURE_FLAGS_ON=connections,...` in
      `config/runtime.exs`). A self-hoster with no PostHog turns a feature on
      for everyone this way; tests use it to flip a flag without any HTTP.
   2. **PostHog** — `POST {host}/flags/?v=2` with the project API key and the
@@ -38,10 +38,7 @@ defmodule Fountain.FeatureFlags do
 
   @flags %{
     # Provider registration and credential bindings have their own rollout.
-    connections: "connections",
-    # The OpenAI-compatible `/v1` endpoints (ADR 0035). Alpha: the dialect's
-    # edges (thread key, reasoning_content, error codes) may still move.
-    openai_compat: "openai_compat"
+    connections: "connections"
   }
 
   # The flags that read **on** where there is no PostHog to ask.

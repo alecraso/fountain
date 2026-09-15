@@ -142,12 +142,12 @@ defmodule Fountain.AnalyticsTest do
     end
 
     test "stamps the flags already known for the person" do
-      Application.put_env(:fountain, :feature_flag_overrides, %{"openai_compat" => true})
+      Application.put_env(:fountain, :feature_flag_overrides, %{"test_flag" => true})
 
       Analytics.capture("agent.created", @user_id)
 
       assert_receive {:posthog, "/batch/", %{"batch" => [event]}}
-      assert event["properties"]["$feature/openai_compat"] == true
+      assert event["properties"]["$feature/test_flag"] == true
     end
 
     test "never makes a flag lookup happen" do

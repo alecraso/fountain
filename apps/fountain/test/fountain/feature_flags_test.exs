@@ -6,6 +6,12 @@ defmodule Fountain.FeatureFlagsTest do
 
   @user_id "11111111-1111-1111-1111-111111111111"
 
+  # A neutral flag key, not one of `@flags`. `enabled?/2` takes the PostHog
+  # string directly, so this suite can exercise evaluation, caching and the
+  # capture behaviour without pinning itself to whichever real flag happens
+  # to exist — which is what tied it to the retired `openai_compat` (#2252).
+  @flag "test_flag"
+
   setup do
     previous = %{
       key: Application.get_env(:fountain, :posthog_project_api_key),
@@ -47,16 +53,16 @@ defmodule Fountain.FeatureFlagsTest do
   describe "without PostHog" do
     test "every flag reads off" do
       posthog_off()
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "a static override turns a flag on for everyone" do
       posthog_off()
-      Application.put_env(:fountain, :feature_flag_overrides, %{"openai_compat" => true})
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
-      assert FeatureFlags.enabled?(:openai_compat, %{id: @user_id})
+      Application.put_env(:fountain, :feature_flag_overrides, %{@flag => true})
+      assert FeatureFlags.enabled?(@flag, @user_id)
+      assert FeatureFlags.enabled?(@flag, %{id: @user_id})
       # An override applies even with no user to ask about.
-      assert FeatureFlags.enabled?(:openai_compat, nil)
+      assert FeatureFlags.enabled?(@flag, nil)
     end
 
     test "an unknown flag atom is a KeyError, not a silent off" do
@@ -69,7 +75,7 @@ defmodule Fountain.FeatureFlagsTest do
       posthog_off()
       assert FeatureFlags.enabled?(:connections, @user_id)
       assert FeatureFlags.enabled?(:connections, nil)
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "a static override still decides, in both directions" do
@@ -86,17 +92,17 @@ defmodule Fountain.FeatureFlagsTest do
     end
 
     test "reads the flag for the user" do
-      stub_flags(%{"openai_compat" => true})
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      stub_flags(%{@flag => true})
+      assert FeatureFlags.enabled?(@flag, @user_id)
 
-      stub_flags(%{"openai_compat" => false})
+      stub_flags(%{@flag => false})
       FeatureFlags.reset()
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "a flag PostHog does not mention is off" do
       stub_flags(%{"something_else" => true})
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     # The default is for a deployment with no flag service. Where there is one,
@@ -112,16 +118,16 @@ defmodule Fountain.FeatureFlagsTest do
 
     test "also reads the older /decide shape" do
       Req.Test.stub(FeatureFlags, fn conn ->
-        Req.Test.json(conn, %{"featureFlags" => %{"openai_compat" => true}})
+        Req.Test.json(conn, %{"featureFlags" => %{@flag => true}})
       end)
 
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "a static override wins over PostHog" do
-      stub_flags(%{"openai_compat" => true})
-      Application.put_env(:fountain, :feature_flag_overrides, %{"openai_compat" => false})
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      stub_flags(%{@flag => true})
+      Application.put_env(:fountain, :feature_flag_overrides, %{@flag => false})
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "caches the answer: a second call does not hit PostHog" do
@@ -129,18 +135,18 @@ defmodule Fountain.FeatureFlagsTest do
 
       Req.Test.stub(FeatureFlags, fn conn ->
         send(test, :posthog_called)
-        Req.Test.json(conn, %{"flags" => %{"openai_compat" => %{"enabled" => true}}})
+        Req.Test.json(conn, %{"flags" => %{@flag => %{"enabled" => true}}})
       end)
 
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
       assert_received :posthog_called
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
       refute_received :posthog_called
     end
 
     test "no user to ask about reads off without a call" do
       Req.Test.stub(FeatureFlags, fn _conn -> flunk("PostHog should not be called") end)
-      refute FeatureFlags.enabled?(:openai_compat, nil)
+      refute FeatureFlags.enabled?(@flag, nil)
     end
   end
 
@@ -152,7 +158,7 @@ defmodule Fountain.FeatureFlagsTest do
 
     test "with no cached answer every flag reads off — never on" do
       stub_down()
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "a 5xx is an outage too" do
@@ -160,32 +166,32 @@ defmodule Fountain.FeatureFlagsTest do
         conn |> Plug.Conn.put_status(503) |> Req.Test.json(%{"error" => "down"})
       end)
 
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "the last answer it gave is kept — on stays on" do
-      stub_flags(%{"openai_compat" => true})
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      stub_flags(%{@flag => true})
+      assert FeatureFlags.enabled?(@flag, @user_id)
 
       # Expire the cache entry, then take PostHog down.
       age_cache(@user_id)
       stub_down()
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
     end
 
     test "the last answer it gave is kept — off stays off" do
-      stub_flags(%{"openai_compat" => false})
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      stub_flags(%{@flag => false})
+      refute FeatureFlags.enabled?(@flag, @user_id)
 
       age_cache(@user_id)
       stub_down()
-      refute FeatureFlags.enabled?(:openai_compat, @user_id)
+      refute FeatureFlags.enabled?(@flag, @user_id)
     end
   end
 
   describe "what analytics is told" do
     setup do
-      stub_flags(%{"openai_compat" => true})
+      stub_flags(%{@flag => true})
       test = self()
 
       Req.Test.stub(Fountain.Analytics, fn conn ->
@@ -199,30 +205,30 @@ defmodule Fountain.FeatureFlagsTest do
 
     test "reading a flag captures $feature_flag_called with the answer" do
       posthog_on()
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
 
       assert_receive {:posthog, %{"batch" => [event]}}
       assert event["event"] == "$feature_flag_called"
       assert event["distinct_id"] == @user_id
-      assert event["properties"]["$feature_flag"] == "openai_compat"
+      assert event["properties"]["$feature_flag"] == @flag
       assert event["properties"]["$feature_flag_response"] == true
     end
 
     test "reading the same flag again inside the cache window says nothing more" do
       posthog_on()
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
       assert_receive {:posthog, _}
 
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
       refute_receive {:posthog, _}, 50
     end
 
     test "cached_flags/1 reports what is known without calling PostHog" do
       posthog_on()
-      assert FeatureFlags.enabled?(:openai_compat, @user_id)
+      assert FeatureFlags.enabled?(@flag, @user_id)
 
       Req.Test.stub(FeatureFlags, fn _conn -> flunk("must not call PostHog") end)
-      assert FeatureFlags.cached_flags(@user_id) == %{"openai_compat" => true}
+      assert FeatureFlags.cached_flags(@user_id) == %{@flag => true}
     end
 
     test "cached_flags/1 is empty for a person nothing is known about" do
@@ -233,9 +239,9 @@ defmodule Fountain.FeatureFlagsTest do
 
     test "a static override shows up in cached_flags/1 with no PostHog at all" do
       posthog_off()
-      Application.put_env(:fountain, :feature_flag_overrides, %{"openai_compat" => true})
+      Application.put_env(:fountain, :feature_flag_overrides, %{@flag => true})
 
-      assert FeatureFlags.cached_flags(@user_id) == %{"openai_compat" => true}
+      assert FeatureFlags.cached_flags(@user_id) == %{@flag => true}
     end
   end
 
