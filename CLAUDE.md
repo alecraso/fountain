@@ -226,11 +226,7 @@ conversation-facing feature goes in the app; marketing copy goes in
 - Don't describe unbuilt behaviour as built in an ADR or a docstring. Say
   `**Status:** Proposed` or "not yet built", and remove the caveat in the PR
   that builds it.
-- Don't cite the current change's own issue or PR number inside the change;
-  you cannot know it, and #1006 was guessed wrong in 20 places (#1014). A
-  citation names history: cite the closed issue or merged PR that explains
-  the line, and check its title matches the sentence. CI leaves the resolved
-  states and titles as a PR comment (`scripts/ci/check_issue_refs.py`).
+- Check that an issue or PR reference supports the statement it accompanies.
 
 ## How a change lands
 
