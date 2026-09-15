@@ -92,7 +92,11 @@ defmodule Fountain.Webhooks.EventsTest do
     # assumed: `caller_tool` is still published from `Pending` and is already
     # unreachable, so it must be retired vocabulary and not a catalogue entry.
     assert Enum.any?(published_pairs(), fn {stage, _} -> stage == "caller_tool" end),
-           "no caller_tool call site left — drop it from @retired and from this test"
+           "No caller_tool call site left, so this transitional test has done " <>
+             "its job — delete it. Do NOT drop caller_tool from @retired here: " <>
+             "the vocabulary stays valid until the rollback floor (#2273), so " <>
+             "an endpoint still naming it can be edited. The tests above cover " <>
+             "that state."
 
     refute Events.known?("conversation.caller_tool.started")
     refute List.keymember?(Events.catalogue(), "caller_tool", 0)
