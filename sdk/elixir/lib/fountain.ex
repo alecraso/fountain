@@ -60,12 +60,23 @@ defmodule Fountain do
     Run.new(
       client.api,
       fn ->
-        conversation = HTTP.data!(client.api, "POST", "/api/conversations", body: request)
+        response = HTTP.request!(client.api, "POST", "/api/conversations", body: request)
+        conversation = response["data"]
 
-        turn_number =
-          if request["channel_id"], do: next_turn_number(client.api, conversation["id"]), else: 1
+        if get_in(response, ["meta", "resumed"]) == true do
+          # Resume binds the channel without sending its prompt. Capture history
+          # before submission so even a fast next turn is followed correctly.
+          {:ok, after_cursor} = Conversation.cursor(resume(client, conversation["id"]))
+          turn_number = next_turn_number(client.api, conversation["id"])
 
-        {conversation, turn_number, 0}
+          HTTP.request!(client.api, "POST", "/api/conversations/#{conversation["id"]}/prompts",
+            body: Map.take(request, ["prompt", "images"])
+          )
+
+          {conversation, turn_number, after_cursor}
+        else
+          {conversation, 1, 0}
+        end
       end,
       opts
     )

@@ -191,3 +191,7 @@ values survive; omitted keys remain omitted. Local options stay in the third
 argument. No names are resolved and no legacy run options are merged into the
 request; existing `Fountain.run/3` calls keep working. A run requires a non-empty
 prompt and cannot queue. Use the HTTP client for promptless or queued creation.
+
+With `channel_id`, `run_request` follows turn 1 when the server creates a
+conversation, including fresh launches. When the server resumes a channel,
+it submits the prompt and images to that conversation and follows the next turn.
