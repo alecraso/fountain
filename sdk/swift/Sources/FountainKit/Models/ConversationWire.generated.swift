@@ -501,9 +501,9 @@ extension SandboxDetail {
   public struct SandboxConversation: Sendable, Decodable, Hashable, Identifiable {
     public var id: String
     public var insertedAt: Date?
-    public var midTurn: Bool
+    public var midTurn: Bool?
     public var runtime: Runtime?
-    public var status: ConversationStatus
+    public var status: ConversationStatus?
     public var title: String?
 
     enum CodingKeys: String, CodingKey {

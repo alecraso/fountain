@@ -22,10 +22,10 @@ The generator reads the committed contract and does not require Elixir to run.
 
 ## Compatibility rules
 
-Existing nested public names remain intact. The generator retains seven existing
+Existing nested public names remain intact. The generator retains nine existing
 optional-property APIs in `OPTIONAL_COMPAT`: Sandbox and SandboxDetail spriteName
 and status, SandboxDetail conversations, Sandbox.RunnerRef online, and Runner
-createdAt. Their historically permissive decoding remains supported. This is a
+createdAt, plus SandboxDetail.SandboxConversation status and midTurn. Their historically permissive decoding remains supported. This is a
 finite compatibility exception, not a list of fields to extend for new API work.
 New fields use contract requiredness/nullability directly.
 

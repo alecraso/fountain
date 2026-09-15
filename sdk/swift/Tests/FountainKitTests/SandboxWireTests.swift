@@ -28,6 +28,25 @@ import Testing
     #expect(throws: (any Error).self) { try decode(Sandbox.self, #"{"sprite_name":"missing-id"}"#) }
   }
 
+  @Test(arguments: [
+    #"{"id":"c1"}"#,
+    #"{"id":"c1","status":null,"mid_turn":null}"#,
+    #"{"id":"c1","status":"future_status","mid_turn":false}"#,
+  ])
+  func nestedConversationKeepsItsOptionalSourceAPI(_ json: String) throws {
+    let detail = try decode(SandboxDetail.self, "{\"id\":\"s1\",\"conversations\":[\(json)]}")
+    let conversation = try #require(detail.conversations?.first)
+    // These optional accesses fail to compile if generation tightens the
+    // published API, even when all current server payloads have values.
+    let status = conversation.status?.rawValue
+    if let midTurn = conversation.midTurn {
+      #expect(midTurn == false)
+      #expect(status == "future_status")
+    } else {
+      #expect(status == nil)
+    }
+  }
+
   @Test func detailRunnerAndTreeRetainTheirPublicShapes() throws {
     let detail = try decode(
       SandboxDetail.self,

@@ -36,6 +36,7 @@ OPTIONAL_COMPAT = {
     ("SandboxDetail", "sprite_name"), ("SandboxDetail", "status"),
     ("SandboxDetail", "conversations"), ("SandboxRunner", "online"),
     ("Runner", "created_at"),
+    ("SandboxConversation", "status"), ("SandboxConversation", "mid_turn"),
 }
 ENUM_TYPES = {
     ("Conversation", "runtime"): "Runtime",
