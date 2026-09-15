@@ -21,12 +21,25 @@ day that changes, and for a fix that has to land in a graduated library.
 | `managoat_runner` | the self-hosted runner wire protocol, the sandbox adapter over it, the FakeDaemon, behind `Managoat.Runner.Host` | `Fountain.Runners.Host` over Horde; the runners table, placement, presence |
 | `managoat_runtimes` | how claude/codex/gemini/opencode get into a sandbox speaking ACP: the behaviour, the pinned adapter table, Layout, Instructions, Quirks, Model, Skills, the FakeRuntime | the model catalog, the bundled skill content, the ask timeout, `InferenceCredentials` |
 
-Each is pinned `~> 0.1.0` in `apps/fountain/mix.exs` and lives in the
+Current version requirements live in `apps/fountain/mix.exs`; each library lives in the
 repository `managoat/managoat_<name>`. The umbrella holds no library app
 today; `umbrella_layout_test.exs` and `scripts/test-libraries.sh` guard the
 next one. Taking a new library release into Fountain is a pin bump PR here,
 and that PR is the only place the new version is exercised against Fountain,
 so do not skip its gates.
+
+## Updating existing libraries
+
+Prepare the library fix and Fountain integration together so the consumer's
+requirements are known before publishing. Keep the library release compatible
+with its current consumers where practical. Land and publish the library, then
+finish Fountain's dependency update against that released artifact and run the
+server checks and affected integration tests.
+
+Related library releases needed by one Fountain change can share a single
+Fountain PR. Routine updates do not use the graduation recipe or its one-library-
+at-a-time sequencing: they change dependencies and callers, not repository
+boundaries. Keep the release links in the PR so both sides are reviewable.
 
 ## Adding an umbrella library app
 
@@ -59,7 +72,7 @@ what the graduation template added. A new one needs:
   at the umbrella root runs every app in one VM, so a library helper's
   `put_env` is still in effect when Fountain's suite starts (#1352 lost ten
   runner tests to this). CI never sees it, since the partitions and
-  `scripts/test-libraries.sh` are separate VMs; `mix precommit` does.
+  `scripts/test-libraries.sh` are separate VMs; `mix precommit --full` does.
 
 `apps/fountain/test/fountain/umbrella_layout_test.exs` checks every one of
 those and fails the suite on a miss. The root gates already reach the new
@@ -156,7 +169,7 @@ and the table above):
 - the table above, the "Built so far" block in decisions/0037 (then
   `scripts/decisions-index.sh` and `okf validate decisions`), and a changelog
   fragment under `changelog.d/`;
-- the gates: `mix precommit` (which runs `umbrella_layout_test.exs` and every
+- the gates: `mix precommit --full` (which runs `umbrella_layout_test.exs` and every
   remaining library's suite), `scripts/test-libraries.sh`, and
   **`docker build --target build .`**. The last one matters most: the
   Dockerfile's deps layer is the only consumer of the hex release that CI does
@@ -184,9 +197,8 @@ graduates.
 
 **The cost that starts on graduation day.** A change across the seam is two
 PRs: a bump in the library (its gate insists), then a pin in Fountain. The
-version pins here are `~> 0.1.0`, patch-level while every library is 0.x, so
-a library's `0.2.0` reaches Fountain only when someone bumps the pin, on
-purpose. A merged-PR branch push runs no CI here, so the pin PR is the only
+version requirements in `apps/fountain/mix.exs` and the committed lockfile
+control which release Fountain uses. A merged-PR branch push runs no CI here, so the pin PR is the only
 place the new version is exercised against Fountain; do not skip its gates.
 Merges into a library repository are yours once its CI is green, because its
 `main` is what publishes. This cost is the reason extraction is paused.

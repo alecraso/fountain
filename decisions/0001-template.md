@@ -18,39 +18,37 @@ generated: { by: human:jhgaylor, at: 2026-08-02T04:03:06-04:00 }
 Every ADR opens with an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 frontmatter block. `okf validate decisions` runs in CI and fails on a missing
 `type`, a malformed date, or a link to an ADR that is not on this branch.
-Copy this block and fill in every line:
+For a new ADR, use this frontmatter:
 
 ```yaml
 ---
 type: ADR
 title: "<title, without the NNNN prefix>"
-description: "<one sentence a reader can act on without opening the file; name what is unbuilt>"
-tags: [<area>, <area>]
-status: stable            # OKF lifecycle: draft (Proposed) | stable (Accepted) | deprecated (Superseded)
+description: "<one-sentence decision summary; name unbuilt behavior>"
+tags: [<area>]
+status: stable            # draft for Proposed; deprecated for Superseded
 adr: "NNNN"
 adr_status: "Accepted"    # Proposed | Accepted | Partially accepted | Superseded by NNNN
-date: YYYY-MM-DD          # the day the decision was made or proposed
-generated: { by: human:<github-handle>, at: <ISO 8601 datetime of the last meaningful edit> }
-verified: { by: human:<github-handle>, at: <ISO 8601 datetime> }   # only once checked against the code
-stale_after: YYYY-MM-DD   # required while anything described is unbuilt; the date to re-check the status block
+date: YYYY-MM-DD
 ---
 ```
 
-`verified` is the machine-readable form of "nothing described here is
-unbuilt" (or of an explicit built / not-built accounting in the status block).
-Set it when you have checked the ADR against the code, update `at` when you
-check again, and never set it on a status block you have not checked. Anything
-Proposed or Partially accepted carries `stale_after`; the PR that finishes the
-build removes it along with the "not yet built" caveats. Regenerate the index
-with `scripts/decisions-index.sh` after adding or renaming an ADR.
+`adr_status` records the decision; `status` is the corresponding OKF lifecycle
+used by the validator. Accepted and Partially accepted use `stable`.
+The body explains what is built and what remains unbuilt. Acceptance records a
+decision, not proof that every described feature exists. Update that accounting
+when implementation changes.
 
-Real ADRs carry a status too: `Proposed` (decision not yet made), `Accepted`
-(decided; may describe behavior that is not all built yet — if so, name what
-is unbuilt), or `Superseded by NNNN`. Never describe unbuilt behavior as
-existing: the 2026-07 audit (#200) found three mechanisms asserted as
-implemented that did not exist, and every reader of those ADRs was misled
-until code was checked (#271). The PR that builds a described mechanism
-removes its "not yet built" caveat in the same change.
+`generated`, `verified` and `stale_after` are optional historical metadata.
+Routine edits do not require timestamps, verifier attribution or a review date.
+If retained, a verification entry must describe an actual check; omit it rather
+than asserting verification that did not happen. Git history records authors
+and edits. Existing metadata can remain without being refreshed for prose edits.
+
+Run `scripts/decisions-index.sh` after changing the title, status or description,
+or adding/removing an ADR; commit the resulting index. Run `okf validate decisions`
+to check the bundle. No ADR is needed for routine fixes or internal refactors
+that preserve an existing decision.
 
 ## Context
 

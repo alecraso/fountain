@@ -135,46 +135,20 @@ tested it.
 
 ### Landing a change
 
-Main takes roughly 26 merges a day, and a PR that was green an hour ago was
-green against a different main. The queue closes that gap: you do not merge
-a PR, you queue it, and GitHub builds the exact tree the merge would produce
-before letting it in.
+The contributor procedure is in
+[CONTRIBUTING.md](../../CONTRIBUTING.md#pull-requests).
 
-```sh
-gh pr merge <N> --squash --auto     # queue it; the queue merges when green
-```
-
-- **A PR still needs its approving review.** GitHub refuses to enqueue a PR
-  whose merge requirements are unmet, so an unreviewed PR does not fail; it
-  never enters, and `--auto` sits there looking broken. Check
-  `gh pr view <N> --json reviewDecision` before anything else. Approval is a
-  human's to give; never manufacture one from a second account.
-- **Nothing needs rebasing to be mergeable.** Rebase because you want the
-  code, not to satisfy a gate.
-- **A queued PR can still be rejected.** If the group fails, the PR is
-  ejected and stays open with the failure attached. That failure is usually
-  real: your change against a main it had never been tested with.
-- **Merging is not instant.** Every queued PR gets its own `merge_group`
-  build, and one builds at a time (`max_entries_to_build: 1`, sized for the
-  free plan's 20 concurrent jobs), so under a burst a PR waits for the
-  entries ahead of it and merges as soon as its own build passes. The merge
-  limits (`min_entries_to_merge`, the wait) only delay a merge after a
-  build; they never combine builds. Queue it and move on; watch
-  `gh pr checks <N>`.
-- **Stacked PRs do not go in the queue until they are the tip.** GitHub only
-  queues a PR whose base is `main`, so a stack lands one stage at a time:
-  merge stage 1, let GitHub retarget stage 2 to `main`, queue stage 2.
-- **Never `--admin`.** A bypass lands a tree the queue never tested and
-  denies main's push the `tested-tree` artifact, so the full suite re-runs on
-  main anyway. It is for a genuine emergency (reverting a broken main), and
-  the PR says so.
+Each queued PR gets a merge-group build; one builds at a time under the current
+runner budget. Merge wait settings delay merging after a build; they do not
+combine builds. An unreviewed PR does not enter the queue, and a failed group
+is ejected. Main reuses successful tested-tree evidence as described above.
 
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
 PR runs 24 jobs; a full merge group runs 25 because both probes run. The
 documented limit is 20 concurrent runners. The queue builds one group at a
-time and batches up to five PRs. Revisit
+time. Its merge settings do not batch builds. Revisit
 `max_entries_to_build` when the concurrency limit changes.
 
 ## SDK jobs
