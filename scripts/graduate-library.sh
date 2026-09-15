@@ -2,7 +2,7 @@
 #
 # Graduate an umbrella library app (apps/managoat_<name>) to its own
 # repository, managoat/managoat_<name>, from which CI publishes it to hex.
-# The recipe is written down in CONTRIBUTING.md ("Graduating a library");
+# The recipe is written down in contributing/component-libraries.md;
 # this is the executable half of it. It does not touch Fountain's tree: the
 # Fountain-side PR (delete the app, pin the hex release) is a separate step.
 #
@@ -256,7 +256,7 @@ Next:
      which publishes ${app} to hex and tags v<version>. A 401 from hex means
      HEX_API_KEY is not visible to the repository; stop and ask.
   2. Confirm https://hex.pm/packages/${app} and https://hexdocs.pm/${app}.
-  3. The Fountain-side PR (CONTRIBUTING.md, "Graduating a library"): delete
+  3. The Fountain-side PR (contributing/component-libraries.md): delete
      ${app_dir}, pin {:${app}, "~> <version>"} in apps/fountain/mix.exs, drop
      the Dockerfile COPY line, and build the image locally before opening it.
 MSG

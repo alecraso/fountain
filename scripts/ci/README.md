@@ -11,6 +11,54 @@ older pending validation or wait behind an unrelated run. Superseded PR runs
 still cancel. Image builds retain the built-ancestor diff, which includes all
 image-affecting changes since the last built ancestor.
 
+## The jobs
+
+`.github/workflows/ci.yml` runs on every push to `main`, every PR and every
+merge group. The gates are grouped into jobs that share nothing, so the job
+name in a red build says which toolchain to look at:
+
+| Job | What it runs |
+|---|---|
+| **workflow-checks** | `CI policy and alert tests`: conflict-marker detection (`scripts/conflict-markers.py`), the Python suite in `scripts/ci/` that gates CI's own decision logic, the changelog guard, the issue-citation report (`scripts/ci/check_issue_refs.py`, advisory) and Prometheus alert-fixture evaluation (`scripts/test-alerts.py`). Required even for docs-only changes and reused trees |
+| **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
+| **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
+| **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
+| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `docs_touched`, `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/sdk_changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
+| **already-tested** | `Skip the re-run when a PR already tested this exact tree`: `scripts/ci/already-tested.sh` compares the checkout tree with a successful run's `tested-tree` artifact. Runs only on `push` and `merge_group`. Missing or expired artifacts and API failures leave `skip=false` |
+| **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
+| **python-sdk** (×2) | The Python SDK on 3.9 and 3.13, conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
+| **typescript-sdk** (×2) | The TypeScript SDK on the minimum Node in `engines.node` (20.19.0) and on 24, conformance fixtures, and the packed tarball installed into a throwaway consumer project |
+| **swift-sdk** (×2) | The Swift SDK on ubuntu-24.04 and macos-15, with its own conformance step. It runs no `sdk/conformance/lint.py` |
+| **cli-plugins** | Both Go modules (`cli/` and `apps/fountain_buzz/cli`) with vet and gofmt, the Hermes plugin, and the deployed-instance runner tests under `deployed/test/` |
+| **core-distribution** | Builds with `BUNDLE_EXTENSIONS=false`, boots and migrates a fresh database, probes health, and checks that extension applications and API paths are absent; then rebuilds with extensions to check their inclusion. Skips docs-only changes and reused trees |
+| **compose-fresh-clone** | `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file |
+| **compose-pinned-image-boot** | `scripts/compose-boot-check.sh` exercises the Compose quick start against its pinned release image. An unpublished pin that matches the version in `mix.exs` defers the boot check to `release.yml`; any other missing pin fails |
+| **sdk-checks** | A stable aggregate over the four SDK jobs. A selected SDK must succeed even on a docs-only server plan, because an SDK's own docs page selects it. Legs skip only for a reused tree or an unselected language |
+| **docs** | Compiles the embedded manual, runs `docs_test.exs` and `docs_controller_test.exs`, checks public GitHub documentation links, retains the advisory prose reports, and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` is true; skipped on `push` |
+| **docs-prose** | Advisory wording reports when docs, prose configuration or the workflow changes, and on a full main run |
+| **gate** | `CI required`: validates every expected job result and records a successful PR checkout tree |
+
+`mix hex.audit` is not one of these: `scripts/hex-audit-gate.exs` fails the
+build on a security advisory unless it is acknowledged in `mix.exs`, and only
+retirements stay non-blocking. `config/hex_advisories.exs` additionally
+acknowledges the incorrect Decimal CVE-2026-32686 finding for the reviewed
+3.1.1 artifact only, matching both checksums; remove it when the EEF feed is
+corrected (`decisions/evidence/decimal-advisory.json`,
+`python3 scripts/verify-decimal-audit.py`).
+
+Outside `ci.yml`, `dead-code.yml` publishes a monthly advisory report of
+public Elixir functions nothing calls and unreachable Go functions
+(`scripts/dead-code.sh` locally; CONTRIBUTING.md, "Finding dead code", says
+how to read it). It gates nothing.
+
+Measure the slowest partition plus coverage and runner queue delays before
+adding runners. Dialyzer can dominate cold runs; the core release has its own
+compiled-build cache.
+
+`mix precommit` (`scripts/precommit.sh`) is the local subset: the static
+job, sobelow, a release assemble and the suite. CONTRIBUTING.md, "Before you
+push", lists its stages.
+
 ## Database setup stalls
 
 The partition jobs load `mix-diagnostics.exs` before running database setup.
@@ -86,6 +134,39 @@ and main's push finds the queue's artifact and finishes in seconds. Main finds
 it through the queue's `gh-readonly-queue/<base>/pr-<number>-<sha>` branch
 name, which is the only link back from a squashed commit to the run that
 tested it.
+
+### Landing a change
+
+Main takes roughly 26 merges a day, and a PR that was green an hour ago was
+green against a different main. The queue closes that gap: you do not merge
+a PR, you queue it, and GitHub builds the exact tree the merge would produce
+before letting it in.
+
+```sh
+gh pr merge <N> --squash --auto     # queue it; the queue merges when green
+```
+
+- **A PR still needs its approving review.** GitHub refuses to enqueue a PR
+  whose merge requirements are unmet, so an unreviewed PR does not fail; it
+  never enters, and `--auto` sits there looking broken. Check
+  `gh pr view <N> --json reviewDecision` before anything else. Approval is a
+  human's to give; never manufacture one from a second account.
+- **Nothing needs rebasing to be mergeable.** Rebase because you want the
+  code, not to satisfy a gate.
+- **A queued PR can still be rejected.** If the group fails, the PR is
+  ejected and stays open with the failure attached. That failure is usually
+  real: your change against a main it had never been tested with.
+- **Merging is not instant.** A lone PR waits up to five minutes for company
+  (batching is how the queue affords a full suite under the free plan's 20
+  concurrent jobs), then builds. Queue it and move on; watch
+  `gh pr checks <N>`.
+- **Stacked PRs do not go in the queue until they are the tip.** GitHub only
+  queues a PR whose base is `main`, so a stack lands one stage at a time:
+  merge stage 1, let GitHub retarget stage 2 to `main`, queue stage 2.
+- **Never `--admin`.** A bypass lands a tree the queue never tested and
+  denies main's push the `tested-tree` artifact, so the full suite re-runs on
+  main anyway. It is for a genuine emergency (reverting a broken main), and
+  the PR says so.
 
 ### Sizing
 
@@ -172,6 +253,24 @@ Register a new language in `LANGUAGES` and `OWNED_FILES`, expose its workflow
 output, and add routing fixtures in `test_sdk_changes.py`. Register SDK docs
 and checked snippets before the unrelated-docs allowlist. Keep contract
 triggers outside that allowlist; uncertainty must select every SDK.
+
+## Coverage
+
+Coverage uses Elixir's built-in cover, not ExCoveralls: ExCoveralls cannot
+merge results across machines, and the suite runs as six partitions on six
+of them (#620, #894). Settings live in `coverage.exs` at the repo root, read
+by both `mix.exs` files: `summary: [threshold: 85]` and `:ignore_modules`,
+which matches **module names**, not source paths (a bare atom for one
+module, a regex against `inspect(module)` for a former directory entry).
+Locally, `mix test --cover` reports and gates in one step.
+
+CI enforces the threshold with `scripts/coverage-gate.exs`, not
+`mix test.coverage`: ~90% of that task's time renders an HTML report the job
+never opens. The script reads the same `coverage.exs` and was verified to
+produce the identical total (85.46% on the same six exports). Run
+`mix test.coverage` locally for the per-module table or the HTML, and
+re-verify the two agree when bumping Elixir, since the script depends on
+`:cover` semantics the pin currently freezes.
 
 ## Refresh partition timings
 

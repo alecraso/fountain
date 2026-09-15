@@ -1,8 +1,8 @@
 # Contributing to Fountain
 
-Start with [`CLAUDE.md`](CLAUDE.md) for architecture, the tenant isolation
-contract, test patterns and the things not to do. Architecturally significant
-choices are recorded as ADRs in [`decisions/`](decisions/).
+Start with [`CLAUDE.md`](CLAUDE.md) for the rules, the commands and the map of
+where each longer procedure lives. Architecturally significant choices are
+recorded as ADRs in [`decisions/`](decisions/).
 
 ## Licensing of contributions
 
@@ -59,61 +59,94 @@ for `git commit`; use `-s`, or install a `commit-msg` hook.
 mix precommit
 ```
 
-That runs the core gate locally: compile with warnings as errors, unused deps,
-format, `credo --strict`, sobelow, dialyzer and the test suite. Read the
-output rather than trusting the exit code, since an alias stage can fail while
-the alias still exits 0. Confirm you reached `N tests, 0 failures`.
+That runs `scripts/precommit.sh`: CI's Elixir static job, the sobelow scan, a
+prod release assemble and the test suite, each stage its own process, in
+this order:
 
-CI additionally runs `hex.audit`, the Go CLI checks (`go test ./...`,
-`go vet ./...` in `cli/`), a release boot check, OpenAPI validation, and the
-docs gates. If you touched `docs/` or an extension manual, read the three prose reports too.
-They advise on wording in CI; findings do not block a merge:
+| Stage | Runs |
+|---|---|
+| `toolchain` | the shell's Elixir and OTP match `.tool-versions` (activate mise, or `mise exec -- mix precommit`) |
+| `conflict-markers` | `python3 scripts/conflict-markers.py` |
+| `compile` | `MIX_ENV=test mix compile --warnings-as-errors` |
+| `deps` | `mix deps.unlock --check-unused` |
+| `format` | `mix format --check-formatted` |
+| `credo` | `mix credo --strict` |
+| `dialyzer` | `MIX_ENV=dev mix dialyzer` |
+| `sobelow` | `scripts/sobelow.sh`, core with `ee/lib` overlaid |
+| `release` | `MIX_ENV=prod mix deps.get && mix release fountain_server --overwrite` |
+| `test` | `mix test` from the umbrella root: core, `ee/test` and every sibling app |
 
-```bash
-python3 scripts/docs-style.py
-vale lint docs $(ls -d apps/*/docs 2>/dev/null)
-npm ci --prefix scripts/destink && node scripts/destink/destink.mjs
-```
+**The exit status is the verdict.** The run stops at the first failing stage,
+names it, and exits with that stage's status; the last line is always
+`precommit: PASSED` or `precommit: FAILED at <stage>`. The one thing the
+script cannot see past is a pipe: `mix precommit | tee log` reports `tee`'s
+status unless the shell has `pipefail` on. `mix precommit --list` prints the
+stages, and `mix precommit credo test` runs only those, in the canonical
+order, after a fix.
 
-An extension's slice of the manual (ADR 0043) is held to the same three gates.
-`docs-style.py` and `destink.mjs` find `apps/*/docs` themselves; vale selects
-from its path arguments, so its directories are named on the command line.
+The release stage is the only one that builds `MIX_ENV=prod`. It is there
+because everything else is blind to a prod-only dependency graph: the
+OpenTelemetry family is `only: :prod`, and the hackney 4 bump that collided
+with it left every other gate green on a tree whose release would not
+assemble (#1472, #1477). It costs ~9s warm; a fresh checkout pays one full
+prod compile first. It assembles only; CI boots the release, because booting
+needs `SECRET_KEY_BASE` and a database.
 
-The third one looks for AI-writing tells. Its engine is the published
-`sentences` package, so the `npm ci` installs it (~5M) and is only needed the
-first time. If it reports something that is not prose — a table cell, a CLI
-flag, anything inside a code fence — the fix belongs upstream in the
-package's `lint/markdown-prose`, not in the page. The rule set, and why each
-rule is on or off, is in `scripts/destink/destink.mjs`.
-
-The structural half — every page named in `docs/nav.yml`, every page on disk
-named there, and every internal `/docs` link and anchor — is in the test suite,
-so `mix precommit` already covers it:
-
-```bash
-mix test apps/fountain/test/fountain/docs_test.exs
-```
-
-To read a page as it will ship, start the server and open `/docs`. That route
-is the only place `docs/` is published.
+CI additionally runs `hex.audit`, the Go modules, the release boot check,
+OpenAPI validation, the SDK jobs and the docs gates;
+[`scripts/ci/README.md`](scripts/ci/README.md) lists every job. If you
+touched `docs/` or an extension's manual, read
+[`contributing/docs.md`](contributing/docs.md): the structural checks are in
+the suite and `mix precommit` runs them, and the three advisory prose
+reports are run by hand.
 
 ### If a test went red and then green
 
 Do not re-run it and move on. Keep the failed run's evidence and compare the
-commits, workflow conditions, runner environment and external dependencies.
-Record unexplained failures with what you know. File confirmed flakes:
+commits, workflow conditions, runner environment and external dependencies
+before calling it a flake. A green PR does not prove that a failed
+post-merge run was one: the merged tree can include other changes, push-only
+jobs test different behaviour, and the runner or an external service can
+differ. Record an unexplained failure with what you know rather than
+dismissing it because a rerun passed. File confirmed flakes:
 
 ```bash
 gh issue create --label type:flake --label area:testing --title "Flake: <what raced>"
 ```
 
 Or use the **Flaky test** issue template, which applies the same labels. Every
-flake carries the `type:flake` label, so
+flake carries `type:flake`, with `area:testing` and the area the test covers
+alongside, so
 [the open ones](https://github.com/managoat/fountain/issues?q=is%3Aopen+label%3Atype%3Aflake)
-are one query. Search before filing — the same flake gets found repeatedly, and
-a second issue splits the evidence. What makes one actionable is in CLAUDE.md
-under *Flaky tests*: the failing assertion, a rate rather than an adjective,
-and the run URLs.
+are one query. Search first (`gh issue list --label type:flake --state all`):
+the same flake gets found repeatedly, and a second issue splits the evidence.
+
+File rather than fix in place when you are mid-task on something else, so a
+campaign's diffs stay about the campaign (#1539). Fix it in place when it
+was your own change that flaked.
+
+What the issue needs, because a flake nobody can reproduce is a flake nobody
+can close:
+
+- the failing assertion with its `left:`/`right:`, and the file and line;
+- **how often, out of what**: "one full-suite run in eight", "four
+  first-attempt CI failures this week", with the run URLs;
+- the mechanism if you have it: what the test asserts on versus what it
+  waits on. That difference is the whole bug in most of them.
+
+Two places to look for candidates are failed first attempts followed by
+successful reruns, and failed `push` runs on `main`. A successful later
+attempt alone does not establish why the first failed:
+
+```bash
+gh run list --workflow ci.yml --limit 200 \
+  --json databaseId,attempt,conclusion,headBranch --jq '.[] | select(.attempt > 1)'
+gh api /repos/managoat/fountain/actions/runs/<id>/attempts/1/jobs
+```
+
+Before filing from either source, date the failure against `git log` on the
+file a fix would touch: of four found this way on 2026-09-04, two had already
+been fixed after the failed run.
 
 ## Finding dead code
 
@@ -205,177 +238,20 @@ missing. The root aliases shell into the app the way `ecto.reset` already did.
 
 ## Adding an umbrella library app
 
-Fountain's database-free subsystems were extracted as Apache-2.0 libraries
-under the `Managoat.*` namespace (decisions/0037, tracker #1334). Each
-started as an app in this umbrella, `apps/managoat_<name>`, and graduated to
-a `managoat/managoat_<name>` repository once its surface stopped moving; all
-nine have (#1345; managoat_runtimes, #1368, by the same recipe), so the
-umbrella holds none today. A new one starts the
-same way. The model to copy is the last extraction as merged,
-`git show 1b848031 -- apps/managoat_substitution` (#1347, the smallest), or
-`managoat/managoat_substitution` on GitHub minus what the graduation
-template added. A new one needs:
-
-- `apps/managoat_<name>/mix.exs` with the three umbrella path lines
-  (`build_path`, `deps_path`, `lockfile`) and deliberately **no**
-  `config_path`: `config/runtime.exs` calls Fountain modules, so a library
-  pointed at it cannot boot from its own directory. The library's tests must
-  pass with no config at all (set what they need in `test/test_helper.exs`
-  or per test). Plus `package` metadata with `licenses: ["Apache-2.0"]`, and
-  its own `test_coverage` threshold.
-- `LICENSE` (Apache-2.0, copy `cli/LICENSE`), `README.md`, `.formatter.exs`,
-  `test/test_helper.exs`.
-- A line in `apps/fountain/mix.exs`: `{:managoat_<name>, in_umbrella: true}`.
-- A `COPY apps/managoat_<name>/mix.exs` line in the Dockerfile's deps layer,
-  beside the existing one. Without it `mix deps.get` fails in the image
-  build, which CI does not run.
-- No reference to `Fountain.*` or `FountainWeb.*`, no
-  `Application.get_env(:fountain, …)`, and no `[:fountain, …]` telemetry
-  anywhere under its `lib/` or `test/`. The library takes what it needs as
-  arguments or reads its own otp_app.
-- If the library's `test/test_helper.exs` writes its own config (a test
-  host, a stub name), Fountain's `apps/fountain/test/test_helper.exs` must
-  set the value Fountain needs for that same key, with a comment. `mix test`
-  at the umbrella root runs every app in one VM, so a library helper's
-  `put_env` is still in effect when Fountain's suite starts (#1352 lost ten
-  runner tests to this). CI never sees it, since the partitions and
-  `scripts/test-libraries.sh` are separate VMs; `mix precommit` does.
-
-`apps/fountain/test/fountain/umbrella_layout_test.exs` checks every one of
-those and fails the suite on a miss. The root gates already reach the new
-app: `mix format` through `subdirectories: ["apps/*"]`, credo through
-`apps/*/lib/`, dialyzer and `mix test` because they run at the root. In CI
-the library's tests run from `scripts/test-libraries.sh` in one partition
-and their coverage export joins the merged gate, so a library with no tests
-fails the run rather than passing unmeasured. Add a changelog fragment
-(see *Changelog* below) and update the "Built so far" block in
-decisions/0037.
+**Library extraction is paused** (ADR 0037, addendum of 2026-09-14): a
+tenth `managoat_*` library is worth its two-PRs-per-change coordination cost
+only when a consumer outside Fountain needs it or it needs a release
+schedule of its own. The recipe for the day that changes, and the table of
+what each existing library owns, are in
+[`contributing/component-libraries.md`](contributing/component-libraries.md).
 
 ## Graduating a library
 
-The reverse of the section above: an `apps/managoat_<name>` app leaves this
-umbrella for a repository of its own, `managoat/managoat_<name>` (the same
-string as the hex package), from which CI publishes it to hex, and
-`apps/fountain` pins the hex release. The recipe is `scripts/graduate-library.sh`
-plus `templates/managoat-library/`; #1345 wrote both and proved them on
-`managoat_substitution`, then ran them for the other seven.
-
-**When.** A library graduates when it has stopped moving: its public surface
-has not changed since extraction, or its last change was a release of its own
-rather than a fix that a Fountain PR needed the same day. There is no open
-issue that needs a change on both sides of the seam. Until then the umbrella
-gives the compile-time boundary at no release cost; after, every cross-seam
-change costs two PRs (below).
-
-**Prerequisite, org admin only.** The publish workflow authenticates with
-`HEX_API_KEY`, an organization-level secret on `managoat` visible to every
-repository, holding a write key from the hex.pm user account that owns every
-`managoat_*` package. There is no hex organization and hex has no trusted
-publishing; that key, used only by CI, is the mechanism. Listing org secrets
-needs a scope your `gh` token may not have, so the check is to use it: the
-first publish run of a new repository either works or fails with 401. On a
-401, stop and ask; never create a key, and never put one in a repository
-secret or a file.
-
-**The script.** From the umbrella root, on a clean and up-to-date `main`:
-
-```bash
-scripts/graduate-library.sh --prepare-only <name>   # nothing on GitHub yet
-scripts/graduate-library.sh <name>
-```
-
-`--prepare-only` runs the preflight and builds the stand-alone tree in a
-scratch clone with the local gates, and stops. Do that first: a hex package
-name is claimed by its first publish and can never be released, and the name
-in `mix.exs` is permanent from the moment `main` exists. The full run then:
-
-1. refuses unless the tree is clean, `main` matches `origin/main`, and
-   `mix hex.build` succeeds for the app (a git dependency fails it; hex takes
-   hex packages only, which is why `managoat_sandbox` waited for the Sprites
-   client's hex release, pinned exactly to `0.2.0` for the reason in its
-   `mix.exs`);
-2. `git subtree split -P apps/managoat_<name>` puts the app's history on
-   `graduate/<name>` (one commit per app today, the extraction PR; an
-   `--unshallow` fetch first if the clone is shallow);
-3. creates the repository (public, no wiki, topic `managoat-library`) and
-   pushes the split as `main`;
-4. in a fresh clone, copies the template in, takes the three umbrella path
-   lines out of `mix.exs`, points `@source_url` at the new repository, adds
-   `ex_doc` (so `mix hex.publish` publishes hexdocs too), credo and dialyzer,
-   writes the repository's own `mix.lock`, runs compile, credo, the tests and
-   `mix hex.build` locally, and pushes `chore: stand alone (...)`. That push
-   is what runs CI and the first publish;
-5. creates the `no-release` label and protects `main` behind the two checks,
-   `ci` and `release gate`, with no review requirement, since a library
-   repository's `main` is what publishes and the gate is what keeps it honest.
-
-It is idempotent after a failure in 4 or 5: rerun it and it skips what exists.
-The template it copies mirrors the SDK's release automation
-(`.github/workflows/sdk-publish.yml`, `sdk-release-gate.yml`,
-`scripts/sdk-release.mjs`): `scripts/release.exs state` reads `@version` from
-`mix.exs` and asks hex whether it exists; `guard <base>` fails a PR that
-changes `lib/`, `priv/` or the consumer-facing part of `mix.exs` without a
-bump, a bump whose version hex already has, or a bump without a
-`## [<version>]` heading in `CHANGELOG.md`. Merging a bump publishes and tags
-`v<version>` as a record; a docs-only merge finds nothing to do. The template
-carries a Postgres service block that only `managoat_oauth` keeps (the script
-strips it for the others) and action pins copied from `ci.yml`; Dependabot
-maintains them from there, and the checkout-pin trap from this repository
-applies: a Dependabot bump can move the SHA and leave the version comment
-behind, so trust the SHA.
-
-**What the script does not do: the Fountain-side PR.** One per library, opened
-only after the hex release exists and only after the previous library's PR has
-merged (two open at once conflict on `apps/fountain/mix.exs`, the Dockerfile
-and `CLAUDE.md`):
-
-- delete `apps/managoat_<name>`;
-- `{:managoat_<name>, in_umbrella: true}` becomes
-  `{:managoat_<name>, "~> 0.1.0"}` in `apps/fountain/mix.exs`;
-- drop its `COPY apps/managoat_<name>/mix.exs` line from the Dockerfile;
-- `mix deps.get`, then `mix deps.unlock --unused`;
-- the layout block in `CLAUDE.md`, the "Built so far" block in
-  decisions/0037 (then `scripts/decisions-index.sh` and
-  `okf validate decisions`), and a changelog fragment under `changelog.d/`;
-- the gates: `mix compile --warnings-as-errors`, `mix format --check-formatted`,
-  `mix credo --strict`, `MIX_ENV=dev mix dialyzer`, the full root suite with
-  every remaining library's banner at `0 failures`,
-  `umbrella_layout_test.exs`, `scripts/test-libraries.sh`, and
-  **`docker build --target build .`**. The last one matters most: the
-  Dockerfile's deps layer is the only consumer of the hex release that CI does
-  not exercise, since CI never builds the image. After the merge, watch
-  `build.yml` on `main` go green.
-
-`umbrella_layout_test.exs` and `scripts/test-libraries.sh` walk whatever
-`apps/managoat_*` directories remain, so they need no edit per library; the
-last library out relaxes the "at least one library" assertion and makes the
-script exit 0 with a message on zero apps. The `config :managoat_*` lines in
-`config/*.exs` stay: a hex dependency reads its otp_app configuration the same
-way an umbrella app did.
-
-**Ordering: a library that depends on another graduates after it.** Hex
-refuses `in_umbrella` dependencies, so the dependency must be on hex first.
-`managoat_runner` depends on `managoat_sandbox` and is the worked example:
-sandbox graduates to hex; sandbox's Fountain-side PR deletes
-`apps/managoat_sandbox` **and, in the same PR**, changes
-`apps/managoat_runner/mix.exs` from `{:managoat_sandbox, in_umbrella: true}`
-to `{:managoat_sandbox, "~> 0.1.0"}`, because an `in_umbrella` dependency on
-an app that no longer exists cannot resolve, so the switch cannot be a PR of
-its own after the deletion. The umbrella then resolves it from hex like
-Fountain does, `mix hex.build` for runner succeeds inside the umbrella (that
-PR's gate), the runner conformance suite still passes; then runner
-graduates.
-
-**The cost that starts on graduation day.** A change across the seam is two
-PRs: a bump in the library (its gate insists), then a pin in Fountain. The
-version pins here are `~> 0.1.0`, patch-level while every library is 0.x, so
-a library's `0.2.0` reaches Fountain only when someone bumps the pin, on
-purpose. Under this repository's ruleset a merge is
-`gh pr merge --squash --auto`, which queues the PR, and a merged-PR branch
-push runs no CI here, so the pin
-PR is the only place the new version is exercised against Fountain; do not
-skip its gates. Merges into a library repository are yours once its CI is
-green, because its `main` is what publishes.
+Also in [`contributing/component-libraries.md`](contributing/component-libraries.md):
+`scripts/graduate-library.sh` is the executable half, and the Fountain-side
+pin PR is the checklist there. Taking a new release of an already graduated
+library is a pin bump in `apps/fountain/mix.exs`; that PR is the only place
+the new version meets Fountain, so run its gates in full.
 
 ## Changing the API
 
@@ -485,33 +361,19 @@ Label a PR `release:skip-sdk` where the distinction needs saying out loud.
 
 ## Pull requests
 
-Every change goes through a PR and the CI gate must pass. Do not push directly
-to `main`.
+Every change goes through a PR with an approving review and lands through the
+merge queue: `gh pr merge <N> --squash --auto`, never `--admin`. CLAUDE.md,
+*How a change lands*, has the short rules; `scripts/ci/README.md` has the
+mechanics and ADR 0050 the decision.
 
 ### Changelog
 
 A PR that changes something a user or operator can observe adds a fragment
-file under [`changelog.d/`](changelog.d/README.md) and does not edit
-`CHANGELOG.md`. The fragment uses the changelog's own `### Section` headings
-and bullets, so `changelog.d/2105-retired-urls-404.md` might read:
-
-```markdown
-### Fixed
-
-- Retired browser URLs now return 404 instead of redirecting (#2105).
-```
-
-`python3 scripts/changelog.py check` validates it. The release-bump workflow
-rolls every fragment, plus anything left under `[Unreleased]`, into the dated
-section for the new version and deletes the fragments, so `CHANGELOG.md`
-changes once per release. CI refuses a PR that edits `CHANGELOG.md` directly;
-to fix a typo in a shipped entry, put the `release:manual-changelog` label on the PR
-and re-run the `CI policy and alert tests` job.
-
-This replaced the shared `[Unreleased]` section every PR used to insert a
-line into. With ~26 merges a day, two PRs adding a bullet at the top of the
-same subsection was the most common merge conflict on main, and hand
-resolutions left the section with three `### Added` headings.
+file under [`changelog.d/`](changelog.d/README.md), whose README has the
+format, and does not edit `CHANGELOG.md`. `python3 scripts/changelog.py check`
+validates it. The release rolls every fragment into the dated section and
+deletes them; CI refuses a PR that edits `CHANGELOG.md` directly, and the
+`release:manual-changelog` label is the door for a typo fix in a shipped entry.
 
 If your change is architecturally significant, or constrains future work, write
 an ADR using [`decisions/0001-template.md`](decisions/0001-template.md) and

@@ -49,7 +49,7 @@ defmodule Fountain.SobelowGateTest do
 
     for {caller, path} <- [
           {"CI", Path.join(root, ".github/workflows/ci.yml")},
-          {"mix precommit", Path.join(root, "mix.exs")}
+          {"mix precommit", Path.join(root, "scripts/precommit.sh")}
         ] do
       assert File.read!(path) =~ "scripts/sobelow.sh",
              "#{caller} no longer runs sobelow through scripts/sobelow.sh — " <>

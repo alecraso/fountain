@@ -99,7 +99,7 @@ mix phx.server   # http://localhost:4000
 mix test         # full suite
 ```
 
-`mix precommit` runs the core CI gate locally (deps.unlock --check-unused, warnings-as-errors, format, credo --strict, sobelow, dialyzer, tests). CI additionally runs hex.audit, the Go CLI checks, a release boot check, and OpenAPI validation.
+`mix precommit` runs the local gate; its stages, and what CI runs on top, are in [CONTRIBUTING.md](CONTRIBUTING.md#before-you-push). Run it through the pinned toolchain (activate mise, or `mise exec -- mix precommit`); it refuses a different Elixir.
 
 ## Production parity reference
 
