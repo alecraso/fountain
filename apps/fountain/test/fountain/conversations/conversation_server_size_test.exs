@@ -31,23 +31,17 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   only fails at the moment the last one lands.
   """
 
-  # 2641 → 2549. The reattachment family — `reattach_running_turn/1`,
-  # `reap_orphan_sessions/1`, `attempt_session_attach/4`, `mark_orphan/3` and
-  # `find_running_turn/1` — moved to `Fountain.Conversations.Reattachment`,
-  # which already owned the ACP half of the same path. That takes 163 lines
-  # out and puts the file at 2466.
+  # 2549 → 2364. The #2175 stack (one owner per conversation lifecycle
+  # verb) moved the client halves out of the server: terminate, release and
+  # the lifecycle audit to `Fountain.Conversations.Termination` (#2223),
+  # interrupt and `interrupt_dead` to `Fountain.Conversations.Interruption`
+  # (#2244), with `defdelegate`s left behind so no caller moved. The file is
+  # 2354 lines on `main` after #2244 and #2245, the last two of the stack.
   #
-  # The pin is not lowered to 2466: the #1766/#1767 campaign is still in
-  # flight below it. Measured today across its 18 open PRs, by diffing each
-  # chain tip against the base it forks from rather than summing per-PR
-  # counts, its remaining net is **+73** to this file — #1975 +10, the
-  # #1978→#2007 chain +58, #1977 +5, #1979 +0 — landing the file at 2539.
-  # (#2037 measured +68 a day ago; two review rounds on #1981 and #1982 have
-  # moved it since, which is exactly the drift this moduledoc warns about.)
-  #
-  # 2549 is that 2539 plus 10 lines for the rounds still to come. Tighten it
-  # to the file's real length in a follow-up once the campaign has landed.
-  @pin 2549
+  # 2364 is that 2354 plus 10 lines, the same headroom the previous pin kept
+  # for review rounds. Nothing is in flight below this file now; the next
+  # move lowers it again.
+  @pin 2364
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"
 
