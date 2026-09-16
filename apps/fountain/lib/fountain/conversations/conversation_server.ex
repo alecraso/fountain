@@ -1013,7 +1013,8 @@ defmodule Fountain.Conversations.ConversationServer do
       conversation_id: state.conversation_id,
       sandbox_id: state.sandbox_id,
       sandbox_url: sandbox_url,
-      brokered: Egress.sandbox_env(state.broker)
+      brokered: Egress.sandbox_env(state.broker),
+      broker_credentials: state.brokered
     )
   end
 
@@ -1353,11 +1354,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # fix injects prints in plaintext into `log_events`. Registered as a union
     # with the outgoing env, not a replacement: the refused OAuth token is
     # still sitting in the sprite's `/home/sprite/.env` until a wake rewrites
-    # it, so it stays worth scrubbing.
-    Redaction.put(
-      state.conversation_id,
-      state.sprite_env ++ fallback_env
-    )
+    # it, so it stays worth scrubbing — which `add/2` does by never forgetting.
+    Redaction.add(state.conversation_id, fallback_env ++ Map.to_list(state.brokered))
 
     state = %{
       state
