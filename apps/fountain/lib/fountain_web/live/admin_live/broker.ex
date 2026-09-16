@@ -118,7 +118,8 @@ defmodule FountainWeb.AdminLive.Broker do
                 "px-2 py-1 rounded border",
                 if(hours == @window,
                   do: "bg-zinc-900 text-white border-zinc-900",
-                  else: "bg-white text-zinc-600 border-zinc-300 hover:border-zinc-500"
+                  else:
+                    "bg-[var(--color-bg-1)] text-[var(--color-text-secondary)] border-[var(--color-border-strong)] hover:border-[var(--color-border-strong)]"
                 )
               ]}
             >
@@ -128,7 +129,7 @@ defmodule FountainWeb.AdminLive.Broker do
         </:actions>
       </.admin_header>
 
-      <p class="text-xs text-zinc-500">
+      <p class="text-xs text-[var(--color-text-secondary)]">
         Counts describe recorded requests. Dropped log rows are absent; check
         <code>FountainBrokerLogDropping</code>
         in Grafana before treating counts as complete.
@@ -212,13 +213,18 @@ defmodule FountainWeb.AdminLive.Broker do
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <div class="bg-white rounded shadow border border-zinc-200">
-            <div class="px-4 py-2 text-sm font-medium border-b border-zinc-200">Hosts</div>
-            <div :if={@overview.hosts == []} class="px-4 py-3 text-sm text-zinc-500">
+          <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]">
+            <div class="px-4 py-2 text-sm font-medium border-b border-[var(--color-border)]">
+              Hosts
+            </div>
+            <div
+              :if={@overview.hosts == []}
+              class="px-4 py-3 text-sm text-[var(--color-text-secondary)]"
+            >
               Nothing in this window.
             </div>
             <table :if={@overview.hosts != []} class="w-full text-sm font-mono">
-              <thead class="text-left text-zinc-500 border-b border-zinc-200 text-xs">
+              <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)] text-xs">
                 <tr>
                   <th class="px-4 py-2">Host</th>
                   <th class="px-4 py-2 text-right">Requests</th>
@@ -228,7 +234,10 @@ defmodule FountainWeb.AdminLive.Broker do
                 </tr>
               </thead>
               <tbody>
-                <tr :for={h <- @overview.hosts} class="border-b border-zinc-100 last:border-0">
+                <tr
+                  :for={h <- @overview.hosts}
+                  class="border-b border-[var(--color-border)] last:border-0"
+                >
                   <td class="px-4 py-1.5 text-xs">{h.host}</td>
                   <td class="px-4 py-1.5 text-xs text-right tabular-nums">{h.requests}</td>
                   <td class="px-4 py-1.5 text-xs text-right tabular-nums">{h.injected}</td>
@@ -249,15 +258,18 @@ defmodule FountainWeb.AdminLive.Broker do
             </table>
           </div>
 
-          <div class="bg-white rounded shadow border border-zinc-200">
-            <div class="px-4 py-2 text-sm font-medium border-b border-zinc-200">
+          <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]">
+            <div class="px-4 py-2 text-sm font-medium border-b border-[var(--color-border)]">
               Credentials attached, by binding
             </div>
-            <div :if={@overview.services == []} class="px-4 py-3 text-sm text-zinc-500">
+            <div
+              :if={@overview.services == []}
+              class="px-4 py-3 text-sm text-[var(--color-text-secondary)]"
+            >
               No credential was attached in this window.
             </div>
             <table :if={@overview.services != []} class="w-full text-sm font-mono">
-              <thead class="text-left text-zinc-500 border-b border-zinc-200 text-xs">
+              <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)] text-xs">
                 <tr>
                   <th class="px-4 py-2">Binding</th>
                   <th class="px-4 py-2">Variables</th>
@@ -266,9 +278,12 @@ defmodule FountainWeb.AdminLive.Broker do
                 </tr>
               </thead>
               <tbody>
-                <tr :for={s <- @overview.services} class="border-b border-zinc-100 last:border-0">
+                <tr
+                  :for={s <- @overview.services}
+                  class="border-b border-[var(--color-border)] last:border-0"
+                >
                   <td class="px-4 py-1.5 text-xs">{s.service}</td>
-                  <td class="px-4 py-1.5 text-xs text-zinc-600">
+                  <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)]">
                     {Enum.join(s.credential_keys, ", ")}
                   </td>
                   <td class="px-4 py-1.5 text-xs text-right tabular-nums">{s.requests}</td>
@@ -282,7 +297,7 @@ defmodule FountainWeb.AdminLive.Broker do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Denied</h2>
-        <p class="text-xs text-zinc-500">
+        <p class="text-xs text-[var(--color-text-secondary)]">
           Every request the broker answered itself. Most are policy working: a <code>403</code>
           for a host outside a limited environment's allowed list. A
           <code>502 credential_missing</code>
@@ -306,7 +321,7 @@ defmodule FountainWeb.AdminLive.Broker do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Failed</h2>
-        <p class="text-xs text-zinc-500">
+        <p class="text-xs text-[var(--color-text-secondary)]">
           How forwarding ended when it did not complete. <code class="font-mono">client_closed</code>
           is the sandbox hanging up first, usually a cancelled turn;
           <code class="font-mono">upstream_*</code>
@@ -319,7 +334,7 @@ defmodule FountainWeb.AdminLive.Broker do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Live sessions</h2>
-        <div :if={@overview.live_sessions == []} class="text-sm text-zinc-500">
+        <div :if={@overview.live_sessions == []} class="text-sm text-[var(--color-text-secondary)]">
           No sandbox holds a proxy token right now.
         </div>
         <p
@@ -333,9 +348,9 @@ defmodule FountainWeb.AdminLive.Broker do
         </p>
         <table
           :if={@overview.live_sessions != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] font-mono"
         >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200 text-xs">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)] text-xs">
             <tr>
               <th class="px-4 py-2">Conversation</th>
               <th class="px-4 py-2">Owner</th>
@@ -346,7 +361,10 @@ defmodule FountainWeb.AdminLive.Broker do
             </tr>
           </thead>
           <tbody>
-            <tr :for={s <- @overview.live_sessions} class="border-b border-zinc-100 last:border-0">
+            <tr
+              :for={s <- @overview.live_sessions}
+              class="border-b border-[var(--color-border)] last:border-0"
+            >
               <td class="px-4 py-1.5 text-xs">
                 <.link
                   navigate={~p"/admin/conversations/#{s.conversation_id}"}
@@ -359,13 +377,13 @@ defmodule FountainWeb.AdminLive.Broker do
                 <.owner user_id={s.user_id} email={s.email} />
               </td>
               <td class="px-4 py-1.5 text-xs">{s.policy}</td>
-              <td class="px-4 py-1.5 text-xs text-zinc-600">
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)]">
                 {if s.credential_keys == [], do: "—", else: Enum.join(s.credential_keys, ", ")}
               </td>
-              <td class="px-4 py-1.5 text-xs text-zinc-500 whitespace-nowrap">
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
                 {format_ts(s.inserted_at)}
               </td>
-              <td class="px-4 py-1.5 text-xs text-zinc-500 whitespace-nowrap">
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
                 {format_ts(s.expires_at)}
               </td>
             </tr>
@@ -384,12 +402,14 @@ defmodule FountainWeb.AdminLive.Broker do
   defp tile(assigns) do
     ~H"""
     <div class={[
-      "bg-white rounded shadow border px-4 py-3",
-      if(@alert, do: "border-amber-300", else: "border-zinc-200")
+      "bg-[var(--color-bg-1)] rounded shadow border px-4 py-3",
+      if(@alert, do: "border-amber-300", else: "border-[var(--color-border)]")
     ]}>
-      <div class="text-xs text-zinc-500">{@label}</div>
+      <div class="text-xs text-[var(--color-text-secondary)]">{@label}</div>
       <div class="text-2xl font-semibold tabular-nums">{render_slot(@inner_block)}</div>
-      <div :if={@note != []} class="text-xs text-zinc-500 truncate">{render_slot(@note)}</div>
+      <div :if={@note != []} class="text-xs text-[var(--color-text-secondary)] truncate">
+        {render_slot(@note)}
+      </div>
     </div>
     """
   end
@@ -399,12 +419,12 @@ defmodule FountainWeb.AdminLive.Broker do
 
   defp request_table(assigns) do
     ~H"""
-    <div :if={@rows == []} class="text-sm text-zinc-500">{@empty}</div>
+    <div :if={@rows == []} class="text-sm text-[var(--color-text-secondary)]">{@empty}</div>
     <table
       :if={@rows != []}
-      class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
+      class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] font-mono"
     >
-      <thead class="text-left text-zinc-500 border-b border-zinc-200 text-xs">
+      <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)] text-xs">
         <tr>
           <th class="px-4 py-2">When</th>
           <th class="px-4 py-2">Request</th>
@@ -414,14 +434,18 @@ defmodule FountainWeb.AdminLive.Broker do
         </tr>
       </thead>
       <tbody>
-        <tr :for={r <- @rows} class="border-b border-zinc-100 last:border-0">
-          <td class="px-4 py-1.5 text-xs text-zinc-500 whitespace-nowrap">
+        <tr :for={r <- @rows} class="border-b border-[var(--color-border)] last:border-0">
+          <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
             {format_ts(r.inserted_at)}
           </td>
           <td class="px-4 py-1.5 text-xs">
-            {r.method} {r.host}<span class="text-zinc-500">{String.slice(r.path, 0, 60)}</span>
+            {r.method} {r.host}<span class="text-[var(--color-text-secondary)]">{String.slice(
+              r.path,
+              0,
+              60
+            )}</span>
           </td>
-          <td class="px-4 py-1.5 text-xs text-zinc-600">
+          <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)]">
             {[r.status, r.error] |> Enum.reject(&is_nil/1) |> Enum.join(" ")}
           </td>
           <td class="px-4 py-1.5 text-xs">
@@ -446,7 +470,7 @@ defmodule FountainWeb.AdminLive.Broker do
     <.link :if={@email} navigate={~p"/admin/users/#{@user_id}"} class="hover:underline">
       {@email}
     </.link>
-    <span :if={is_nil(@email)} class="text-zinc-400">deleted</span>
+    <span :if={is_nil(@email)} class="text-[var(--color-text-muted)]">deleted</span>
     """
   end
 

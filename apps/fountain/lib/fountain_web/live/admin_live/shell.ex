@@ -37,7 +37,7 @@ defmodule FountainWeb.AdminLive.Shell do
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 class="text-2xl font-semibold">{@title}</h1>
-          <p :if={@subtitle != []} class="text-sm text-zinc-500 mt-1">
+          <p :if={@subtitle != []} class="text-sm text-[var(--color-text-secondary)] mt-1">
             {render_slot(@subtitle)}
           </p>
         </div>
@@ -61,7 +61,7 @@ defmodule FountainWeb.AdminLive.Shell do
 
     ~H"""
     <nav
-      class="flex flex-wrap items-center gap-1 border-b border-zinc-200 -mb-px"
+      class="flex flex-wrap items-center gap-1 border-b border-[var(--color-border)] -mb-px"
       aria-label="Admin sections"
     >
       <.link
@@ -71,8 +71,9 @@ defmodule FountainWeb.AdminLive.Shell do
         class={[
           "px-3 py-2 text-sm border-b-2 -mb-px transition-colors",
           if(key == @current,
-            do: "border-zinc-900 text-zinc-900 font-medium",
-            else: "border-transparent text-zinc-500 hover:text-zinc-900 hover:border-zinc-300"
+            do: "border-[var(--color-text-primary)] text-[var(--color-text-primary)] font-medium",
+            else:
+              "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-border-strong)]"
           )
         ]}
       >

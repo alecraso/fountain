@@ -80,16 +80,19 @@ defmodule FountainWeb.AdminLive.Index do
     <.link
       :if={@navigate}
       navigate={@navigate}
-      class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+      class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 hover:border-[var(--color-border-strong)]"
     >
-      <div class="text-xs text-zinc-500">{@label}</div>
+      <div class="text-xs text-[var(--color-text-secondary)]">{@label}</div>
       <div class="text-2xl font-semibold tabular-nums">{@value}</div>
-      <div :if={@note} class="text-xs text-zinc-500">{@note}</div>
+      <div :if={@note} class="text-xs text-[var(--color-text-secondary)]">{@note}</div>
     </.link>
-    <div :if={!@navigate} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-      <div class="text-xs text-zinc-500">{@label}</div>
+    <div
+      :if={!@navigate}
+      class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3"
+    >
+      <div class="text-xs text-[var(--color-text-secondary)]">{@label}</div>
       <div class="text-2xl font-semibold tabular-nums">{@value}</div>
-      <div :if={@note} class="text-xs text-zinc-500">{@note}</div>
+      <div :if={@note} class="text-xs text-[var(--color-text-secondary)]">{@note}</div>
     </div>
     """
   end
@@ -129,11 +132,11 @@ defmodule FountainWeb.AdminLive.Index do
           <div
             :for={stage <- @funnel.stages}
             :if={stage.key != :funded or @credits_enabled}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
+            class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3"
           >
-            <div class="text-xs text-zinc-500">{stage_label(stage.key)}</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">{stage_label(stage.key)}</div>
             <div class="text-2xl font-semibold tabular-nums">{stage.count}</div>
-            <div class="text-xs text-zinc-500 space-x-2">
+            <div class="text-xs text-[var(--color-text-secondary)] space-x-2">
               <span :if={stage.conversion}>{format_pct(stage.conversion)} of prev</span>
               <span :if={stage.median_hours}>· median {format_hours(stage.median_hours)}</span>
             </div>
@@ -142,9 +145,12 @@ defmodule FountainWeb.AdminLive.Index do
         <%!-- The number ADR 0038 judges onboarding on. Verification to the
               first reply, not to the first conversation: an attempt that
               never answered is not an activation. --%>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3 text-sm space-y-1">
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 text-sm space-y-1">
           <div class="font-medium">Time to first reply</div>
-          <div :if={@funnel.time_to_first_reply.count > 0} class="text-zinc-700 space-x-2">
+          <div
+            :if={@funnel.time_to_first_reply.count > 0}
+            class="text-[var(--color-text-primary)] space-x-2"
+          >
             <span>
               median
               <span class="font-semibold tabular-nums">
@@ -157,17 +163,20 @@ defmodule FountainWeb.AdminLive.Index do
                 {format_hours(@funnel.time_to_first_reply.p90_hours)}
               </span>
             </span>
-            <span class="text-zinc-500">
+            <span class="text-[var(--color-text-secondary)]">
               · over {@funnel.time_to_first_reply.count} activated {if @funnel.time_to_first_reply.count ==
                                                                          1,
                                                                        do: "account",
                                                                        else: "accounts"}
             </span>
           </div>
-          <div :if={@funnel.time_to_first_reply.count == 0} class="text-zinc-500">
+          <div :if={@funnel.time_to_first_reply.count == 0} class="text-[var(--color-text-secondary)]">
             No account has had a reply yet.
           </div>
-          <div :if={@funnel.time_to_first_reply.within_day_of > 0} class="text-xs text-zinc-500">
+          <div
+            :if={@funnel.time_to_first_reply.within_day_of > 0}
+            class="text-xs text-[var(--color-text-secondary)]"
+          >
             within a day of verifying: {@funnel.time_to_first_reply.within_day} of {@funnel.time_to_first_reply.within_day_of}
             <span :if={@funnel.time_to_first_reply.within_day_share}>
               ({format_pct(@funnel.time_to_first_reply.within_day_share)})
@@ -199,13 +208,13 @@ defmodule FountainWeb.AdminLive.Index do
           <.link
             :if={@credits_enabled}
             navigate={~p"/admin/finance"}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+            class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 hover:border-[var(--color-border-strong)]"
           >
-            <div class="text-xs text-zinc-500">Deferred credit</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">Deferred credit</div>
             <div class="text-2xl font-semibold tabular-nums">
               {Fountain.Credits.format_cents(@billing_overview.deferred_cents || 0)}
             </div>
-            <div class="text-xs text-zinc-500">
+            <div class="text-xs text-[var(--color-text-secondary)]">
               held by {@billing_overview.funded} funded accounts · finance ↗
             </div>
           </.link>
@@ -213,22 +222,24 @@ defmodule FountainWeb.AdminLive.Index do
           <.link
             :if={@credits_enabled}
             navigate={~p"/admin/finance"}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+            class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 hover:border-[var(--color-border-strong)]"
           >
-            <div class="text-xs text-zinc-500">Packs bought this month</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">Packs bought this month</div>
             <div class="text-2xl font-semibold tabular-nums">
               {@billing_overview.purchases_this_month}
             </div>
-            <div class="text-xs text-zinc-500">{@billing_overview.comped} comped accounts ↗</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">
+              {@billing_overview.comped} comped accounts ↗
+            </div>
           </.link>
 
           <.link
             navigate={~p"/admin/sandboxes"}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+            class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 hover:border-[var(--color-border-strong)]"
           >
-            <div class="text-xs text-zinc-500">Active sandboxes</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">Active sandboxes</div>
             <div class="text-2xl font-semibold tabular-nums">{@sandbox_count}</div>
-            <div class="text-xs text-zinc-500">running now ↗</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">running now ↗</div>
           </.link>
 
           <%!-- Installed extensions' figures (ADR 0043). One tile each, in
@@ -242,9 +253,9 @@ defmodule FountainWeb.AdminLive.Index do
                 that turns one into the other. --%>
           <.link
             navigate={~p"/admin/sandboxes"}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+            class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 hover:border-[var(--color-border-strong)]"
           >
-            <div class="text-xs text-zinc-500">Billable sandbox time</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">Billable sandbox time</div>
             <div class="text-2xl font-semibold tabular-nums">
               {format_hours(SandboxUsage.hours(@provider_spend.platform_seconds))}
             </div>
@@ -252,7 +263,7 @@ defmodule FountainWeb.AdminLive.Index do
               "text-xs tabular-nums",
               if(idle_share(platform_totals(@provider_spend)) >= 0.5,
                 do: "text-amber-600 font-medium",
-                else: "text-zinc-500"
+                else: "text-[var(--color-text-secondary)]"
               )
             ]}>
               {format_hours(SandboxUsage.hours(@provider_spend.platform_idle_seconds))} idle ↗

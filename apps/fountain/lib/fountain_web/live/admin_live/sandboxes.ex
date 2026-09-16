@@ -151,13 +151,15 @@ defmodule FountainWeb.AdminLive.Sandboxes do
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Active sandboxes</h2>
 
-        <div :if={@sandboxes == []} class="text-sm text-zinc-500">No active sandboxes.</div>
+        <div :if={@sandboxes == []} class="text-sm text-[var(--color-text-secondary)]">
+          No active sandboxes.
+        </div>
 
         <table
           :if={@sandboxes != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] font-mono"
         >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             <tr>
               <th class="px-4 py-2">ID</th>
               <th class="px-4 py-2">Owner</th>
@@ -168,7 +170,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
             </tr>
           </thead>
           <tbody>
-            <tr :for={s <- @sandboxes} class="border-b border-zinc-100 last:border-0">
+            <tr :for={s <- @sandboxes} class="border-b border-[var(--color-border)] last:border-0">
               <td class="px-4 py-2 text-xs">{String.slice(s.id, 0, 8)}</td>
               <td class="px-4 py-2 text-xs">
                 <.link
@@ -178,7 +180,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
                 >
                   {s.user.email}
                 </.link>
-                <span :if={is_nil(s.user)} class="text-zinc-400">—</span>
+                <span :if={is_nil(s.user)} class="text-[var(--color-text-muted)]">—</span>
               </td>
               <td class="px-4 py-2">
                 <span class={[
@@ -188,7 +190,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
                   {s.status}
                 </span>
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
                 <span :if={s.conversations == []}>—</span>
                 <span :if={s.conversations != []} class="space-x-2">
                   <.link
@@ -200,7 +202,9 @@ defmodule FountainWeb.AdminLive.Sandboxes do
                   </.link>
                 </span>
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(s.inserted_at)}</td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                {format_ts(s.inserted_at)}
+              </td>
               <td class="px-4 py-2 text-right space-x-2">
                 <button
                   :if={
@@ -230,7 +234,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Spend by provider</h2>
-        <p class="text-xs text-zinc-500">
+        <p class="text-xs text-[var(--color-text-secondary)]">
           Active sandbox time {Calendar.strftime(@provider_spend.period_start, "%b %-d")} – now,
           parked time excluded. Minutes on different providers cost different amounts — hold these
           next to the invoice, they are not money.
@@ -239,20 +243,20 @@ defmodule FountainWeb.AdminLive.Sandboxes do
           </.link>
         </p>
 
-        <div :if={@provider_spend.by_provider == %{}} class="text-xs text-zinc-400">
+        <div :if={@provider_spend.by_provider == %{}} class="text-xs text-[var(--color-text-muted)]">
           No sandbox time this month.
         </div>
 
         <div :if={@provider_spend.by_provider != %{}} class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div
             :for={{provider, totals} <- Enum.sort(@provider_spend.by_provider)}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
+            class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3"
           >
-            <div class="text-xs text-zinc-500">{provider}</div>
+            <div class="text-xs text-[var(--color-text-secondary)]">{provider}</div>
             <div class="text-2xl font-semibold tabular-nums">
               {format_hours(SandboxUsage.hours(totals.active_seconds))}
             </div>
-            <div class="text-xs text-zinc-500 tabular-nums">
+            <div class="text-xs text-[var(--color-text-secondary)] tabular-nums">
               {totals.sandboxes} sandboxes · {totals.users} {if totals.users == 1,
                 do: "tenant",
                 else: "tenants"}
@@ -262,21 +266,26 @@ defmodule FountainWeb.AdminLive.Sandboxes do
               title="No turn in flight. A shorter idle timeout removes this."
             >
               <span class={
-                if idle_share(totals) >= 0.5, do: "text-amber-600 font-medium", else: "text-zinc-500"
+                if idle_share(totals) >= 0.5,
+                  do: "text-amber-600 font-medium",
+                  else: "text-[var(--color-text-secondary)]"
               }>
                 {format_hours(SandboxUsage.hours(totals.idle_seconds))} idle
               </span>
-              <span class="text-zinc-400">({round(idle_share(totals) * 100)}%)</span>
+              <span class="text-[var(--color-text-muted)]">({round(idle_share(totals) * 100)}%)</span>
             </div>
-            <div :if={not SandboxUsage.platform_cost?(provider)} class="text-xs text-zinc-400">
+            <div
+              :if={not SandboxUsage.platform_cost?(provider)}
+              class="text-xs text-[var(--color-text-muted)]"
+            >
               tenant hardware, not our bill
             </div>
           </div>
         </div>
 
-        <div class="text-xs text-zinc-500 tabular-nums">
+        <div class="text-xs text-[var(--color-text-secondary)] tabular-nums">
           Billable to us: {format_hours(SandboxUsage.hours(@provider_spend.platform_seconds))}
-          <span :if={@provider_spend.platform_seconds > 0} class="text-zinc-400">
+          <span :if={@provider_spend.platform_seconds > 0} class="text-[var(--color-text-muted)]">
             · {format_hours(SandboxUsage.hours(@provider_spend.platform_idle_seconds))} of it idle,
             which is what a shorter idle timeout would remove
           </span>
@@ -284,23 +293,23 @@ defmodule FountainWeb.AdminLive.Sandboxes do
 
         <div
           :if={@provider_spend.top_tenants != []}
-          class="bg-white rounded shadow border border-zinc-200"
+          class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
-          <div class="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-200">
+          <div class="px-4 py-2 text-xs font-medium text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             Who it belongs to
           </div>
-          <ul class="divide-y divide-zinc-100">
+          <ul class="divide-y divide-[var(--color-border)]">
             <li
               :for={tenant <- @provider_spend.top_tenants}
               class="px-4 py-2 text-xs flex items-center justify-between gap-3"
             >
               <span class="truncate">
                 {tenant.email || "(deleted account)"}
-                <span class="text-zinc-400">· {tenant.provider}</span>
+                <span class="text-[var(--color-text-muted)]">· {tenant.provider}</span>
               </span>
-              <span class="tabular-nums whitespace-nowrap text-zinc-500">
+              <span class="tabular-nums whitespace-nowrap text-[var(--color-text-secondary)]">
                 {format_hours(SandboxUsage.hours(tenant.active_seconds))}
-                <span class="text-zinc-400">
+                <span class="text-[var(--color-text-muted)]">
                   ({round(idle_share(tenant) * 100)}% idle)
                 </span>
                 · {tenant.sandboxes} sandboxes

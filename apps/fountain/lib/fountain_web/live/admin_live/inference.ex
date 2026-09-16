@@ -216,9 +216,9 @@ defmodule FountainWeb.AdminLive.Inference do
         </:subtitle>
       </.admin_header>
 
-      <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3 text-sm space-y-1">
+      <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 text-sm space-y-1">
         <div class="font-medium">Daily ceiling</div>
-        <div class="text-zinc-700">
+        <div class="text-[var(--color-text-primary)]">
           <span class="font-semibold tabular-nums">
             {Fountain.Credits.format_cents(@ceiling_cents)}
           </span>
@@ -229,18 +229,21 @@ defmodule FountainWeb.AdminLive.Inference do
               {Fountain.Credits.format_cents(@spent_today_cents)}
             </span>
           </span>
-          <span :if={@spent_today_cents == nil} class="text-zinc-500">
+          <span :if={@spent_today_cents == nil} class="text-[var(--color-text-secondary)]">
             Credits are off, so nothing is counted against it.
           </span>
         </div>
       </div>
 
       <section class="space-y-3">
-        <div :for={key <- @keys} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+        <div
+          :for={key <- @keys}
+          class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3"
+        >
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="space-y-1">
               <div class="font-medium">{provider_label(key.provider)}</div>
-              <div class="text-sm text-zinc-700">
+              <div class="text-sm text-[var(--color-text-primary)]">
                 <.source key={key} />
               </div>
             </div>
@@ -255,7 +258,7 @@ defmodule FountainWeb.AdminLive.Inference do
           <div class="mt-3 flex flex-wrap items-end gap-2">
             <form phx-submit="set_key" class="flex flex-wrap items-end gap-2">
               <input type="hidden" name="provider" value={key.provider} />
-              <label class="block text-xs text-zinc-500">
+              <label class="block text-xs text-[var(--color-text-secondary)]">
                 New key
                 <input
                   type="password"
@@ -263,7 +266,7 @@ defmodule FountainWeb.AdminLive.Inference do
                   autocomplete="off"
                   spellcheck="false"
                   placeholder={placeholder(key.provider)}
-                  class="block mt-1 w-80 max-w-full rounded border-zinc-300 text-sm font-mono"
+                  class="block mt-1 w-80 max-w-full rounded border-[var(--color-border-strong)] text-sm font-mono"
                 />
               </label>
               <button
@@ -279,7 +282,7 @@ defmodule FountainWeb.AdminLive.Inference do
               phx-click="clear_key"
               phx-value-provider={key.provider}
               data-confirm={"Clear the stored #{provider_label(key.provider)} key? The provider falls back to #{key.env_var}, or to off if that is blank."}
-              class="px-3 py-1.5 text-sm rounded border border-zinc-300 hover:border-red-400 hover:text-red-700"
+              class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-red-400 hover:text-red-700"
             >
               Clear
             </button>
@@ -287,16 +290,16 @@ defmodule FountainWeb.AdminLive.Inference do
         </div>
       </section>
 
-      <p class="text-xs text-zinc-500">
+      <p class="text-xs text-[var(--color-text-secondary)]">
         A tenant's own credential always wins over these. Tokens on a platform key burn the
         tenant's credit at the provider's list price; the finance page shows the total.
       </p>
 
-      <section class="bg-white rounded shadow border border-zinc-200 px-4 py-3 space-y-3">
+      <section class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3 space-y-3">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="space-y-1">
             <div class="font-medium">ChatGPT account (codex)</div>
-            <div class="text-sm text-zinc-700">
+            <div class="text-sm text-[var(--color-text-primary)]">
               <.chatgpt_status chatgpt={@chatgpt} />
             </div>
           </div>
@@ -305,7 +308,7 @@ defmodule FountainWeb.AdminLive.Inference do
           </span>
         </div>
 
-        <p class="text-xs text-zinc-500">
+        <p class="text-xs text-[var(--color-text-secondary)]">
           A codex agent whose tenant has no OpenAI key runs on this sign-in, before the OpenAI
           platform key. Fountain holds the refresh token and renews it; a sandbox sees only a
           placeholder. A ChatGPT Business or Enterprise workspace access token is the
@@ -321,7 +324,7 @@ defmodule FountainWeb.AdminLive.Inference do
               <a href={@device.code.verification_url} target="_blank" rel="noopener" class="underline">{@device.code.verification_url}</a>
               and enter the code <code class="font-mono text-base font-semibold">{@device.code.user_code}</code>.
             </div>
-            <div class="text-xs text-zinc-600">
+            <div class="text-xs text-[var(--color-text-secondary)]">
               Waiting for approval. The code expires in fifteen minutes; device-code sign-in must be
               enabled in the account's ChatGPT security settings.
             </div>
@@ -339,7 +342,7 @@ defmodule FountainWeb.AdminLive.Inference do
           </button>
 
           <form phx-submit="chatgpt_paste" class="flex flex-wrap items-end gap-2">
-            <label class="block text-xs text-zinc-500">
+            <label class="block text-xs text-[var(--color-text-secondary)]">
               Paste auth.json from a fresh Codex 0.93.0 or newer ChatGPT sign-in.
               Use file storage as described in <a
                 href="/docs/configuration#the-chatgpt-account-for-the-codex-runtime"
@@ -350,19 +353,19 @@ defmodule FountainWeb.AdminLive.Inference do
                 autocomplete="off"
                 spellcheck="false"
                 placeholder={~s({"auth_mode":"chatgpt","tokens":{...}})}
-                class="block mt-1 w-96 max-w-full rounded border-zinc-300 text-xs font-mono"
+                class="block mt-1 w-96 max-w-full rounded border-[var(--color-border-strong)] text-xs font-mono"
               ></textarea>
             </label>
             <button
               type="submit"
-              class="px-3 py-1.5 text-sm rounded border border-zinc-300 hover:border-zinc-500"
+              class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-[var(--color-border-strong)]"
             >
               Connect from file
             </button>
           </form>
 
           <form phx-submit="chatgpt_workspace_token" class="flex flex-wrap items-end gap-2">
-            <label class="block text-xs text-zinc-500">
+            <label class="block text-xs text-[var(--color-text-secondary)]">
               Workspace access token
               <input
                 type="password"
@@ -370,30 +373,30 @@ defmodule FountainWeb.AdminLive.Inference do
                 autocomplete="off"
                 spellcheck="false"
                 placeholder="CODEX_ACCESS_TOKEN"
-                class="block mt-1 w-64 max-w-full rounded border-zinc-300 text-sm font-mono"
+                class="block mt-1 w-64 max-w-full rounded border-[var(--color-border-strong)] text-sm font-mono"
               />
             </label>
-            <label class="block text-xs text-zinc-500">
+            <label class="block text-xs text-[var(--color-text-secondary)]">
               Expires on
               <input
                 type="date"
                 name="expires_on"
-                class="block mt-1 rounded border-zinc-300 text-sm"
+                class="block mt-1 rounded border-[var(--color-border-strong)] text-sm"
               />
             </label>
-            <label class="block text-xs text-zinc-500">
+            <label class="block text-xs text-[var(--color-text-secondary)]">
               Account id
               <input
                 type="text"
                 name="account_id"
                 autocomplete="off"
                 spellcheck="false"
-                class="block mt-1 w-48 max-w-full rounded border-zinc-300 text-sm font-mono"
+                class="block mt-1 w-48 max-w-full rounded border-[var(--color-border-strong)] text-sm font-mono"
               />
             </label>
             <button
               type="submit"
-              class="px-3 py-1.5 text-sm rounded border border-zinc-300 hover:border-zinc-500"
+              class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-[var(--color-border-strong)]"
             >
               Save token
             </button>
@@ -404,7 +407,7 @@ defmodule FountainWeb.AdminLive.Inference do
             type="button"
             phx-click="chatgpt_disconnect"
             data-confirm="Disconnect the ChatGPT account? Codex conversations with no tenant key fall back to the OpenAI platform key, or to no credential."
-            class="px-3 py-1.5 text-sm rounded border border-zinc-300 hover:border-red-400 hover:text-red-700"
+            class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-red-400 hover:text-red-700"
           >
             Disconnect
           </button>
@@ -452,7 +455,8 @@ defmodule FountainWeb.AdminLive.Inference do
   defp chatgpt_label(%{status: "revoked"}), do: "revoked"
   defp chatgpt_label(%{status: "expired"}), do: "expired"
 
-  defp chatgpt_badge_class(:not_connected), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+  defp chatgpt_badge_class(:not_connected),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
 
   defp chatgpt_badge_class(%{status: "active"}),
     do: "bg-green-100 text-green-800 border-green-200"
@@ -509,5 +513,7 @@ defmodule FountainWeb.AdminLive.Inference do
   defp source_badge_class(:stored), do: "bg-green-100 text-green-800 border-green-200"
   defp source_badge_class(:environment), do: "bg-blue-100 text-blue-800 border-blue-200"
   defp source_badge_class(:undecryptable), do: "bg-red-100 text-red-700 border-red-200"
-  defp source_badge_class(:none), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+
+  defp source_badge_class(:none),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
 end
