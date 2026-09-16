@@ -4,8 +4,11 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { run } from './lib/runner.mjs';
 import { composeTarget, PROFILES } from './lib/target.mjs';
+import { externalReceiver, hostReceiver, hostsReceiver } from './lib/local-receiver.mjs';
+import { discardJournal } from './lib/receiver-journal.mjs';
 
 // One command for the operator question "does this deployment work": a URL and
 // a profile, no hand-authored target file. It composes the same run as
@@ -40,11 +43,12 @@ function keychainLookup(service, account) {
   } catch { return undefined; }
 }
 
-// The profiles this command can fully configure. The rest need receiver
-// origins, schedule windows or fixture settings that no flag here supplies, so
-// advertising them would only produce targets that fail setup: they are
-// configured in a target file and run through cli.mjs.
-export const VERIFY_PROFILES = PROFILES.filter(name => !['secrets', 'mcp', 'webhooks', 'schedules'].includes(name));
+// The profiles this command can fully configure. The outbound three are back
+// now that a run can host and publish their receiver itself. `schedules` still
+// needs windows no flag here supplies, so it stays a target-file job: an
+// advertised profile that cannot be configured only produces a run that fails
+// setup.
+export const VERIFY_PROFILES = PROFILES.filter(name => name !== 'schedules');
 
 export const help = `Verify a deployed Fountain (Node 24+)
 
@@ -58,8 +62,15 @@ export const help = `Verify a deployed Fountain (Node 24+)
   --contract   expected wire contract file, relative to the output directory
   --keychain   macOS keychain service to read keys from (default: ${KEYCHAIN_SERVICE})
 
-The secrets, mcp, webhooks and schedules profiles need configuration no flag
-here supplies. Write a target file and run deployed/cli.mjs for those.
+The secrets, mcp and webhooks profiles assert on outbound behaviour, so they
+need a receiver the deployment can reach. By default the run hosts one and
+publishes it over Cloudflare quick tunnels for the duration:
+
+  --receiver-url   use an already-hosted receiver instead of tunnelling
+  --blocked-url    the secrets profile's second origin, onto the same receiver
+
+The schedules profile needs schedule windows no flag here supplies. Write a
+target file and run deployed/cli.mjs for that one.
 
 Credentials come from FOUNTAIN_SUITE_KEY and FOUNTAIN_SUITE_OTHER_KEY. On
 macOS, a key not already exported is read from the keychain under an account
@@ -95,7 +106,10 @@ export function targetOrigin(baseUrl) {
   return url;
 }
 
-export function verifyConfig(args, env) {
+// Everything a run can be refused for that costs nothing to check. It runs
+// before a receiver is hosted, so a bad profile or a missing key never opens a
+// public tunnel first.
+export function assertRunnable(args, env) {
   if (!VERIFY_PROFILES.includes(args.profile)) {
     const elsewhere = PROFILES.includes(args.profile)
       ? `The ${args.profile} profile needs configuration this command cannot supply; write a target file and use deployed/cli.mjs`
@@ -106,6 +120,21 @@ export function verifyConfig(args, env) {
   if (!env.FOUNTAIN_SUITE_KEY) throw new Error('Set FOUNTAIN_SUITE_KEY to the primary test account key');
   if (needsSecondary(args.profile) && !env.FOUNTAIN_SUITE_OTHER_KEY) {
     throw new Error(`The ${args.profile} profile proves tenant isolation; set FOUNTAIN_SUITE_OTHER_KEY to a different account's key`);
+  }
+  return url;
+}
+
+// Composes the whole target in one place, receiver settings included, so what
+// is written to target.json is what the runner loads. A profile that needs a
+// receiver cannot compose without one: the settings are not an afterthought
+// patched onto the config once a tunnel happens to be up.
+export function verifyConfig(args, env, receiverSettings) {
+  const url = assertRunnable(args, env);
+  if (hostsReceiver(args.profile) && !receiverSettings) {
+    throw new Error(`The ${args.profile} profile needs a receiver; none was configured`);
+  }
+  if (!hostsReceiver(args.profile) && receiverSettings) {
+    throw new Error(`The ${args.profile} profile uses no receiver`);
   }
   const target = {
     base_url: url.href,
@@ -121,7 +150,16 @@ export function verifyConfig(args, env) {
   if (needsExecution(args.profile)) {
     target.execution = { runtime: args.runtime, model: args.model, sandbox_provider: args.sandbox };
   }
+  if (receiverSettings) target[args.profile] = receiverSettings;
   return composeTarget(target, args.profile);
+}
+
+// Cleanup deletes what the manifest records, by id, against the same account.
+// It needs the instance and the credentials, and nothing a profile declares —
+// so the profile that cannot load without a receiver is dropped rather than
+// carried into a replay that would be refused before its first request.
+export function cleanupTarget(config) {
+  return { base_url: config.base_url, credentials: config.credentials, profiles: ['probe'], limits: config.limits };
 }
 
 export function summarize(report, log = console.log) {
@@ -141,7 +179,9 @@ export function summarize(report, log = console.log) {
   for (const check of skipped) log(`  skipped    ${check.name}${check.reason ? `: ${check.reason}` : ''}`);
 }
 
-export async function verifyMain(argv, env = process.env) {
+// `hostReceiverFn` is a seam for tests: hosting spawns cloudflared, and a
+// test must not depend on that binary existing or on how fast it starts.
+export async function verifyMain(argv, env = process.env, { hostReceiverFn = hostReceiver } = {}) {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: {
     profile: { type: 'string', default: 'streaming' },
     runtime: { type: 'string', default: 'claude' },
@@ -150,6 +190,8 @@ export async function verifyMain(argv, env = process.env) {
     contract: { type: 'string' },
     out: { type: 'string' },
     keychain: { type: 'string', default: KEYCHAIN_SERVICE },
+    'receiver-url': { type: 'string' },
+    'blocked-url': { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   } });
   if (values.help) { console.log(help); return 0; }
@@ -159,32 +201,94 @@ export async function verifyMain(argv, env = process.env) {
   const origin = targetOrigin(positionals[0]).origin;
   const resolved = resolveCredentials(origin, env, { service: values.keychain });
   env = resolved.env;
-  const config = verifyConfig({ ...values, baseUrl: positionals[0] }, env);
+  const args = { ...values, baseUrl: positionals[0] };
+  // Refuse everything cheap before a receiver is hosted: an unknown profile or
+  // a missing key must not cost a tunnel first.
+  assertRunnable(args, env);
   if (resolved.fromKeychain.length) console.log(`  keys       keychain ${values.keychain} for ${origin}`);
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-  const out = resolve(values.out || resolve(env.TMPDIR || '/tmp', `fountain-verify-${stamp}`));
-  // Each run owns a new directory, so one verdict never overwrites another's
-  // evidence or cleanup manifest.
-  mkdirSync(out, { mode: 0o700, recursive: false });
-  const configPath = resolve(out, 'target.json');
-  writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
-  console.log(`  target     ${config.base_url}`);
-  console.log(`  profiles   ${config.profiles.join(', ')}`);
-  if (config.execution) console.log(`  execution  ${config.execution.runtime} / ${config.execution.model} / ${config.execution.sandbox_provider}`);
-  console.log(`  out        ${out}`);
+  console.log(`  target     ${origin}`);
+  console.log(`  profile    ${values.profile}`);
   const controller = new AbortController();
   const cancel = () => controller.abort(new Error('Interrupted'));
   process.on('SIGINT', cancel);
   process.on('SIGTERM', cancel);
+  let receiver, out;
   try {
-    const code = await run({ configPath, out: resolve(out, 'results'), signal: controller.signal, env });
-    summarize(readReport(resolve(out, 'results')));
+    try {
+      receiver = await openReceiver(values, env, controller.signal, hostReceiverFn);
+    } catch (error) {
+      // Hosting a receiver is the first abortable phase. Ctrl-C during it is
+      // an operator cancelling, not a setup failure, and the exit code the
+      // command documents must not depend on when the signal arrives.
+      if (controller.signal.aborted) return 130;
+      throw error;
+    }
+    const config = verifyConfig(args, env, receiver?.settings);
+    // Only now, when nothing is left to refuse. A run that never started
+    // should leave no evidence directory behind to be mistaken for one that
+    // did. Two runs in the same second get their own, hence the suffix.
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.(\d+)Z$/, '$1');
+    out = resolve(values.out || resolve(env.TMPDIR || '/tmp', `fountain-verify-${stamp}-${randomUUID().slice(0, 8)}`));
+    mkdirSync(out, { mode: 0o700, recursive: false });
+    console.log(`  out        ${out}`);
+    if (config.execution) console.log(`  execution  ${config.execution.runtime} / ${config.execution.model} / ${config.execution.sandbox_provider}`);
+    // An ephemeral receiver and its borrowed origins are gone once the run
+    // ends, and the run's target names both. Replaying cleanup through it
+    // would be refused for a missing receiver credential before reaching a
+    // single Fountain call, leaving run-owned fixtures behind. So a target
+    // that needs neither is written alongside it: the manifest, not the
+    // profile, is what drives cleanup.
+    if (receiver?.hosted) {
+      writeFileSync(resolve(out, 'cleanup-target.json'),
+        JSON.stringify(cleanupTarget(verifyConfig(args, env, receiver.settings)), null, 2), { mode: 0o600 });
+    }
+    const configPath = resolve(out, 'target.json');
+    writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+    const code = await run({ configPath, out: resolve(out, 'results'), signal: controller.signal,
+      env: { ...env, ...receiver?.env } });
+    const report = readReport(resolve(out, 'results'));
+    summarize(report);
     console.log(`  evidence   ${resolve(out, 'results')}`);
+    if (report?.cleanup?.remaining) {
+      const target = receiver?.hosted ? resolve(out, 'cleanup-target.json') : configPath;
+      // cleanup-replay reads the environment and nothing else, so a run whose
+      // keys came from the keychain has to say so: the command is useless to
+      // an operator who never exported them.
+      if (resolved.fromKeychain.length) console.log('  replay     export the two suite keys first; cleanup-replay reads only the environment');
+      console.log(`  replay     node deployed/cleanup-replay.mjs --config ${target} \\\n               --results ${resolve(out, 'results')} --out ${resolve(out, 'cleanup')}`);
+    }
     return code;
   } finally {
+    // A borrowed origin outliving its run would leave a public hostname
+    // pointed at this machine.
+    await receiver?.stop();
+    // The receiver's records went with the process. Say so in its journal, or
+    // a replay finds an unsettled one and demands the configuration for an
+    // instance that no longer exists.
+    if (receiver?.hosted && out) {
+      for (const name of ['receiver.json', 'mcp-receiver.json', 'webhook-receiver.json']) {
+        discardJournal(resolve(out, 'results', name), reportRunId(resolve(out, 'results')));
+      }
+    }
     process.off('SIGINT', cancel);
     process.off('SIGTERM', cancel);
   }
+}
+
+function openReceiver(values, env, signal, hostReceiverFn = hostReceiver) {
+  if (!hostsReceiver(values.profile)) {
+    if (values['receiver-url'] || values['blocked-url']) throw new Error(`The ${values.profile} profile uses no receiver`);
+    return undefined;
+  }
+  const options = { receiverUrl: values['receiver-url'], blockedUrl: values['blocked-url'] };
+  if (options.receiverUrl || options.blockedUrl) return externalReceiver(values.profile, options, env);
+  return hostReceiverFn(values.profile, { signal, log: console.log });
+}
+
+// The run id the journals are keyed by; a run that never wrote a report has
+// no journals to settle either.
+function reportRunId(results) {
+  return readReport(results)?.run_id ?? '';
 }
 
 function readReport(results) {
