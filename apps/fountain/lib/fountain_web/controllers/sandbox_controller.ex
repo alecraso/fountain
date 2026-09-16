@@ -76,13 +76,20 @@ defmodule FountainWeb.SandboxController do
         "agent, environment and vault builds a clean machine. The conversations on it are " <>
         "kept, idle; each one's next prompt lands on the fresh home. Only a `persistent` " <>
         "sandbox that is not `terminated` or `failed` resets (`422 sandbox_not_resettable`), " <>
-        "and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`).",
+        "and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`). " <>
+        "A reset the provider does not confirm keeps its fence and the sandbox's " <>
+        "capacity, and answers `409 sandbox_reset_pending`; retrying it is safe.",
     parameters: [id: [in: :path, type: :string, required: true]],
     responses: [
       no_content: "Reset",
       not_found: {"Not found", "application/json", Schemas.Error},
       conflict: {"A conversation on it is mid-turn", "application/json", Schemas.Error},
-      unprocessable_entity: {"Not a live persistent sandbox", "application/json", Schemas.Error}
+      unprocessable_entity: {"Not a live persistent sandbox", "application/json", Schemas.Error},
+      # ADR 0058 stage 5c: the destroy runs through the machine's owner, which
+      # refuses while another teardown of the same machine holds its lease.
+      # Retryable, and `FallbackController` sends a `retry-after` with it.
+      service_unavailable:
+        {"Another teardown of this sandbox is running", "application/json", Schemas.Error}
     ]
   )
 
@@ -94,6 +101,29 @@ defmodule FountainWeb.SandboxController do
     with %Sandbox{} = sandbox <- Conversations.get_sandbox(id, user.id) || {:error, :not_found},
          {:ok, _} <- Conversations.reset_sandbox(sandbox, Audited.attribution(conn)) do
       send_resp(conn, :no_content, "")
+    else
+      # Rendered here rather than through `FallbackController`, which answers
+      # `:sandbox_unavailable` with no `message` because it serves several
+      # operations that mean different things by it. On *this* one the word has
+      # a precise meaning worth saying: the fence has committed, so the reset is
+      # accepted and Fountain will finish it — a caller that reads a bare 503 as
+      # "nothing happened, send it again" gets a permanent
+      # `409 sandbox_reset_pending` instead, since the fence it just wrote is
+      # what refuses the repeat. Every other refusal on this endpoint carries a
+      # sentence; the CLI prints the body verbatim.
+      {:error, :sandbox_unavailable} ->
+        conn
+        |> put_resp_header("retry-after", "30")
+        |> put_status(:service_unavailable)
+        |> json(%{
+          error: "sandbox_unavailable",
+          message:
+            "another teardown of this sandbox is running; the reset is fenced and " <>
+              "Fountain completes it, and sending it again answers sandbox_reset_pending"
+        })
+
+      other ->
+        other
     end
   end
 
