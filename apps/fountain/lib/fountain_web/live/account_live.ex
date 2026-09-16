@@ -148,7 +148,7 @@ defmodule FountainWeb.Live.AccountLive do
                   Your last export has expired. Request a new one to download your data.
                 </span>
               <% :failed -> %>
-                <span class="text-red-700">
+                <span class="text-[var(--color-error-text)]">
                   The last export failed. Please request a new one; contact support if it
                   keeps failing.
                 </span>
@@ -169,7 +169,7 @@ defmodule FountainWeb.Live.AccountLive do
 
       <%!-- Danger zone --%>
       <div class="rounded-lg border border-red-200 bg-[var(--color-bg-1)] p-6 shadow-sm">
-        <h2 class="mb-1 text-lg font-medium text-red-700">Delete account</h2>
+        <h2 class="mb-1 text-lg font-medium text-[var(--color-error-text)]">Delete account</h2>
         <p class="mb-4 text-sm text-[var(--color-text-secondary)]">
           Destroys every running sandbox, and permanently
           deletes your agents, environments, vaults, conversations and stored secrets.
@@ -193,7 +193,7 @@ defmodule FountainWeb.Live.AccountLive do
               autocomplete="off"
               value={@delete_confirmation}
               phx-change="confirm_delete_input"
-              class="mt-1 block w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm shadow-sm"
+              class="mt-1 block w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm text-[var(--color-text-primary)] shadow-sm"
             />
           </label>
 

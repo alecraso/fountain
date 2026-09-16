@@ -266,7 +266,7 @@ defmodule FountainWeb.AdminLive.Inference do
                   autocomplete="off"
                   spellcheck="false"
                   placeholder={placeholder(key.provider)}
-                  class="block mt-1 w-80 max-w-full rounded border-[var(--color-border-strong)] text-sm font-mono"
+                  class="block mt-1 w-80 max-w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm font-mono text-[var(--color-text-primary)]"
                 />
               </label>
               <button
@@ -282,7 +282,7 @@ defmodule FountainWeb.AdminLive.Inference do
               phx-click="clear_key"
               phx-value-provider={key.provider}
               data-confirm={"Clear the stored #{provider_label(key.provider)} key? The provider falls back to #{key.env_var}, or to off if that is blank."}
-              class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-red-400 hover:text-red-700"
+              class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-red-400 hover:text-[var(--color-error-text)]"
             >
               Clear
             </button>
@@ -324,7 +324,7 @@ defmodule FountainWeb.AdminLive.Inference do
               <a href={@device.code.verification_url} target="_blank" rel="noopener" class="underline">{@device.code.verification_url}</a>
               and enter the code <code class="font-mono text-base font-semibold">{@device.code.user_code}</code>.
             </div>
-            <div class="text-xs text-[var(--color-text-secondary)]">
+            <div class="text-xs text-zinc-600">
               Waiting for approval. The code expires in fifteen minutes; device-code sign-in must be
               enabled in the account's ChatGPT security settings.
             </div>
@@ -353,7 +353,7 @@ defmodule FountainWeb.AdminLive.Inference do
                 autocomplete="off"
                 spellcheck="false"
                 placeholder={~s({"auth_mode":"chatgpt","tokens":{...}})}
-                class="block mt-1 w-96 max-w-full rounded border-[var(--color-border-strong)] text-xs font-mono"
+                class="block mt-1 w-96 max-w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-xs font-mono text-[var(--color-text-primary)]"
               ></textarea>
             </label>
             <button
@@ -373,7 +373,7 @@ defmodule FountainWeb.AdminLive.Inference do
                 autocomplete="off"
                 spellcheck="false"
                 placeholder="CODEX_ACCESS_TOKEN"
-                class="block mt-1 w-64 max-w-full rounded border-[var(--color-border-strong)] text-sm font-mono"
+                class="block mt-1 w-64 max-w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm font-mono text-[var(--color-text-primary)]"
               />
             </label>
             <label class="block text-xs text-[var(--color-text-secondary)]">
@@ -381,7 +381,7 @@ defmodule FountainWeb.AdminLive.Inference do
               <input
                 type="date"
                 name="expires_on"
-                class="block mt-1 rounded border-[var(--color-border-strong)] text-sm"
+                class="block mt-1 rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm text-[var(--color-text-primary)]"
               />
             </label>
             <label class="block text-xs text-[var(--color-text-secondary)]">
@@ -391,7 +391,7 @@ defmodule FountainWeb.AdminLive.Inference do
                 name="account_id"
                 autocomplete="off"
                 spellcheck="false"
-                class="block mt-1 w-48 max-w-full rounded border-[var(--color-border-strong)] text-sm font-mono"
+                class="block mt-1 w-48 max-w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm font-mono text-[var(--color-text-primary)]"
               />
             </label>
             <button
@@ -407,7 +407,7 @@ defmodule FountainWeb.AdminLive.Inference do
             type="button"
             phx-click="chatgpt_disconnect"
             data-confirm="Disconnect the ChatGPT account? Codex conversations with no tenant key fall back to the OpenAI platform key, or to no credential."
-            class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-red-400 hover:text-red-700"
+            class="px-3 py-1.5 text-sm rounded border border-[var(--color-border-strong)] hover:border-red-400 hover:text-[var(--color-error-text)]"
           >
             Disconnect
           </button>

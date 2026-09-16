@@ -214,7 +214,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
                   phx-click="retry_reset"
                   phx-value-id={s.id}
                   data-confirm="Check the provider and retry deletion? Capacity stays reserved until the provider confirms the machine is gone."
-                  class="text-xs text-blue-600 hover:text-blue-800 underline"
+                  class="text-xs text-[var(--color-info-text)] hover:text-[var(--color-info)] underline"
                 >
                   Retry reset
                 </button>
@@ -222,7 +222,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
                   phx-click="reap_sandbox"
                   phx-value-id={s.id}
                   data-confirm={"Reap sandbox #{String.slice(s.id, 0, 8)}? Live conversations are terminated; idle ones stay resumable on a fresh sandbox."}
-                  class="text-xs text-red-600 hover:text-red-800 underline"
+                  class="text-xs text-[var(--color-error-text)] hover:text-[var(--color-error)] underline"
                 >
                   Reap
                 </button>
@@ -267,7 +267,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
             >
               <span class={
                 if idle_share(totals) >= 0.5,
-                  do: "text-amber-600 font-medium",
+                  do: "text-[var(--color-warning-text)] font-medium",
                   else: "text-[var(--color-text-secondary)]"
               }>
                 {format_hours(SandboxUsage.hours(totals.idle_seconds))} idle

@@ -364,7 +364,9 @@ defmodule FountainWeb.AdminLive.Users do
 
     ~H"""
     <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)] tabular-nums whitespace-nowrap">
-      <span class={if(@alert?, do: "text-red-600 font-medium", else: "")}>{@value}</span>
+      <span class={if(@alert?, do: "text-[var(--color-error-text)] font-medium", else: "")}>
+        {@value}
+      </span>
     </td>
     """
   end
@@ -626,7 +628,7 @@ defmodule FountainWeb.AdminLive.Users do
                   <span class={[
                     "text-xs tabular-nums",
                     if(u.active_sandboxes >= u.sandbox_limit,
-                      do: "text-red-600 font-medium",
+                      do: "text-[var(--color-error-text)] font-medium",
                       else: "text-[var(--color-text-secondary)]"
                     )
                   ]}>
@@ -676,7 +678,7 @@ defmodule FountainWeb.AdminLive.Users do
                       else:
                         "Suspend #{u.email}? Sessions and API keys stop working and running conversations are terminated. Reversible; billing is not touched."
                   }
-                  class="text-xs text-amber-700 hover:text-amber-900 underline"
+                  class="text-xs text-[var(--color-warning-text)] hover:text-[var(--color-warning)] underline"
                 >
                   {if u.suspended_at, do: "Unsuspend", else: "Suspend"}
                 </button>
@@ -685,7 +687,7 @@ defmodule FountainWeb.AdminLive.Users do
                   phx-click="delete_user"
                   phx-value-id={u.id}
                   data-confirm={"Permanently delete #{u.email}? This destroys their sandboxes and erases their data. It cannot be undone."}
-                  class="text-xs text-red-600 hover:text-red-800 underline"
+                  class="text-xs text-[var(--color-error-text)] hover:text-[var(--color-error)] underline"
                 >
                   Delete
                 </button>

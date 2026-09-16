@@ -262,7 +262,7 @@ defmodule FountainWeb.AdminLive.Index do
             <div class={[
               "text-xs tabular-nums",
               if(idle_share(platform_totals(@provider_spend)) >= 0.5,
-                do: "text-amber-600 font-medium",
+                do: "text-[var(--color-warning-text)] font-medium",
                 else: "text-[var(--color-text-secondary)]"
               )
             ]}>

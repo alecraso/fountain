@@ -243,13 +243,13 @@ defmodule FountainWeb.AdminLive.Broker do
                   <td class="px-4 py-1.5 text-xs text-right tabular-nums">{h.injected}</td>
                   <td class={[
                     "px-4 py-1.5 text-xs text-right tabular-nums",
-                    h.denied > 0 && "text-amber-700 font-medium"
+                    h.denied > 0 && "text-[var(--color-warning-text)] font-medium"
                   ]}>
                     {h.denied}
                   </td>
                   <td class={[
                     "px-4 py-1.5 text-xs text-right tabular-nums",
-                    h.failed > 0 && "text-red-700 font-medium"
+                    h.failed > 0 && "text-[var(--color-error-text)] font-medium"
                   ]}>
                     {h.failed}
                   </td>
@@ -304,7 +304,9 @@ defmodule FountainWeb.AdminLive.Broker do
           is not policy but the broker failing to hold a credential a rule names, so the request
           was refused rather than sent without one; a run of them is one tenant's secret missing,
           undecryptable or not yet granted, and this window holds
-          <span class={[@overview.window.no_credential > 0 && "text-red-700 font-medium"]}>
+          <span class={[
+            @overview.window.no_credential > 0 && "text-[var(--color-error-text)] font-medium"
+          ]}>
             {@overview.window.no_credential}
           </span>
           of them. A <code>413</code>
@@ -339,7 +341,7 @@ defmodule FountainWeb.AdminLive.Broker do
         </div>
         <p
           :if={@overview.live_sessions_total > length(@overview.live_sessions)}
-          class="text-xs text-amber-700"
+          class="text-xs text-[var(--color-warning-text)]"
         >
           The {@overview.live_sessions_total} live sessions do not fit: these are the {length(
             @overview.live_sessions

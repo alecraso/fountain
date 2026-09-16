@@ -170,7 +170,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
           <div class="text-xs text-[var(--color-text-secondary)]">Credits</div>
           <div class={[
             "text-sm font-medium tabular-nums",
-            @credits.balance_cents < 0 && "text-amber-700"
+            @credits.balance_cents < 0 && "text-[var(--color-warning-text)]"
           ]}>
             {Fountain.Credits.format_cents(@credits.balance_cents)}
           </div>
@@ -268,7 +268,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
                 {if k.last_used_at, do: format_ts(k.last_used_at), else: "never"}
               </td>
               <td class="px-4 py-2 text-xs">
-                <span :if={k.revoked_at} class="text-red-600">revoked</span>
+                <span :if={k.revoked_at} class="text-[var(--color-error-text)]">revoked</span>
                 <span
                   :if={is_nil(k.revoked_at) and k.expires_at}
                   class="text-[var(--color-text-secondary)]"
