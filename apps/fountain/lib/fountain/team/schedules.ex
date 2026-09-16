@@ -412,6 +412,17 @@ defmodule Fountain.Team.Schedules do
     do: "teammate's computer was busy with another conversation"
 
   def describe_error(:provisioning), do: "teammate's computer was still starting"
+
+  # ADR 0058: an owner held the machine — parking it, rebuilding it, destroying
+  # it. The sentence has to cover all three, including the one where the
+  # computer does not come back, so it says what Fountain was doing rather than
+  # what the computer was doing (round 1, surfaces review: "was being started or
+  # stopped" told a user to expect a destroyed machine back). Deliberately not
+  # "busy", which this vocabulary already spends on a teammate mid-turn and on a
+  # full machine.
+  def describe_error(:sandbox_unavailable),
+    do: "Fountain was working on the teammate's computer"
+
   def describe_error(:not_found), do: "agent is not on the team"
   def describe_error(:insufficient_credits), do: "out of credit"
   def describe_error(:fleet_full), do: "sandbox fleet is full"

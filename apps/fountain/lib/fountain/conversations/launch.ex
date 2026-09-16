@@ -32,6 +32,7 @@ defmodule Fountain.Conversations.Launch do
 
   alias Fountain.InferenceCredentials
   alias Fountain.InferenceCredentials.Source
+  alias Fountain.Machines.Machine
   alias Fountain.Repo
 
   # Advisory-lock namespace for per-sandbox machine operations — must match
@@ -173,9 +174,16 @@ defmodule Fountain.Conversations.Launch do
         }
       })
 
+      # Through the one registration door (ADR 0058 stage 6a), like every other
+      # starter: it stamps the sandbox's `woken_at` marker under the
+      # per-sandbox lock before Horde is asked for anything, so the reaper's
+      # `pending`/`starting` pass sees this launch as a database fact rather
+      # than waiting on registry propagation. Horde's answer comes back
+      # verbatim, so the `{:error, reason}` arm below still catches
+      # `{:already_started, _}` and fails the launch exactly as it did.
       start_result =
-        Horde.DynamicSupervisor.start_child(
-          Fountain.ConversationSupervisor,
+        Conversations.register_server(
+          sandbox.id,
           child_spec(conv.id, sandbox.id, runtime_module)
         )
 
@@ -573,6 +581,26 @@ defmodule Fountain.Conversations.Launch do
       # whose runtime changed since gets a new machine, not this one.
       _unsafe_sandbox_runtime(sandbox.id) not in [nil, agent.runtime] ->
         {:error, :sandbox_runtime_mismatch}
+
+      # An owner holds a live lease on this machine (ADR 0058 stage 6a): a
+      # destroy, a reset, or — from 6b — a park, between its intent and its
+      # finalize. An attach would bind a new conversation to a row that is not
+      # the row about to exist.
+      #
+      # **Last, after every permanent refusal**, and that order is the contract
+      # (round 1, locks review). This was the first arm, which made an
+      # identity-mismatched attach onto a busy machine answer a retryable 503
+      # instead of the 422 it answers on `main` — telling a caller to try again
+      # at something that will never work. A permanent no outranks a temporary
+      # one; the only refusal that still precedes it is the reset fence, in the
+      # clause above, which is more specific rather than less permanent (409,
+      # "the reset is queued", not "retry in 30s").
+      #
+      # The status clause above has already taken every non-`ready`/`suspended`
+      # row, so nothing terminal reaches here: a machine that finished is
+      # `{:sandbox_not_attachable, status}`.
+      Machine.busy?(sandbox) ->
+        {:error, :sandbox_unavailable}
 
       true ->
         :ok

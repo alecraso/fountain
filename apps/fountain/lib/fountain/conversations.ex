@@ -30,6 +30,8 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.Lifecycle
   alias Fountain.InferenceCredentials
   alias Fountain.InferenceCredentials.Source
+  alias Fountain.Machines.Lease
+  alias Fountain.Machines.Machine
   alias Fountain.Machines.Occupancy
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
@@ -1156,6 +1158,161 @@ defmodule Fountain.Conversations do
       end
     end)
   end
+
+  @doc """
+  Start a `ConversationServer` and publish that fact where every node can see
+  it (ADR 0058 stage 6a, #2307 constraint 4).
+
+  **The only door onto `Fountain.ConversationSupervisor`.** All three starters
+  — `Launch.start_conversation/2`'s fresh path, `Wake.start_conversation_server/4`
+  and `Rehydrator.spawn_server/1` — come through here, and
+  `machines/register_server_test.exs` pins that nothing else names the
+  supervisor.
+
+  Horde's registry is an asynchronous CRDT. A reaper pass on another node can
+  read `ConversationServer.whereis/1` as `nil` for a beat after a server
+  registers here, and no amount of re-reading that registry closes a real
+  distributed-ordering gap: "not here" is not "nowhere". So the registration
+  gets a durable half. In order:
+
+    1. Under `with_sandbox_lock/2`, in one short transaction: re-read the row
+       `FOR UPDATE`, refuse with `{:error, :sandbox_unavailable}` if an owner
+       holds a live lease on it (`Machines.Machine.busy?/2`), and otherwise
+       stamp `woken_at = now`. Committed *before* anything is asked of Horde.
+    2. `Horde.DynamicSupervisor.start_child/2`, outside that lock and outside
+       any transaction.
+
+  **Why the check is here as well as in the readers** (round 1, locks review).
+  `Wake.maybe_reuse_sandbox/1` reads the row with no lock at all, so a
+  `Lease.claim/4` landing between that read and this call would otherwise get a
+  `ConversationServer` started on a machine somebody is destroying — the
+  check-then-act window #2307 constraint 1 names. This door already takes the
+  very advisory lock `Lease.claim/4` takes, so asking again inside it closes
+  that window for nothing. The attach door never had it: its second verdict is
+  made under a `FOR NO KEY UPDATE` re-read, which conflicts with the claim's
+  `FOR UPDATE` and so genuinely serialises rather than merely arriving later.
+
+  The marker itself is an `update_all` on the primary key rather than a
+  changeset: control-plane bookkeeping about a process, not a state change on
+  the machine, so it deliberately does not run `update_sandbox/2`'s guards,
+  metering or queue poke, and it is not routed through
+  `Machines.Lease.cas_update/3` either — a starter holds no lease and must not
+  appear to.
+
+  **Refuses an enclosing transaction**, the same guard `Machines.Destroy.run/2`
+  carries and for the same reason (#2307 constraint 3): `with_sandbox_lock/2`
+  is a plain `Repo.transaction`, so nested it would join the caller's via a
+  savepoint and hold `pg_advisory_xact_lock(4316, …)` until the *outer* commit
+  — across `start_child`, breaking both promises above with nothing failing.
+  No caller does this today; the guard is here because "For 6b" names this
+  function as the seam a park will hold a wake against, which is when one
+  becomes likely.
+
+  **Horde's answer is passed back verbatim, including
+  `{:error, {:already_started, pid}}`**, because the two callers do not mean
+  the same thing by it and normalizing it here would break one of them.
+  `Rehydrator.spawn_server/1` reads it as success: its sweep started a server
+  another node had already started, and the server is running, which is what it
+  asked for. `Wake.start_conversation_server/4` reads it as *losing a race it
+  has to compensate for*: on the fresh-sandbox path the loser has just created
+  a sandbox row of its own, and the winner is serving the conversation on a
+  different machine, so the loser retires its row and hands the prompt over
+  (#717, #330). Swallowing the tuple here would repoint the conversation at the
+  loser's machine — the exact bug #717 closed.
+
+  What this door does own is that the marker is committed first, and that the
+  two starters cannot drift on it.
+
+  The two are not atomic, and that is why the marker is a *grace* condition
+  rather than a veto: a caller that dies between them leaves a marker with no
+  child, and `SandboxReaper`'s two liveness passes ignore a marker older than
+  `@abandoned_grace_minutes`. Being late to reap a genuinely abandoned row
+  costs fifteen minutes; killing a live server costs the queued prompt on it.
+
+  `sandbox_id` may be `nil` (nothing to mark, as `with_sandbox_lock/2` already
+  allows), and a row that is gone by the time the lock is taken is logged and
+  stepped over — a vanished sandbox is the child's problem to discover, not a
+  reason to refuse to start it here. A *busy* machine is the one case that does
+  refuse, and it refuses with the word its readers use.
+  """
+  # The child spec is whatever `Horde.DynamicSupervisor.start_child/2` takes,
+  # which is `DynamicSupervisor`'s own contract: every caller here passes
+  # `Launch.child_spec/3`'s `{ConversationServer, args}` tuple rather than a map.
+  @spec register_server(
+          String.t() | nil,
+          Supervisor.child_spec() | {module(), term()} | module()
+        ) :: {:ok, pid()} | {:error, term()}
+  def register_server(sandbox_id, child_spec) do
+    with :ok <- mark_woken(sandbox_id) do
+      Horde.DynamicSupervisor.start_child(Fountain.ConversationSupervisor, child_spec)
+    end
+  end
+
+  defp mark_woken(nil), do: :ok
+
+  defp mark_woken(sandbox_id) do
+    if Repo.in_transaction?() do
+      {:error, :transaction_open}
+    else
+      sandbox_id |> claim_registration() |> report_registration(sandbox_id)
+    end
+  end
+
+  defp claim_registration(sandbox_id) do
+    with_sandbox_lock(sandbox_id, fn ->
+      # The verdict is made on the locked read, never on the struct a caller
+      # brought: a pre-lock reading is stale by construction, which is what
+      # makes this worth doing twice.
+      current =
+        Repo.one(
+          from s in Sandbox,
+            where: s.id == ^sandbox_id,
+            select: %{lease_node: s.lease_node, lease_until: s.lease_until},
+            lock: "FOR UPDATE"
+        )
+
+      cond do
+        is_nil(current) ->
+          {:ok, :no_row}
+
+        Machine.busy?(current) ->
+          {:error, :sandbox_unavailable}
+
+        true ->
+          {count, _} =
+            Repo.update_all(
+              from(s in Sandbox, where: s.id == ^sandbox_id),
+              set: [woken_at: DateTime.utc_now()]
+            )
+
+          {:ok, count}
+      end
+    end)
+  end
+
+  # A row that vanished between the caller's read and this lock is not a reason
+  # to refuse to start the server: a server on a machine whose row is gone
+  # discovers that for itself, and refusing here would turn a rare race into a
+  # failed wake.
+  defp report_registration({:ok, :no_row}, sandbox_id) do
+    Logger.warning(
+      "register_server: no sandbox #{sandbox_id} to mark woken; starting the server anyway"
+    )
+
+    :ok
+  end
+
+  defp report_registration({:ok, 1}, _sandbox_id), do: :ok
+
+  defp report_registration({:ok, 0}, sandbox_id) do
+    Logger.warning(
+      "register_server: sandbox #{sandbox_id} vanished under the lock; starting the server anyway"
+    )
+
+    :ok
+  end
+
+  defp report_registration({:error, _reason} = error, _sandbox_id), do: error
 
   @doc """
   Best-effort terminate the running ConversationServer (destroys the sprite
@@ -2922,7 +3079,22 @@ defmodule Fountain.Conversations do
 
         %Sandbox{mode: "persistent", status: status, reset_requested_at: at} = current
         when status in ["ready", "suspended"] and not is_nil(at) ->
-          if machine_lease_live?(current),
+          # Whether some owner is working on this machine right now (ADR 0058).
+          # A retry is a *reconciliation* — it exists for a reset whose caller
+          # was lost — so a machine another operation is holding is not its
+          # business: the holder is either finishing this same reset or
+          # destroying the machine outright, and either way one provider call
+          # is the right number.
+          #
+          # `Machines.Destroy` would serialize the two anyway (the second claim
+          # waits out the first and then finds the row terminal), so this is
+          # not what makes the retry safe. What it buys is that the retry does
+          # not burn its five second wait, and that a reconciler sweep walking
+          # a backlog does not queue behind every live destroy in it.
+          #
+          # `Lease.live?/2` since stage 6a: this used to be a copy of the rule,
+          # written here, next to two more written in SQL.
+          if Lease.live?(current),
             do: {:error, :sandbox_unavailable},
             else: do_pending_reset_retry(current, opts)
 
@@ -2942,27 +3114,6 @@ defmodule Fountain.Conversations do
       record_reset_completed(completed, _unsafe_list_holder_ids(current.id), opts)
     end
   end
-
-  # Whether some owner is working on this machine right now (ADR 0058). A
-  # retry is a *reconciliation* — it exists for a reset whose caller was lost —
-  # so a machine another operation is holding is not its business: the holder
-  # is either finishing this same reset or destroying the machine outright, and
-  # either way one provider call is the right number.
-  #
-  # `Machines.Destroy` would serialize the two anyway (the second claim waits
-  # out the first and then finds the row terminal), so this is not what makes
-  # the retry safe. What it buys is that the retry does not burn its five
-  # second wait, and that a reconciler sweep walking a backlog does not queue
-  # behind every live destroy in it.
-  #
-  # The BEAM clock, the same one `SandboxReaper.sweep_fenced_teardowns/0` uses
-  # for the guard this mirrors. `Lease` writes `lease_until` from the same
-  # clock, so the two agree; the database clock enters with the renew timer in
-  # stage 6.
-  defp machine_lease_live?(%Sandbox{lease_until: nil}), do: false
-
-  defp machine_lease_live?(%Sandbox{lease_until: until}),
-    do: DateTime.compare(until, DateTime.utc_now()) == :gt
 
   defp record_reset_completed(completed, ids, opts) do
     reason = Keyword.get(opts, :reason, "home_reset")

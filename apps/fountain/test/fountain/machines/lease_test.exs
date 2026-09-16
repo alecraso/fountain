@@ -46,6 +46,80 @@ defmodule Fountain.Machines.LeaseTest do
       assert {:error, :stale} = Lease.cas_update(ctx.sandbox.id, 1, %{status: "failed"})
     end
 
+    test "live?/2 is what a claim decides on, read from the row", ctx do
+      # The one definition of "somebody holds this machine" since stage 6a
+      # (it replaced two SQL `where` clauses and an Elixir predicate). What
+      # makes it trustworthy is that `claim/4` refuses exactly when this says
+      # true, so the readers and the claimant cannot disagree.
+      now = DateTime.utc_now()
+      refute Lease.live?(Repo.get!(Sandbox, ctx.sandbox.id), now)
+
+      {:ok, 1} = Lease.claim(ctx.sandbox.id, ctx.node, @ttl_ms, now)
+      held = Repo.get!(Sandbox, ctx.sandbox.id)
+
+      assert Lease.live?(held, now)
+
+      assert {:error, {:held, _, _}} =
+               Lease.claim(ctx.sandbox.id, "fountain@test-b", @ttl_ms, now)
+
+      # And exactly when it says false. Past the TTL both agree the lease is
+      # gone, which is the only way a lease is ever handed over.
+      later = DateTime.add(now, @ttl_ms + 1_000, :millisecond)
+      refute Lease.live?(held, later)
+      assert {:ok, 2} = Lease.claim(ctx.sandbox.id, "fountain@test-b", @ttl_ms, later)
+    end
+
+    test "live?/2 needs a holder, not only a deadline", ctx do
+      # `release/2` clears both columns and keeps the epoch, so a released
+      # lease reads as unheld. A `lease_until` with no `lease_node` is
+      # unreachable through this module and still must not read as held — it
+      # is the half the SQL copies of this rule had dropped.
+      {:ok, 1} = Lease.claim(ctx.sandbox.id, ctx.node, @ttl_ms)
+      :ok = Lease.release(ctx.sandbox.id, 1)
+      refute Lease.live?(Repo.get!(Sandbox, ctx.sandbox.id))
+
+      forged =
+        Repo.get!(Sandbox, ctx.sandbox.id)
+        |> Ecto.Changeset.change(
+          lease_node: nil,
+          lease_until: DateTime.add(DateTime.utc_now(), 60_000, :millisecond)
+        )
+        |> Repo.update!()
+
+      refute Lease.live?(forged)
+    end
+
+    test "live?/2 refuses a map that is missing either column" do
+      # Round 1, locks review. The first version matched `%{lease_node: nil}`
+      # and `%{lease_until: nil}` in turn, so a map *missing* the holder key
+      # fell through to the deadline clause and read as held on the deadline
+      # alone — the drift this function exists to remove, back as a map shape,
+      # and reachable through the `select` maps its callers hand-write.
+      future = DateTime.add(DateTime.utc_now(), 60_000, :millisecond)
+
+      assert_raise FunctionClauseError, fn -> Lease.live?(%{lease_until: future}) end
+      assert_raise FunctionClauseError, fn -> Lease.live?(%{lease_node: "fountain@a"}) end
+      assert_raise FunctionClauseError, fn -> Lease.live?(%{}) end
+
+      assert Lease.live?(%{lease_node: "fountain@a", lease_until: future})
+      refute Lease.live?(%{lease_node: nil, lease_until: future})
+    end
+
+    test "live?/2 takes a selected map, not only a row", ctx do
+      # `SandboxResetReconciler`'s sweep selects the two columns beside the id
+      # rather than loading rows, and asks the same predicate.
+      {:ok, 1} = Lease.claim(ctx.sandbox.id, ctx.node, @ttl_ms)
+
+      selected =
+        Repo.one(
+          from s in Sandbox,
+            where: s.id == ^ctx.sandbox.id,
+            select: %{id: s.id, lease_node: s.lease_node, lease_until: s.lease_until}
+        )
+
+      assert Lease.live?(selected)
+    end
+
     test "a claim on a row that is not there says so", ctx do
       assert {:error, :not_found} = Lease.claim(Ecto.UUID.generate(), ctx.node, @ttl_ms)
     end

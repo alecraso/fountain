@@ -99,6 +99,109 @@ defmodule Fountain.Conversations.RehydratorTest do
     assert Repo.reload!(limited).status == "running"
   end
 
+  # ADR 0058 stage 6a. The sweep reads `ready` rows, and a `ready` row can be
+  # one an owner holds between its intent and its finalize: a destroy, a reset,
+  # and from stage 6b a park. Starting a server there gives the machine a
+  # second writer during the one window the owner exists to prevent. Skipping
+  # is right rather than failing: the next boot, or the conversation's own next
+  # prompt, comes back after the lease has gone.
+  test "boot skips a machine whose owner holds a live lease" do
+    conv = resumable("idle")
+    conv.sandbox |> Ecto.Changeset.change(held()) |> Repo.update!()
+
+    log = ExUnit.CaptureLog.capture_log(fn -> assert sweep() == 0 end)
+    assert log =~ "machine_busy"
+    refute_received {:worker_start, _}
+    assert Repo.reload!(conv).status == "idle"
+  end
+
+  for transition <- ["parking", "destroying", "resuming"] do
+    test "boot starts a server on a #{transition} row whose lease died" do
+      # Round 1: a stamped transition with no live lease is an owner that died,
+      # not one working. Skipping it left the conversation with no server until
+      # something else gave up on the row — the hourly reaper, for a teardown.
+      conv = resumable("idle")
+
+      conv.sandbox
+      |> Ecto.Changeset.change(
+        transition: unquote(transition),
+        lease_epoch: 1,
+        lease_node: nil,
+        lease_until: nil
+      )
+      |> Repo.update!()
+
+      assert sweep() == 1
+      assert_received {:worker_start, args}
+      assert args[:conversation_id] == conv.id
+    end
+  end
+
+  test "boot starts a server on an abandoned destroy, as on main" do
+    # The one door where the round-0 definition was a live regression today
+    # (round 1, behaviour review). `Destroy` fences before it stamps, so a
+    # destroy whose owner died carries `reset_requested_at` *and*
+    # `teardown_requested_at` beside its `destroying` — and `Wake` and the
+    # attach door both answer the fence before they ever ask `busy?`. This
+    # sweep does not: its query selects `ready` rows with no reset filter, so
+    # it reached `busy?` and skipped a row it had always started a server on.
+    conv = resumable("idle")
+    now = DateTime.utc_now()
+
+    conv.sandbox
+    |> Ecto.Changeset.change(
+      reset_requested_at: now,
+      teardown_requested_at: now,
+      transition: "destroying",
+      lease_epoch: 1,
+      lease_node: nil,
+      lease_until: nil
+    )
+    |> Repo.update!()
+
+    assert sweep() == 1
+    assert_received {:worker_start, args}
+    assert args[:conversation_id] == conv.id
+  end
+
+  test "a lease claimed after the sweep's own check is refused at the door, and says so" do
+    # `check_machine_free/1` reads the row with no lock; the door re-reads it
+    # under the per-sandbox advisory lock and can refuse where our check
+    # passed. That refusal comes back into the `with`'s *body*, which the
+    # `else` below never sees, so before round 2 it left the sweep with no log
+    # line at all (round 1, locks review).
+    #
+    # `RuntimeDispatch.for_agent/1` is the hook: it runs after
+    # `check_machine_free/1` and before `register_server/2`, so a lease claimed
+    # there is exactly a claim landing in that gap.
+    conv = resumable("idle")
+
+    stub(Fountain.RuntimeDispatch, :for_agent, fn c ->
+      Repo.get!(Fountain.Conversations.Sandbox, conv.sandbox_id)
+      |> Ecto.Changeset.change(held())
+      |> Repo.update!()
+
+      Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [c])
+    end)
+
+    log = ExUnit.CaptureLog.capture_log(fn -> assert sweep() == 0 end)
+
+    assert log =~ "skipping conv #{conv.id} (machine_busy)"
+    refute_received {:worker_start, _}
+  end
+
+  test "boot starts a server once the lease has expired" do
+    conv = resumable("idle")
+
+    conv.sandbox
+    |> Ecto.Changeset.change(held(-1_000))
+    |> Repo.update!()
+
+    assert sweep() == 1
+    assert_received {:worker_start, args}
+    assert args[:conversation_id] == conv.id
+  end
+
   test "boot still leaves non-ready sandboxes to lazy recovery" do
     for status <- ["pending", "starting", "suspended", "terminated", "failed"] do
       conv = resumable("idle")
@@ -107,6 +210,17 @@ defmodule Fountain.Conversations.RehydratorTest do
 
     assert sweep() == 0
     refute_received {:worker_start, _}
+  end
+
+  # A lease somebody holds (ADR 0058) — the whole of what makes a machine busy
+  # to a reader. Written straight onto the row: no changeset casts these
+  # columns, which is itself part of the design.
+  defp held(ttl_ms \\ 30_000) do
+    [
+      lease_epoch: 1,
+      lease_node: "fountain@other",
+      lease_until: DateTime.add(DateTime.utc_now(), ttl_ms, :millisecond)
+    ]
   end
 
   defp resumable(status) do

@@ -37,7 +37,8 @@ defmodule Fountain.Conversations.Rehydrator do
   require Logger
 
   alias Fountain.{Agents, Conversations}
-  alias Fountain.Conversations.Launch
+  alias Fountain.Conversations.{Launch, Sandbox}
+  alias Fountain.Machines.Machine
 
   def run(opts \\ []) do
     if clustering_enabled?() do
@@ -132,11 +133,12 @@ defmodule Fountain.Conversations.Rehydrator do
   defp spawn_server(conv) do
     # Ownership: internal boot sweep; each conversation supplies its own agent_id.
     with :ok <- Conversations._unsafe_check_saved_execution_allowance(conv.id),
+         :ok <- check_machine_free(conv),
          %Agents.Agent{} = _agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:skip, :no_agent},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
-      Fountain.ConversationSupervisor
-      |> Horde.DynamicSupervisor.start_child(
+      conv.sandbox_id
+      |> Conversations.register_server(
         Launch.child_spec(conv.id, conv.sandbox_id, runtime_module, initial_prompt: nil)
       )
       |> case do
@@ -148,17 +150,65 @@ defmodule Fountain.Conversations.Rehydrator do
         {:error, {:already_started, pid}} ->
           {:ok, pid}
 
+        # The door made the same refusal `check_machine_free/1` does, on the
+        # row it re-read under the lock: a lease claimed in the gap between our
+        # check and the registration. The same outcome as our own skip, and it
+        # must say so — this `case` is the `with`'s *body*, so nothing here
+        # reaches the `else` below, and before ADR 0058 stage 6a round 2 this
+        # refusal left the sweep silently (round 1, locks review).
+        {:error, :sandbox_unavailable} ->
+          skipped(conv, {:skip, :machine_busy})
+
         other ->
-          other
+          skipped(conv, other)
       end
     else
-      {:skip, why} ->
-        Logger.warning("rehydrator: skipping conv #{conv.id} (#{why})")
-        :skipped
-
-      {:error, reason} ->
-        Logger.warning("rehydrator: skipping conv #{conv.id}: #{inspect(reason)}")
-        :skipped
+      outcome ->
+        skipped(conv, outcome)
     end
   end
+
+  # One logging path for every way this sweep declines a conversation, reached
+  # from the `with`'s `else` and from its body alike.
+  defp skipped(conv, {:skip, why}) do
+    Logger.warning("rehydrator: skipping conv #{conv.id} (#{why})")
+    :skipped
+  end
+
+  defp skipped(conv, {:error, reason}) do
+    Logger.warning("rehydrator: skipping conv #{conv.id}: #{inspect(reason)}")
+    :skipped
+  end
+
+  # `start_child` may also answer `:ignore`, which the `with` body used to
+  # return untouched. Logged rather than matched on: a sweep that raises on one
+  # odd row stops starting servers for the whole fleet.
+  defp skipped(conv, other) do
+    Logger.warning("rehydrator: skipping conv #{conv.id}: #{inspect(other)}")
+    :skipped
+  end
+
+  # A machine whose owner holds a live lease is not a machine to start a server
+  # on (ADR 0058 stage 6a). The sweep reads `ready` rows, and a `ready` row can
+  # be one a destroy, a reset or — from stage 6b — a park is holding between
+  # its intent and its finalize; the row it will write is not the row this
+  # preloaded struct shows. Starting a server there gives the machine a second
+  # writer during the one window the owner exists to prevent.
+  #
+  # A row whose lease has expired is started, stamped `transition` or not: that
+  # is an owner that died, not one working, and a boot sweep that skipped it
+  # would leave the conversation with no server until something else gave up on
+  # the row (round 1).
+  #
+  # Skipping, not failing: the next boot sweep or the conversation's own next
+  # prompt comes back, and by then the operation has finished or its lease has
+  # expired. `{:skip, _}` is the sweep's own "not now" shape.
+  defp check_machine_free(%{sandbox: %Sandbox{} = sandbox}) do
+    if Machine.busy?(sandbox), do: {:skip, :machine_busy}, else: :ok
+  end
+
+  # `_unsafe_list_resumable_conversations/0` joins the sandbox and preloads it,
+  # so the clause above is the one that runs. A conversation without one has no
+  # machine to be busy.
+  defp check_machine_free(_conv), do: :ok
 end
