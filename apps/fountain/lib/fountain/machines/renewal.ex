@@ -55,12 +55,24 @@ defmodule Fountain.Machines.Renewal do
       close: the lease then lapses on its own TTL and the next claimant takes it
       over, which is the state the machine would have been in had the renewer
       never existed.
-    * **A hard total deadline** of ten times the TTL, after
+    * **A hard total deadline**, ten times the TTL by default, after
       which it stops renewing whatever else is true. The monitor covers a caller
       that dies; this covers a caller that is *alive* and stuck — wedged in a
       provider call with no timeout of its own — where renewing forever would
       hold the machine just as hard. An operation that has not finished in ten
       TTLs is not one to keep a machine for.
+
+      **Ten TTLs is a default, not the rule** (stage 7b). It was written for a
+      destroy, a park and a resume, which are one provider round trip each and
+      take seconds; a *provision* is a machine being built — packages, a clone,
+      a setup script — and `ConversationServer`'s own ceiling on it has been
+      thirty minutes since #329. Ten minutes of renewals would have stopped a
+      legitimate provision two thirds of the way through, let the lease lapse
+      under it, and handed the row to the next claimant while the pipeline was
+      still writing files into the machine. So `around/5` takes `:deadline_ms`,
+      and the one caller that passes it is the provision bracket, which passes
+      exactly the deadline it is already bounded by. A deadline is still a
+      deadline: what changes is whose it is.
 
   **Not taken here: evicting a lease whose `lease_node` is not a connected
   node.** It is tempting and it is the same mistake #2307 constraint 4 names. A
@@ -120,20 +132,32 @@ defmodule Fountain.Machines.Renewal do
   Run `fun` with the lease on `sandbox_id` at `epoch` renewed underneath it.
 
   Answers `{:ok, result}` when the lease was still held throughout, and
-  `{:error, :superseded}` when a renewal found it was not — in which case
-  `fun`'s result is discarded, because it belongs to an operation another owner
-  has taken over.
+  `{:error, :superseded, result}` when a renewal found it was not.
+
+  **The result travels on both arms** (stage 7b round 1, behaviour review), and
+  the second one is why. `fun` has already run to completion by the time the
+  verdict is collected — `stop/1` is called after it returns — so a superseded
+  operation is one that *did the work* and may no longer record it. What it
+  reached is still the caller's to unwind: `Machines.Provision`'s callback mints
+  a broker session and rotates a conversation's callback key inside `fun`, and
+  the first draft of this function dropped both on the floor, leaving a live
+  credential on exactly the contention path this module exists for. The row is
+  another owner's; the caller's own resources are not.
 
   `fun` is run in the calling process, not the renewer: it is the provider call
   the protocol is here to make, and moving it would move the protocol.
+
+  `:deadline_ms` overrides how long renewals may go on for, in total. The
+  default is #{@max_lifetime_multiple} times `ttl_ms`; see the moduledoc for
+  why a provision passes its own.
   """
-  @spec around(Ecto.UUID.t(), Lease.epoch(), pos_integer(), (-> result)) ::
-          {:ok, result} | {:error, :superseded}
+  @spec around(Ecto.UUID.t(), Lease.epoch(), pos_integer(), (-> result), keyword()) ::
+          {:ok, result} | {:error, :superseded, result}
         when result: term()
-  def around(sandbox_id, epoch, ttl_ms, fun)
+  def around(sandbox_id, epoch, ttl_ms, fun, opts \\ [])
       when is_binary(sandbox_id) and is_integer(epoch) and is_integer(ttl_ms) and ttl_ms > 0 and
-             is_function(fun, 0) do
-    renewer = start(sandbox_id, epoch, ttl_ms)
+             is_function(fun, 0) and is_list(opts) do
+    renewer = start(sandbox_id, epoch, ttl_ms, opts)
 
     try do
       fun.()
@@ -154,10 +178,10 @@ defmodule Fountain.Machines.Renewal do
           :lost ->
             Logger.warning(
               "machine #{sandbox_id}: the lease at epoch #{epoch} was taken over while the " <>
-                "provider call was in flight; discarding the result"
+                "provider call was in flight; the row is another owner's from here"
             )
 
-            {:error, :superseded}
+            {:error, :superseded, result}
         end
     end
   end
@@ -165,14 +189,15 @@ defmodule Fountain.Machines.Renewal do
   @doc """
   Start renewing, and return the renewer.
 
-  `around/4` is the door; this and `stop/1` are public for the tests that drive
+  `around/5` is the door; this and `stop/1` are public for the tests that drive
   a renewal without a provider call in the middle of it.
   """
-  @spec start(Ecto.UUID.t(), Lease.epoch(), pos_integer()) :: pid()
-  def start(sandbox_id, epoch, ttl_ms) do
+  @spec start(Ecto.UUID.t(), Lease.epoch(), pos_integer(), keyword()) :: pid()
+  def start(sandbox_id, epoch, ttl_ms, opts \\ []) do
     callers = [self() | Process.get(:"$callers", [])]
     interval = max(div(ttl_ms, @renew_divisor), 1)
     caller = self()
+    lifetime_ms = Keyword.get(opts, :deadline_ms, ttl_ms * @max_lifetime_multiple)
 
     spawn(fn ->
       Process.put(:"$callers", callers)
@@ -185,7 +210,8 @@ defmodule Fountain.Machines.Renewal do
         # Monitored from inside the renewer rather than passed in: the
         # monitor has to belong to the process that acts on it.
         caller: Process.monitor(caller),
-        deadline: System.monotonic_time(:millisecond) + ttl_ms * @max_lifetime_multiple,
+        deadline: System.monotonic_time(:millisecond) + lifetime_ms,
+        lifetime_ms: lifetime_ms,
         verdict: :held
       }
 
@@ -242,7 +268,7 @@ defmodule Fountain.Machines.Renewal do
           System.monotonic_time(:millisecond) >= state.deadline ->
             Logger.warning(
               "machine #{state.sandbox_id}: the operation holding the lease at epoch " <>
-                "#{state.epoch} has run for #{@max_lifetime_multiple} lease lifetimes; " <>
+                "#{state.epoch} has run for its whole #{state.lifetime_ms}ms deadline; " <>
                 "stopping renewals so the lease expires"
             )
 

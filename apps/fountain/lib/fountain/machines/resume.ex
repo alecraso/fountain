@@ -120,6 +120,21 @@ defmodule Fountain.Machines.Resume do
   covered. Widening a sweep to `suspended` rows would change what reclamation
   looks at, which is not this stage's to change.
 
+  **One shape of it is worse than cosmetic, and is named here rather than left
+  to be found** (7a round 2, carried into 7b). A takeover whose re-admission is
+  *refused* — the tenant filled the slot while the dead owner's lease lapsed —
+  clears the stamp and leaves the row `suspended` over a machine the provider
+  says is **running**. That machine bills, and neither reaper sweep looks at
+  `suspended` rows: the idle sweep and the fenced-teardown sweep both scan
+  `ready`. Nothing corrects it until somebody prompts the conversation again, at
+  which point this protocol resumes a machine that was never down and the row
+  catches up.
+
+  It is bounded — it needs a tenant at its cap at the moment a takeover happens
+  — and closing it means a sweep over `suspended` rows whose provider reports
+  running, which is a change to what reclamation looks at and belongs with
+  whoever decides that.
+
   ## Outcomes
 
   `{:ok, :resumed}` brought the machine up. `{:ok, :already_up}` is a row that
@@ -446,10 +461,10 @@ defmodule Fountain.Machines.Resume do
       sandbox.status == "ready" ->
         {:ok, :already_up}
 
-      # A provision in flight. `main`'s wake never reaches a resume on one of
-      # these — `classify_reusable/2` answers `{:provisioning, id}` and the
-      # caller waits for the registry (#800) — and the word is kept so a caller
-      # that does reach it here behaves the same way.
+      # A provision in flight. The wake never reaches a resume on one of these —
+      # `Wake.maybe_reuse_sandbox/1` answers `{:provisioning, id}` and the caller
+      # waits for the registry (#800) — and the word is kept so a caller that
+      # does reach it here behaves the same way.
       sandbox.status in @provisioning_statuses ->
         {:error, :provisioning}
 
@@ -544,8 +559,12 @@ defmodule Fountain.Machines.Resume do
     ttl_ms = Keyword.get(opts, :lease_ttl_ms, @lease_ttl_ms)
 
     case Renewal.around(sandbox.id, epoch, ttl_ms, fn -> resume_at_provider(sandbox) end) do
-      {:error, :superseded} = superseded ->
-        superseded
+      # As in `Machines.Park` and `Machines.Destroy`: the provider's answer
+      # belongs to a row this owner has lost, and this module holds nothing else
+      # that needs unwinding. `Machines.Provision` does, which is why
+      # `Renewal.around/5` carries the result out at all.
+      {:error, :superseded, _provider_result} ->
+        {:error, :superseded}
 
       {:ok, :ok} ->
         finalize(sandbox, epoch, opts)

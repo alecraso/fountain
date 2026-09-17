@@ -43,9 +43,11 @@ defmodule Fountain.Machines.MachineBoundsTest do
 
   use ExUnit.Case, async: true
 
+  alias Fountain.Conversations.ProvisionWatchdog
   alias Fountain.Machines.Destroy
   alias Fountain.Machines.Machine
   alias Fountain.Machines.Park
+  alias Fountain.Machines.Provision
   alias Fountain.Machines.Resume
 
   # The ceiling `ConversationServer.call_server/2` reads. Duplicated rather than
@@ -150,6 +152,36 @@ defmodule Fountain.Machines.MachineBoundsTest do
              @conversation_call_timeout_ms
   end
 
+  test "a provision's ladder, and why its lease is not what bounds it" do
+    # A provision has the same two bounds as the other three and reads them
+    # differently, because it is the one operation here that legitimately runs
+    # for minutes. The lease TTL bounds a provision that has *stopped*, not one
+    # that is slow: `Machines.Renewal` extends it for as long as the work is
+    # making progress, up to `ProvisionWatchdog.deadline_ms/0`.
+    assert Provision.busy_wait_ms() == Destroy.busy_wait_ms()
+    assert Provision.lease_ttl_ms() == Destroy.lease_ttl_ms()
+
+    # There is no `Machine.provision_timeout_ms/0` and there is not meant to be:
+    # the bracket runs inline on its caller whichever way the gate is set, so
+    # there is no `GenServer.call` to put a ceiling on. See
+    # `Fountain.Machines.Provision`'s moduledoc.
+    #
+    # `Code.ensure_loaded!/1` first, because `function_exported?/3` answers
+    # `false` for an unloaded module and an `alias` does not load one — so
+    # without it this test passed for the wrong reason, and only happened to be
+    # safe because a *different* file adds `Mimic.copy(Machine)` (round 1,
+    # behaviour review).
+    Code.ensure_loaded!(Machine)
+    assert function_exported?(Machine, :provision, 3), "the scan below proves nothing"
+    refute function_exported?(Machine, :provision_timeout_ms, 0)
+
+    # And the watchdog's own wait for the lease, which is the one override in
+    # `lib/`. It has to be clear of the TTL, or it would arrive while the lease
+    # it is waiting for could still legitimately be held.
+    assert ProvisionWatchdog.retire_wait_ms() > Provision.lease_ttl_ms()
+    assert ProvisionWatchdog.lapse_grace_ms() > Provision.lease_ttl_ms()
+  end
+
   test "no call site overrides the bounds" do
     # The defaults only mean something if nothing in `lib/` passes its own. A
     # test may (and `destroy_test.exs` does) — that is the mechanism check.
@@ -171,9 +203,39 @@ defmodule Fountain.Machines.MachineBoundsTest do
         &String.ends_with?(&1, [
           "machines/destroy.ex",
           "machines/park.ex",
-          "machines/resume.ex"
+          "machines/resume.ex",
+          "machines/provision.ex",
+          # The one caller in `lib/` that overrides a bound on purpose, and it
+          # is exempted rather than allowed to hide: `ProvisionWatchdog` waits
+          # longer than five seconds for a lease it has already waited half an
+          # hour for, because giving up early would leave a stuck server alive
+          # with a live row — the #394 ordering inverted. Both the value and
+          # the fact that it passes it *by name* are pinned below, so exempting
+          # the file costs nothing the scan was buying.
+          "conversations/provision_watchdog.ex",
+          # And the one site that passes `:deadline_ms`: the provision bracket's
+          # renewal window is `ProvisionWatchdog.deadline_ms/0` rather than
+          # `Renewal`'s ten TTLs, which is behaviour change 8.
+          "conversations/fresh_provision.ex"
         ])
       )
+
+    # **Each exempted file is exempt because it passes a named accessor rather
+    # than a literal** — which is what keeps the numbers above the live ones,
+    # and which an earlier draft asserted in prose and nowhere else (round 2,
+    # surfaces review). A literal there would be a second copy of a bound with
+    # nothing watching it, which is this test's whole failure mode.
+    for {file, call} <- [
+          {"apps/fountain/lib/fountain/conversations/provision_watchdog.ex",
+           "busy_wait_ms: @retire_wait_ms"},
+          {"apps/fountain/lib/fountain/conversations/fresh_provision.ex",
+           "deadline_ms: ProvisionWatchdog.deadline_ms()"}
+        ] do
+      assert File.read!(Path.join(root, file)) =~ call,
+             "#{file} is exempt from the scan below because it passes `#{call}`. It does not " <>
+               "any more, so either it hard-codes a bound now — which the exemption was never " <>
+               "for — or the call moved and this pin has to move with it."
+    end
 
     # Not a bare count: the files that could plausibly override a bound are the
     # three sites that call the protocol, so the scan has to be shown to reach
@@ -193,7 +255,11 @@ defmodule Fountain.Machines.MachineBoundsTest do
                "override there would not be seen and this test proves nothing"
     end
 
-    offenders = Enum.filter(files, &(File.read!(&1) =~ ~r/\b(busy_wait_ms|lease_ttl_ms):/))
+    # `deadline_ms` joined the two in stage 7b: a `deadline_ms:` on a destroy, a
+    # park or a resume would silently replace `Renewal`'s ten-TTL hard stop, and
+    # nothing else would notice — which is the failure mode this scan is for.
+    offenders =
+      Enum.filter(files, &(File.read!(&1) =~ ~r/\b(busy_wait_ms|lease_ttl_ms|deadline_ms):/))
 
     assert offenders == [],
            "these pass their own bound, so the defaults above stop being the live " <>
