@@ -48,8 +48,10 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     {pid, cmd_ref, _ref} = start_with_turn(conv)
 
     # 3 x 60 bytes against a 100-byte budget: chunk 1 persists, chunk 2
-    # crosses the budget → marker, chunk 3 is silently dropped.
-    chunk = String.duplicate("a", 60)
+    # crosses the budget → marker, chunk 3 is silently dropped. Dots, because
+    # a chunk ending in a registered value's first byte is held back (#2359)
+    # and would no longer arrive as one row.
+    chunk = String.duplicate(".", 60)
     for _ <- 1..3, do: send(pid, {:acp, cmd_ref, {:lines, "stdout", chunk}})
     _ = :sys.get_state(pid)
 
@@ -92,7 +94,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
 
     {pid2, cmd_ref2, _ref2} = start_with_turn(conv)
 
-    send(pid2, {:acp, cmd_ref2, {:lines, "stdout", String.duplicate("c", 20)}})
+    send(pid2, {:acp, cmd_ref2, {:lines, "stdout", String.duplicate(",", 20)}})
     _ = :sys.get_state(pid2)
 
     data = Enum.map(output_events(conv.id), & &1.data)
@@ -113,10 +115,10 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     conv = setup_conv()
     {pid, cmd_ref, _ref} = start_with_turn(conv)
 
-    for _ <- 1..5, do: send(pid, {:acp, cmd_ref, {:lines, "stdout", String.duplicate("d", 60)}})
+    for _ <- 1..5, do: send(pid, {:acp, cmd_ref, {:lines, "stdout", String.duplicate(";", 60)}})
     _ = :sys.get_state(pid)
 
-    assert Enum.count(output_events(conv.id), &(&1.data =~ "dddd")) == 5
+    assert Enum.count(output_events(conv.id), &(&1.data =~ ";;;;")) == 5
     GenServer.stop(pid)
   end
 
@@ -124,10 +126,10 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     conv = setup_conv()
     {pid, cmd_ref, _ref} = start_with_turn(conv)
 
-    send(pid, {:acp, cmd_ref, {:lines, "stdout", "hello"}})
+    send(pid, {:acp, cmd_ref, {:lines, "stdout", "hello\n"}})
     _ = :sys.get_state(pid)
 
-    assert Enum.any?(output_events(conv.id), &(&1.data == "hello"))
+    assert Enum.any?(output_events(conv.id), &(&1.data == "hello\n"))
     refute Enum.any?(output_events(conv.id), &(&1.data =~ "durable log budget"))
     GenServer.stop(pid)
   end
