@@ -451,6 +451,148 @@ defmodule Fountain.Machines.DirectWritesTest do
              "A new caller is a decision, not a refactor: add it here with the reason."
   end
 
+  # The context's turn-admitting and turn-ending writes, and the files allowed
+  # to call each: its own definition site and `lib/fountain/machines/`. Stage 8a
+  # made `Fountain.Machines.Machine.admit_turn/3` and `end_turn/3` the only two
+  # doors onto them (ADR 0058), and this is the pin that keeps it so — the
+  # turn-row half of what `@row_writes` pins for the sandbox row. By file, like
+  # the opt-out pin above, so a new caller has to come here and say why.
+  #
+  # `end_running_turn(` is the public writer behind both `_unsafe_complete_turn/4`
+  # and `_unsafe_interrupt_turn/2`, and it has two definer-side callers (round
+  # 1, surfaces review — a plant of it in `turn_machine.ex` passed the first
+  # draft of this pin).
+  @turn_writes [
+    {"_unsafe_create_turn_on_sandbox(", ["apps/fountain/lib/fountain/conversations.ex"]},
+    {"_unsafe_complete_turn(", ["apps/fountain/lib/fountain/conversations.ex"]},
+    {"_unsafe_orphan_turn(", ["apps/fountain/lib/fountain/conversations.ex"]},
+    {"_unsafe_interrupt_turn(", ["apps/fountain/lib/fountain/conversations/interruption.ex"]},
+    {"end_running_turn(",
+     [
+       "apps/fountain/lib/fountain/conversations.ex",
+       "apps/fountain/lib/fountain/conversations/interruption.ex"
+     ]}
+  ]
+
+  # And the shape that names no function at all: a `Repo.update_all` whose
+  # source is the `turns` table (round 1, behaviour review — planted in
+  # `wake.ex`, it passed the by-name pin). The same window and the same source
+  # test `@row_writes` applies to `sandboxes`, over `Turn`, `Conversations.Turn`
+  # or the bare table name — and, since round 2, the two shapes that name no
+  # `from` at all: the bare queryable (`Repo.update_all(Turn, set: ..)`) and
+  # the piped one (`Turn |> where(..) |> Repo.update_all(..)`), the shortest
+  # ways to write a turn-row bulk update. The `sandboxes` half still sees only
+  # the `from` shape.
+  #
+  # Exactly one exists, and widening the scan is what found it: the detached
+  # permission resolution in `Conversations` (#1635) clears `waiting`,
+  # `pending_permission` and `permission_deadline` on the one turn whose request
+  # was answered, piped from `Turn`. It neither admits nor ends a turn — it
+  # never names `status` — so it is not the owner's, and it is pinned by file
+  # the way the sandboxes half pins its own: a second bulk write anywhere, or
+  # another one here, is a decision to come and say why.
+  @turn_update_all_files ["apps/fountain/lib/fountain/conversations.ex"]
+  @turn_source ~r/\bfrom\s*\(?\s*\w+\s+in\s+(?:(?:[A-Za-z_]\w*\.)*Turn\b|"turns")|\bupdate_all\(\s*(?:(?:[A-Za-z_]\w*\.)*Turn\b|"turns")\s*,|(?:(?:[A-Za-z_]\w*\.)*Turn\b|"turns")\s*\|>/
+
+  test "the context's turn writes are called from the owner's namespace only" do
+    root = Path.expand("../../../../..", __DIR__)
+
+    # `source_files/1` excludes `lib/fountain/machines/`, which is exactly the
+    # set of files that may not call these; the definers are checked by name.
+    files = source_files(root)
+    relative = MapSet.new(files, &Path.relative_to(&1, root))
+
+    for site <- [
+          "apps/fountain/lib/fountain/conversations/turn_machine.ex",
+          "apps/fountain/lib/fountain/conversations/connection.ex",
+          "apps/fountain/lib/fountain/conversations/reattachment.ex",
+          "apps/fountain/lib/fountain/conversations/wake.ex",
+          "apps/fountain/lib/fountain/conversations/conversation_server.ex",
+          "apps/fountain/lib/fountain/workers/autonomous_turn_reaper.ex"
+        ] do
+      assert MapSet.member?(relative, site),
+             "the scan missed #{site} (#{length(files)} files under #{root}), so a direct " <>
+               "call there would not be seen and this test proves nothing"
+    end
+
+    for {write, definers} <- @turn_writes do
+      callers =
+        files
+        |> Enum.filter(fn file ->
+          file |> File.read!() |> strip_docs_and_comments() |> String.contains?(write)
+        end)
+        |> Enum.map(&Path.relative_to(&1, root))
+        |> Enum.sort()
+
+      assert callers == Enum.sort(definers),
+             "`#{write}` is called outside `lib/fountain/machines/` by:\n  " <>
+               Enum.join(callers, "\n  ") <>
+               "\n\nEvery turn admission and every turn ending goes through " <>
+               "`Fountain.Machines.Machine.admit_turn/3` or `end_turn/3` (ADR 0058 stage 8a). " <>
+               "A new direct caller is a decision, not a refactor."
+    end
+
+    bulk =
+      for file <- files,
+          count = count_turn_update_all(strip_docs_and_comments(File.read!(file))),
+          _ <- 1..count//1,
+          do: Path.relative_to(file, root)
+
+    assert Enum.sort(bulk) == Enum.sort(@turn_update_all_files),
+           "`Repo.update_all` on the turns table is written in:\n  " <>
+             Enum.join(Enum.sort(bulk), "\n  ") <>
+             "\n\nA turn row is admitted and ended through the owner's two doors only " <>
+             "(ADR 0058 stage 8a); a bulk write names neither. The one allowed is the " <>
+             "detached-permission resolution, which never writes status."
+  end
+
+  # The scan's own positive control for the bulk shape, the way the sandboxes
+  # `update_all` has one above.
+  test "an update_all on the turns table is seen, and a join to it is not" do
+    sourced = """
+    Repo.update_all(
+      from(t in Turn, where: t.id == ^turn_id),
+      set: [status: "completed"]
+    )
+    """
+
+    joined = """
+    Repo.update_all(
+      from(c in Conversation, join: t in Turn, on: t.conversation_id == c.id),
+      set: [status: "idle"]
+    )
+    """
+
+    bare = """
+    Repo.update_all(Fountain.Conversations.Turn, set: [status: "completed"])
+    """
+
+    piped = """
+    Turn
+    |> where([t], t.id == ^turn_id)
+    |> Repo.update_all(set: [status: "completed"])
+    """
+
+    assert count_turn_update_all(sourced) == 1
+    assert count_turn_update_all(bare) == 1
+    assert count_turn_update_all(piped) == 1
+    assert count_turn_update_all(joined) == 0
+  end
+
+  defp count_turn_update_all(content) do
+    lines = String.split(content, "\n")
+
+    lines
+    |> Enum.with_index()
+    |> Enum.filter(fn {line, _index} -> Regex.match?(@sandbox_update_all, line) end)
+    |> Enum.count(fn {_line, index} ->
+      lines
+      |> Enum.slice(max(index - @source_window, 0), 2 * @source_window + 1)
+      |> Enum.join("\n")
+      |> then(&Regex.match?(@turn_source, &1))
+    end)
+  end
+
   defp source_files(root) do
     top_level =
       ["apps/fountain/lib", "ee/lib"]
