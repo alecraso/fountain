@@ -139,8 +139,14 @@ expired is an owner that died, not one working, and refusing a reader on it
 withheld a machine for as long as the sweep that gives up on the row takes to
 run. Takeover, below, is what resolves it.) A finalize lost
 after a successful provider call is repaired at takeover, which reads the
-transition and the machine's true state and compensates — a `parking` row
-whose machine is up is either resumed or finalized, never both.
+transition and the machine's true state and compensates — never both. (Stage
+6b built that for `parking` and settled what "compensates" means there: the
+taker finalizes a machine the provider reports suspended, and *clears the
+transition* on one it reports running, leaving the row `ready` for the next
+idle verdict to act on. It never resumes. A resume is compute, and constraint 5
+puts compute behind the account-suspension and credit gates this protocol does
+not consult; and the compare-and-set has already made the superseded owner's
+own call invisible, so there is nothing to undo.)
 `reset_requested_at` and `teardown_requested_at` become
 `transition: destroying` with a reason.
 
@@ -151,7 +157,7 @@ whose machine is up is either resumed or finalized, never both.
 | `attach(conv, agent_layer)` / `detach(conv)` | the attach door, release, `_unsafe_sandbox_held_by_other?/2` | a refcount; the last detach applies the mode's policy |
 | `admit_turn(conv, runtime)` / `end_turn(conv)` | the locked turn insert, `_unsafe_sandbox_busy_elsewhere?/4`, the capacity check | capacity per `Runtimes.ACP.concurrency/1`, counted per runtime (#1089 blocker 4) |
 | `ensure_up()` | `Provisioning` create and its watchdog, `Wake`'s suspended resume, the rehydrator's start | two prompts waking one machine resume it once; the second waits (0023 step 4) |
-| `park(reason)` | `SandboxReaper.park/1`, `Lifecycle.park/4`, `HomeCheckpoint` | refused while any turn is admitted; the checkpoint happens inside the transition |
+| `park(reason)` | `SandboxReaper.idle_sweep/2`, `Lifecycle.park/4`, `HomeCheckpoint` | refused while a turn is admitted that this park is not itself cutting; the checkpoint happens inside the transition |
 | `destroy(reason, actor)` | terminate, reset, agent delete, admin reap, account deletion, `Lifecycle.destroy/4` | one door; one `sandbox.destroyed` audit event carrying the actor (0013) |
 | `retarget(triple)` | `Reapply`'s row write | refused with cotenants or a changed `build_fingerprint`, as 0023's 2026-09-11 amendment says |
 | `machine_gone` (inbound) | the `{:machine_gone, …}` cast senders | the owner tells every bound conversation once; `MachineEvents` becomes its outbound |

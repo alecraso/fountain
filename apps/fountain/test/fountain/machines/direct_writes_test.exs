@@ -12,9 +12,15 @@ defmodule Fountain.Machines.DirectWritesTest do
   ratchet for that move: it counts every call site the owner has not yet
   absorbed, in two groups, and fails if either count rises above its pin.
 
-  - `@row_writes` — direct writes to the sandbox row: `update_sandbox/2`,
-    `update_sandbox_row/2` and `claim_sandbox/2` (`Fountain.Conversations`),
-    called from anywhere other than their own definitions.
+  - `@row_writes` — direct writes to the sandbox row, in three shapes:
+    `update_sandbox/2`, `update_sandbox_row/2` and `claim_sandbox/2`
+    (`Fountain.Conversations`), called from anywhere other than their own
+    definitions; a `Repo.update_all/3` whose source is the `sandboxes` table;
+    and a `Repo.insert`/`insert!`/`update`/`update!` whose changeset is a
+    sandbox's. The last two were added by stage 6b (see the pin comment)
+    because writes had begun leaving the context through shapes the scan could
+    not see — and, once it could see them, because four writes that had never
+    been in any count turned out to be there all along.
   - `@provider_mutations` — direct calls into the provider:
     `Managoat.Sandbox.create/2`, `resume/1`, `suspend/1`, `destroy/1` and
     `create_checkpoint/1`, including calls through a bare
@@ -52,6 +58,29 @@ defmodule Fountain.Machines.DirectWritesTest do
     `update_sandbox_row` or `claim_sandbox`) is excluded; a call to one of
     them from inside `Fountain.Conversations` itself still counts (e.g.
     `claim_sandbox/2` calling `update_sandbox/2`).
+  - An `update_all` counts when the *source* of its query is `Sandbox` — a
+    `from`-clause binding on `Sandbox`, `Conversations.Sandbox` or the bare
+    `"sandboxes"` table, found in the ten lines around the call so the query
+    may be built on a line of its own or piped in. A query that merely
+    *joins* `Sandbox` to write some other table does not count, and one does:
+    `MachineEvents` updates `conversations` with a join on `sandboxes`.
+  - A `Repo.insert`, `Repo.insert!`, `Repo.update` or `Repo.update!` counts
+    when the changeset it is given is a sandbox's. That is decided per
+    **function body**: a body that names the schema (`in Sandbox`,
+    `%Sandbox{}`) has each of its `Repo` writes attributed to the nearest
+    changeset expression above it, and the write counts when that expression
+    is `Sandbox.changeset(` or a bare `Ecto.Changeset.change(`. A body that
+    does not name the schema is skipped entirely.
+
+    Both halves are load-bearing. Attribution is what keeps
+    `Launch.fail_initial_start/2` at one rather than two — it writes a
+    conversation and a sandbox in the same locked body, through
+    `Conversation.changeset(` and `Sandbox.changeset(` — and the bare
+    `Ecto.Changeset.change(` clause is what sees the three writes that build
+    no schema changeset at all: the teardown fence, the reset front door and
+    `SandboxIdentity`. Scoping to the body rather than to a window of lines
+    is what makes that safe: `Conversations.do_update_sandbox/2` puts fifteen
+    lines of guards between its changeset and its `Repo.update/1`.
   - The row-write match is word-bounded so `reclaim_sandbox(` (a local,
     unrelated function on `ConversationServer`) does not match
     `claim_sandbox(`.
@@ -91,14 +120,57 @@ defmodule Fountain.Machines.DirectWritesTest do
   # was never counted: this ratchet counts *mutations*, and asking a provider
   # what it has is not one.
   #
-  # `@row_writes` stays at 21 on purpose. The write the reset finalize used to
-  # make went through `update_sandbox_if/3` — a private function this scan does
-  # not count, since it counts `update_sandbox(`, `update_sandbox_row(` and
-  # `claim_sandbox(` — so a real write left `lib/fountain/conversations.ex` for
-  # `Fountain.Machines.Lease.cas_update/3` without the number moving. The pin
-  # is a floor on what the scan can see, not a census of every row write.
-  @row_writes 21
-  @provider_mutations 11
+  # `@row_writes` stayed at 21 through stage 5c. The write the reset finalize
+  # used to make went through `update_sandbox_if/3` — a private function this
+  # scan did not count, since it counted `update_sandbox(`,
+  # `update_sandbox_row(` and `claim_sandbox(` — so a real write left
+  # `lib/fountain/conversations.ex` for `Fountain.Machines.Lease.cas_update/3`
+  # without the number moving. Stage 6a then added a write the scan could not
+  # see either: `Conversations.register_server/2`'s `woken_at` marker, an
+  # `update_all` on the primary key, declared in that PR's body as an honest
+  # gap.
+  #
+  # 21 -> 25: stage 6b widened the scan rather than leave the gap, because a
+  # ratchet that only counts one spelling of a write teaches the next stage to
+  # use another. The four it can now see, all of them pre-existing:
+  #
+  #   1  conversations.ex   `register_server/2`'s `woken_at` marker (6a)
+  #   1  conversations.ex   `create_sandbox/1`'s insert
+  #   1  conversations.ex   `do_update_sandbox/2`'s own `Repo.update/1`
+  #   1  launch.ex          `fail_initial_start/2`'s locked failure write
+  #
+  # The pin is still a floor on what the scan can see rather than a census —
+  # `Repo.query!`, an `Ecto.Multi` or a raw `execute` would all pass it — and
+  # the three shapes it does see are the three this codebase writes the row
+  # with.
+  #
+  # 25 -> 29: the widening above, corrected. Counting `Sandbox.changeset(` and
+  # calling that "the write" found three of the seven writes that exist, and
+  # the missing four are not obscure: the teardown fence
+  # (`Lifecycle.do_fence_sandbox_for_teardown/2`), the reset fence
+  # (`Conversations.do_reset_sandbox/2`), `SandboxIdentity.bind/2`'s
+  # `provider_instance_id` and `InferenceBinding.compatible_machine/2`'s
+  # `codex_inference_source` all build their changeset with
+  # `Ecto.Changeset.change/2` and never name the schema at the write. Three of
+  # the four are columns ADR 0058 stage 9 deletes outright; the point of a
+  # ratchet is that it knows they are there in the meantime.
+  #
+  # 29 -> 26 and 11 -> 9: stage 6b's park moved three row writes and two
+  # provider calls behind `Fountain.Machines.Park`.
+  #
+  #   gone  `lifecycle.ex`        `park_row/1`'s `claim_sandbox/2` and
+  #                               `Lifecycle.suspend/1`'s `Managoat.Sandbox.suspend/1`
+  #   gone  `sandbox_reaper.ex`   `park/1`'s `update_sandbox/2` and
+  #                               `idle_sweep/2`'s `Managoat.Sandbox.suspend/1`
+  #   gone  `home_checkpoint.ex`  `record/2`'s `update_sandbox/2`, now
+  #                               `Lease.cas_update/3` under the park's own epoch
+  #
+  # `home_checkpoint.ex` keeps its `create_checkpoint/1`: the park protocol
+  # calls `on_park/2`, not the provider, so the checkpoint is still that
+  # module's to take and this ratchet still counts it. It leaves with the
+  # checkpoint itself, whenever that moves.
+  @row_writes 26
+  @provider_mutations 9
 
   @provider_verbs ~w(create_checkpoint create resume suspend destroy)
 
@@ -109,6 +181,30 @@ defmodule Fountain.Machines.DirectWritesTest do
 
   @row_write_call ~r/\b(?:update_sandbox_row|update_sandbox|claim_sandbox)\(/
   @provider_verb_alt Enum.join(@provider_verbs, "|")
+
+  # The two shapes stage 6b taught the scan. `@sandbox_update_all` finds the
+  # call; `@sandbox_source` decides, over the window around it, whether the
+  # thing being written is the `sandboxes` table. `Managoat.Sandbox` has no
+  # `changeset/2`, so the changeset pattern cannot pick the provider client up
+  # by mistake.
+  @sandbox_update_all ~r/\bRepo\.update_all\(/
+  @sandbox_source ~r/\bfrom\s*\(?\s*\w+\s+in\s+(?:(?:[A-Za-z_]\w*\.)*Sandbox\b|"sandboxes")/
+
+  # The schema named anywhere in a function body: a query binding on it, or a
+  # struct literal. Either says "this body is about a sandbox row".
+  # No leading `\b` on the alternation: `%` is not a word character, so a
+  # boundary before it never matches after whitespace and `%Sandbox{}` was
+  # invisible. The `in` branch keeps its own.
+  @sandbox_schema ~r/(?:\bin\s+(?:[A-Za-z_]\w*\.)*Sandbox\b|%(?:[A-Za-z_]\w*\.)*Sandbox\{)/
+  @function_head ~r/^\s*(?:def|defp)\s/
+  @repo_write ~r/\bRepo\.(?:update|insert)!?\(/
+  @schema_changeset ~r/\b([A-Z][A-Za-z_0-9]*)\.changeset\(/
+  @bare_changeset ~r/\bEcto\.Changeset\.change\(/
+
+  # How far either side of a `Repo.update_all(` the source may be written.
+  # Wide enough for a query built on the preceding lines and piped in, narrow
+  # enough that the next call's query is not in view.
+  @source_window 5
 
   test "direct machine writes outside lib/fountain/machines/ only go down" do
     root = Path.expand("../../../../..", __DIR__)
@@ -131,6 +227,89 @@ defmodule Fountain.Machines.DirectWritesTest do
              "of #{@provider_mutations}. The pin only shrinks (ADR 0058, " <>
              "#2344): move the call behind Fountain.Machines.* rather than " <>
              "raising it.\n" <> breakdown(provider_counts, root)
+  end
+
+  # What each of the two widened shapes is supposed to find, by file. A
+  # ratchet is only as good as its scan, and a regex that matched nothing
+  # would pass the count above forever — the failure mode round 2 of stage 5a
+  # found in `machine_bounds_test.exs`. So the shapes are pinned where they
+  # are, and a stage that moves one of these writes behind the owner edits
+  # this list along with the number.
+  @sandbox_update_all_files ["apps/fountain/lib/fountain/conversations.ex"]
+  @sandbox_write_files [
+    # `create_sandbox/1`'s insert, `do_update_sandbox/2`'s own `Repo.update/1`,
+    # and `do_reset_sandbox/2`'s reset fence.
+    "apps/fountain/lib/fountain/conversations.ex",
+    "apps/fountain/lib/fountain/conversations.ex",
+    "apps/fountain/lib/fountain/conversations.ex",
+    # `do_fence_sandbox_for_teardown/2` — the teardown fence.
+    "apps/fountain/lib/fountain/conversations/lifecycle.ex",
+    # `fail_initial_start/2`'s locked failure write — one, not two: the
+    # conversation it fails in the same body goes through
+    # `Conversation.changeset(` and is attributed away.
+    "apps/fountain/lib/fountain/conversations/launch.ex",
+    # `bind/2` stamping `provider_instance_id` on first binding.
+    "apps/fountain/lib/fountain/conversations/sandbox_identity.ex",
+    # `compatible_machine/2` stamping `codex_inference_source`.
+    "apps/fountain/lib/fountain/conversations/inference_binding.ex"
+  ]
+
+  test "the widened scan sees the row writes that are not calls to the context" do
+    root = Path.expand("../../../../..", __DIR__)
+    files = source_files(root)
+
+    update_alls =
+      for file <- files,
+          count = count_sandbox_update_all(strip_docs_and_comments(File.read!(file))),
+          _ <- 1..count//1,
+          do: Path.relative_to(file, root)
+
+    writes =
+      for file <- files,
+          count = count_sandbox_writes(strip_docs_and_comments(File.read!(file))),
+          _ <- 1..count//1,
+          do: Path.relative_to(file, root)
+
+    assert Enum.sort(update_alls) == Enum.sort(@sandbox_update_all_files),
+           "`Repo.update_all` on the sandboxes table is written in:\n  " <>
+             Enum.join(Enum.sort(update_alls), "\n  ") <>
+             "\n\nEach one writes the machine's row without going through " <>
+             "`Fountain.Conversations` or the owner (ADR 0058, #2344)."
+
+    assert Enum.sort(writes) == Enum.sort(@sandbox_write_files),
+           "`Repo.update`/`insert` of a sandbox changeset happens in:\n  " <>
+             Enum.join(Enum.sort(writes), "\n  ") <>
+             "\n\nEach one writes the machine's row without going through the owner " <>
+             "(ADR 0058, #2344). A change to this list is a change to who writes " <>
+             "`sandboxes`, not a refactor."
+  end
+
+  # A join is not a source. `MachineEvents.machine_gone/6` updates
+  # `conversations` with a join on `sandboxes`, and counting it would make the
+  # ratchet unlowerable by anything a park or a destroy does — it writes no
+  # machine state at all.
+  test "an update_all that only joins the sandboxes table is not a row write" do
+    joined = """
+    {matched, _} =
+      Repo.update_all(
+        from(c in Conversations.Conversation,
+          join: s in Conversations.Sandbox,
+          on: s.id == c.sandbox_id,
+          where: s.status == "terminated"
+        ),
+        set: [status: "idle"]
+      )
+    """
+
+    sourced = """
+    Repo.update_all(
+      from(s in Sandbox, where: s.id == ^sandbox_id),
+      set: [woken_at: DateTime.utc_now()]
+    )
+    """
+
+    assert count_sandbox_update_all(joined) == 0
+    assert count_sandbox_update_all(sourced) == 1
   end
 
   # The three options stage 5c added to `Fountain.Machines.Destroy` each turn a
@@ -207,7 +386,83 @@ defmodule Fountain.Machines.DirectWritesTest do
 
   defp count_row_writes(file) do
     content = file |> File.read!() |> strip_docs_and_comments() |> strip_row_write_defs()
-    @row_write_call |> Regex.scan(content) |> length()
+
+    (@row_write_call |> Regex.scan(content) |> length()) +
+      count_sandbox_writes(content) +
+      count_sandbox_update_all(content)
+  end
+
+  # `Repo.update`/`insert` calls whose changeset is a sandbox's, attributed
+  # per function body. See the moduledoc for why the body, and not a window of
+  # lines, is the unit.
+  defp count_sandbox_writes(content) do
+    content
+    |> function_bodies()
+    |> Enum.filter(&Regex.match?(@sandbox_schema, &1))
+    |> Enum.map(&count_attributed_writes/1)
+    |> Enum.sum()
+  end
+
+  defp function_bodies(content) do
+    content
+    |> String.split("\n")
+    |> Enum.chunk_while(
+      [],
+      fn line, acc ->
+        if Regex.match?(@function_head, line) and acc != [],
+          do: {:cont, Enum.reverse(acc), [line]},
+          else: {:cont, [line | acc]}
+      end,
+      fn acc -> {:cont, Enum.reverse(acc), []} end
+    )
+    |> Enum.map(&Enum.join(&1, "\n"))
+  end
+
+  # Walks the body keeping the changeset most recently built, and counts a
+  # write only when that one is the sandbox's. `nil` — a write with no
+  # changeset expression above it in this body — is not counted: this scan
+  # will not guess about a changeset built somewhere else and passed in, and
+  # the per-file test below is what fails if one ever is.
+  defp count_attributed_writes(body) do
+    body
+    |> String.split("\n")
+    |> Enum.reduce({nil, 0}, fn line, {subject, count} ->
+      subject = subject_of(line) || subject
+
+      if Regex.match?(@repo_write, line) and sandbox?(subject),
+        do: {subject, count + 1},
+        else: {subject, count}
+    end)
+    |> elem(1)
+  end
+
+  defp subject_of(line) do
+    case Regex.run(@schema_changeset, line) do
+      [_, schema] -> schema
+      nil -> if Regex.match?(@bare_changeset, line), do: :change, else: nil
+    end
+  end
+
+  defp sandbox?(:change), do: true
+  defp sandbox?("Sandbox"), do: true
+  defp sandbox?(_other), do: false
+
+  # An `update_all` whose source is the `sandboxes` table. The lines are kept
+  # rather than the raw text so the window is the same however the query is
+  # laid out, and `strip_docs_and_comments/1` has already blanked comment
+  # lines in place, which is what keeps the line numbering honest.
+  defp count_sandbox_update_all(content) do
+    lines = String.split(content, "\n")
+
+    lines
+    |> Enum.with_index()
+    |> Enum.filter(fn {line, _index} -> Regex.match?(@sandbox_update_all, line) end)
+    |> Enum.count(fn {_line, index} ->
+      lines
+      |> Enum.slice(max(index - @source_window, 0), 2 * @source_window + 1)
+      |> Enum.join("\n")
+      |> then(&Regex.match?(@sandbox_source, &1))
+    end)
   end
 
   defp count_provider_mutations(file) do

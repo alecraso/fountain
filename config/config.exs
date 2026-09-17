@@ -30,6 +30,25 @@ config :fountain, Oban,
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
+    # Orphan rescue, required by the two workers that carry `unique:` with
+    # `states: :incomplete` — `SandboxReaper` (ADR 0058 stage 6b) and
+    # `SandboxResetReconciler`. A job left `executing` by a pod that died
+    # mid-run stays `executing` for ever, and for a unique worker that is not
+    # one lost run: every later cron insert answers `conflict?: true` against
+    # the corpse, and the sweep stops for good with nothing failing. Oban's
+    # shutdown grace is 15 seconds and a contended reaper run is budgeted at
+    # minutes, so the pod that loses a rolling deploy mid-sweep is the ordinary
+    # case rather than a rare one.
+    #
+    # Rescued after 30 minutes, checked every minute: comfortably longer than
+    # any run should take, and far shorter than the hour between crons, so a
+    # rescue never overlaps the run it is standing in for. Thirty rather than
+    # ten because `SandboxReaper`'s `@owner_attempt_limit` bounds its *owner
+    # attempts* at about eight minutes and nothing else — a run also lists
+    # every provider's sandboxes and spends its destroy budget on them, and a
+    # slow provider is exactly the condition under which a long run and a
+    # rescue would otherwise meet.
+    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30), interval: :timer.minutes(1)},
     {Oban.Plugins.Cron,
      crontab: [
        # 04:23 UTC — after the 03:17 database backup, so pruning never races

@@ -279,7 +279,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
       set: [updated_at: DateTime.add(DateTime.utc_now(), -172_800, :second)]
     )
 
-    assert {0, 0, 0} = Fountain.Workers.SandboxReaper.sweep_abandoned_sandboxes()
+    assert {0, 0, 0, 0} = Fountain.Workers.SandboxReaper.sweep_abandoned_sandboxes()
     assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
     assert Repo.reload!(ctx.home).status == "ready"
     refute Enum.any?(Fountain.Audit.list_for_user(ctx.user.id), &(&1.action == "sandbox.reset"))
@@ -314,7 +314,11 @@ defmodule Fountain.Conversations.SandboxResetTest do
     test "a park is skipped rather than raised, and takes no checkpoint", ctx do
       reject(Managoat.Sandbox.Sprites, :create_checkpoint, 2)
 
-      assert :skipped = Fountain.Conversations.HomeCheckpoint.on_park(Repo.reload!(ctx.home))
+      # The epoch is never reached: a fenced row is `:skipped` before the
+      # checkpoint, which is before anything is written. Since ADR 0058 stage
+      # 6b the park protocol refuses such a row before it even gets here, and
+      # this keeps the checkpoint's own half of the rule under test.
+      assert :skipped = Fountain.Conversations.HomeCheckpoint.on_park(Repo.reload!(ctx.home), 1)
       assert :ok = Fountain.Conversations.Lifecycle.park(ctx.a.id, ctx.home.id, nil, :idle)
 
       held = Repo.reload!(ctx.home)
