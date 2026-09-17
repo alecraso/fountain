@@ -10,3 +10,6 @@
   text on a card that never left light mode. Switched the affected classes
   to the `var(--color-*)` arbitrary-value convention `dashboard_live/index.ex`
   already uses.
+- Help prose now follows the selected console theme even when it differs
+  from the operating system's theme. Expired-export messages remain readable
+  in both light and dark mode.

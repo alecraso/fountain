@@ -144,7 +144,7 @@ defmodule FountainWeb.Live.AccountLive do
                   </a>
                 </div>
               <% :expired -> %>
-                <span class="text-[var(--color-text-muted)]">
+                <span class="text-[var(--color-text-primary)]">
                   Your last export has expired. Request a new one to download your data.
                 </span>
               <% :failed -> %>
