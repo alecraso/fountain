@@ -135,13 +135,13 @@ defmodule FountainWeb.AuditLive.Index do
     ~H"""
     <div class="space-y-4">
       <h1 class="text-2xl font-semibold">Audit log</h1>
-      <p class="text-sm text-zinc-500">
+      <p class="text-sm text-[var(--color-text-secondary)]">
         Last {@limit} state-changing API calls. Updates every 5s.
         <span :if={@is_admin}>Admin view: every tenant.</span>
       </p>
 
       <form phx-change="filter" id="audit-filters" class="flex flex-wrap items-end gap-2">
-        <label class="flex flex-col gap-1 text-xs text-zinc-500">
+        <label class="flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]">
           action starts with
           <input
             type="text"
@@ -150,12 +150,15 @@ defmodule FountainWeb.AuditLive.Index do
             placeholder="vault."
             phx-debounce="300"
             autocomplete="off"
-            class="w-40 rounded border border-zinc-200 px-2 py-1 font-mono text-xs"
+            class="w-40 rounded border border-[var(--color-border)] bg-[var(--color-bg-1)] px-2 py-1 font-mono text-xs"
           />
         </label>
-        <label class="flex flex-col gap-1 text-xs text-zinc-500">
+        <label class="flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]">
           resource
-          <select name="resource" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+          <select
+            name="resource"
+            class="rounded border border-[var(--color-border)] bg-[var(--color-bg-1)] px-1 py-1 text-xs"
+          >
             <option value="">any</option>
             <option
               :for={type <- @resource_types}
@@ -166,28 +169,28 @@ defmodule FountainWeb.AuditLive.Index do
             </option>
           </select>
         </label>
-        <label class="flex flex-col gap-1 text-xs text-zinc-500">
+        <label class="flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]">
           since (UTC)
           <input
             type="datetime-local"
             name="since"
             value={@filters.since_raw}
-            class="rounded border border-zinc-200 px-2 py-1 text-xs"
+            class="rounded border border-[var(--color-border)] bg-[var(--color-bg-1)] px-2 py-1 text-xs"
           />
         </label>
-        <label class="flex flex-col gap-1 text-xs text-zinc-500">
+        <label class="flex flex-col gap-1 text-xs text-[var(--color-text-secondary)]">
           until (UTC)
           <input
             type="datetime-local"
             name="until"
             value={@filters.until_raw}
-            class="rounded border border-zinc-200 px-2 py-1 text-xs"
+            class="rounded border border-[var(--color-border)] bg-[var(--color-bg-1)] px-2 py-1 text-xs"
           />
         </label>
         <.link
           :if={any_filter?(@filters)}
           patch={~p"/audit"}
-          class="px-2 py-1 text-xs text-zinc-500 underline hover:text-zinc-700"
+          class="px-2 py-1 text-xs text-[var(--color-text-secondary)] underline hover:text-[var(--color-text-primary)]"
         >
           clear filters
         </.link>
@@ -195,23 +198,23 @@ defmodule FountainWeb.AuditLive.Index do
 
       <div
         :if={@events == [] and any_filter?(@filters)}
-        class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500"
+        class="rounded border border-dashed border-[var(--color-border-strong)] p-8 text-center text-[var(--color-text-secondary)]"
       >
         No events match these filters.
       </div>
 
       <div
         :if={@events == [] and not any_filter?(@filters)}
-        class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500"
+        class="rounded border border-dashed border-[var(--color-border-strong)] p-8 text-center text-[var(--color-text-secondary)]"
       >
         No events yet.
       </div>
 
       <table
         :if={@events != []}
-        class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
+        class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] font-mono"
       >
-        <thead class="text-left text-zinc-500 border-b border-zinc-200">
+        <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
           <tr>
             <th class="px-3 py-2">when</th>
             <th class="px-3 py-2">actor</th>
@@ -222,23 +225,25 @@ defmodule FountainWeb.AuditLive.Index do
           </tr>
         </thead>
         <tbody>
-          <tr :for={e <- @events} class="border-b border-zinc-100 last:border-0">
-            <td class="px-3 py-1.5 text-zinc-500 text-xs">{format_ts(e.inserted_at)}</td>
+          <tr :for={e <- @events} class="border-b border-[var(--color-border)] last:border-0">
+            <td class="px-3 py-1.5 text-[var(--color-text-secondary)] text-xs">
+              {format_ts(e.inserted_at)}
+            </td>
             <td class="px-3 py-1.5">{e.actor || "—"}</td>
             <td class="px-3 py-1.5">{e.action}</td>
             <td class="px-3 py-1.5">
               {e.resource_type}
-              <span :if={e.resource_id} class="text-zinc-400">
+              <span :if={e.resource_id} class="text-[var(--color-text-muted)]">
                 /{String.slice(e.resource_id, 0, 8)}
               </span>
             </td>
             <td class="px-3 py-1.5">{e.metadata["status"] || "—"}</td>
-            <td class="px-3 py-1.5 text-zinc-500">{e.request_ip || "—"}</td>
+            <td class="px-3 py-1.5 text-[var(--color-text-secondary)]">{e.request_ip || "—"}</td>
           </tr>
         </tbody>
       </table>
 
-      <p :if={length(@events) == @limit} class="text-xs text-zinc-500">
+      <p :if={length(@events) == @limit} class="text-xs text-[var(--color-text-secondary)]">
         Showing the newest {@limit} matches — narrow the filters to see further back,
         or page the whole trail with <code>GET /api/audit</code>.
       </p>

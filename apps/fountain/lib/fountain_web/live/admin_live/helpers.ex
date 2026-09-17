@@ -8,23 +8,31 @@ defmodule FountainWeb.AdminLive.Helpers do
   """
 
   def account_badge_class(true), do: "bg-purple-100 text-purple-800 border-purple-200"
-  def account_badge_class(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+
+  def account_badge_class(_),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
 
   def sandbox_status_color("running"), do: "bg-blue-100 text-blue-800 border-blue-200"
   def sandbox_status_color("ready"), do: "bg-green-100 text-green-800 border-green-200"
   def sandbox_status_color("suspended"), do: "bg-sky-100 text-sky-800 border-sky-200"
   def sandbox_status_color("failed"), do: "bg-red-100 text-red-700 border-red-200"
-  def sandbox_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+
+  def sandbox_status_color(_),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
 
   def conversation_status_color("running"), do: "bg-blue-100 text-blue-800 border-blue-200"
   def conversation_status_color("completed"), do: "bg-green-100 text-green-800 border-green-200"
   def conversation_status_color("failed"), do: "bg-red-100 text-red-700 border-red-200"
-  def conversation_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+
+  def conversation_status_color(_),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
 
   def invoice_status_color("paid"), do: "bg-green-100 text-green-800 border-green-200"
   def invoice_status_color("open"), do: "bg-blue-100 text-blue-800 border-blue-200"
   def invoice_status_color("uncollectible"), do: "bg-red-100 text-red-700 border-red-200"
-  def invoice_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+
+  def invoice_status_color(_),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
 
   def format_date(nil), do: ""
   def format_date(dt), do: Calendar.strftime(dt, "%Y-%m-%d")

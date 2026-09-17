@@ -65,13 +65,13 @@ defmodule FountainWeb.AdminLive.Activity do
       </.admin_header>
 
       <section class="space-y-3">
-        <div :if={@events == []} class="text-sm text-zinc-500">Nothing yet.</div>
+        <div :if={@events == []} class="text-sm text-[var(--color-text-secondary)]">Nothing yet.</div>
 
         <table
           :if={@events != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             <tr>
               <th class="px-4 py-2">When</th>
               <th class="px-4 py-2">Action</th>
@@ -80,8 +80,8 @@ defmodule FountainWeb.AdminLive.Activity do
             </tr>
           </thead>
           <tbody>
-            <tr :for={e <- @events} class="border-b border-zinc-100 last:border-0">
-              <td class="px-4 py-2 text-xs text-zinc-500 whitespace-nowrap">
+            <tr :for={e <- @events} class="border-b border-[var(--color-border)] last:border-0">
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
                 {format_ts(e.inserted_at)}
               </td>
               <td class="px-4 py-2 font-mono text-xs">{e.event_type}</td>
@@ -97,7 +97,7 @@ defmodule FountainWeb.AdminLive.Activity do
                   {e.metadata["email"] || e.metadata["provider"]}
                 </span>
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
                 <span :if={e.metadata["from"] != nil}>
                   {e.metadata["from"]} &rarr; {e.metadata["to"]}
                 </span>
@@ -108,7 +108,7 @@ defmodule FountainWeb.AdminLive.Activity do
 
         <div
           :if={page_count(@total) > 1 or @page > 1}
-          class="flex items-center justify-between text-xs text-zinc-500"
+          class="flex items-center justify-between text-xs text-[var(--color-text-secondary)]"
         >
           <span>Page {@page} of {page_count(@total)} · {@total} events</span>
           <div class="space-x-3">

@@ -363,8 +363,10 @@ defmodule FountainWeb.AdminLive.Users do
     assigns = assigns |> assign(:value, value) |> assign(:alert?, alert?)
 
     ~H"""
-    <td class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap">
-      <span class={if(@alert?, do: "text-red-600 font-medium", else: "")}>{@value}</span>
+    <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)] tabular-nums whitespace-nowrap">
+      <span class={if(@alert?, do: "text-[var(--color-error-text)] font-medium", else: "")}>
+        {@value}
+      </span>
     </td>
     """
   end
@@ -441,9 +443,12 @@ defmodule FountainWeb.AdminLive.Users do
 
   defp sort_header(assigns) do
     ~H"""
-    <.link patch={users_path(sort_toggle(@filters, @col))} class="hover:text-zinc-900">
+    <.link
+      patch={users_path(sort_toggle(@filters, @col))}
+      class="hover:text-[var(--color-text-primary)]"
+    >
       {@label}
-      <span :if={@filters.sort == @col} class="text-zinc-400">
+      <span :if={@filters.sort == @col} class="text-[var(--color-text-muted)]">
         {if @filters.dir == "asc", do: "↑", else: "↓"}
       </span>
     </.link>
@@ -469,31 +474,34 @@ defmodule FountainWeb.AdminLive.Users do
             placeholder="Search email…"
             phx-debounce="300"
             autocomplete="off"
-            class="w-48 rounded border border-zinc-200 px-2 py-1 text-xs"
+            class="w-48 rounded border border-[var(--color-border)] px-2 py-1 text-xs"
           />
           <select
             :if={@credits_enabled}
             name="comped"
-            class="rounded border border-zinc-200 px-1 py-1 text-xs"
+            class="rounded border border-[var(--color-border)] px-1 py-1 text-xs"
           >
             <option value="">comped or billed</option>
             <option value="yes" selected={@filters.comped == true}>comped</option>
             <option value="no" selected={@filters.comped == false}>billed</option>
           </select>
-          <select name="role" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+          <select name="role" class="rounded border border-[var(--color-border)] px-1 py-1 text-xs">
             <option value="">any role</option>
             <option value="admin" selected={@filters.role == "admin"}>admin</option>
             <option value="user" selected={@filters.role == "user"}>user</option>
           </select>
-          <select name="verified" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+          <select
+            name="verified"
+            class="rounded border border-[var(--color-border)] px-1 py-1 text-xs"
+          >
             <option value="">any verification</option>
             <option value="yes" selected={@filters.verified == true}>verified</option>
             <option value="no" selected={@filters.verified == false}>unverified</option>
           </select>
         </form>
 
-        <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+        <table class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             <tr>
               <th class="px-4 py-2">
                 <.sort_header label="Email" col="email" filters={@filters} />
@@ -534,19 +542,22 @@ defmodule FountainWeb.AdminLive.Users do
             <tr :if={@users == []}>
               <td
                 colspan={if @credits_enabled, do: "10", else: "8"}
-                class="px-4 py-6 text-center text-sm text-zinc-500"
+                class="px-4 py-6 text-center text-sm text-[var(--color-text-secondary)]"
               >
                 No users match.
               </td>
             </tr>
-            <tr :for={u <- @users} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
+            <tr
+              :for={u <- @users}
+              class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)]"
+            >
               <td class="px-4 py-2 font-mono text-xs">
                 <.link navigate={~p"/admin/users/#{u.id}"} class="hover:underline">
                   {u.email}
                 </.link>
                 <span
                   :if={is_nil(u.email_verified_at)}
-                  class="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border bg-zinc-100 text-zinc-500 border-zinc-200"
+                  class="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
                 >
                   unverified
                 </span>
@@ -563,7 +574,8 @@ defmodule FountainWeb.AdminLive.Users do
                   "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
                   if(u.role == "admin",
                     do: "bg-amber-100 text-amber-800 border-amber-200",
-                    else: "bg-zinc-100 text-zinc-600 border-zinc-200"
+                    else:
+                      "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
                   )
                 ]}>
                   {u.role}
@@ -589,7 +601,7 @@ defmodule FountainWeb.AdminLive.Users do
                         else:
                           "Comp #{u.email}? Their balance is never checked and nothing is refused."
                     }
-                    class="text-xs text-zinc-500 hover:text-zinc-900 underline text-left"
+                    class="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] underline text-left"
                   >
                     {if u.comped, do: "revoke comp", else: "comp"}
                   </button>
@@ -601,7 +613,7 @@ defmodule FountainWeb.AdminLive.Users do
                     number to read beside their balance. The tooltip keeps
                     the sandbox side one hover away. --%>
               <td
-                class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
+                class="px-4 py-2 text-xs text-[var(--color-text-secondary)] tabular-nums whitespace-nowrap"
                 title={usage_tooltip(u.usage)}
               >
                 {u.usage.conversations}c · {u.usage.turns}t · {format_hours(u.usage.turn_hours)}
@@ -616,8 +628,8 @@ defmodule FountainWeb.AdminLive.Users do
                   <span class={[
                     "text-xs tabular-nums",
                     if(u.active_sandboxes >= u.sandbox_limit,
-                      do: "text-red-600 font-medium",
-                      else: "text-zinc-500"
+                      do: "text-[var(--color-error-text)] font-medium",
+                      else: "text-[var(--color-text-secondary)]"
                     )
                   ]}>
                     {u.active_sandboxes} / {u.sandbox_limit}
@@ -632,25 +644,27 @@ defmodule FountainWeb.AdminLive.Users do
                     value={u.sandbox_limit_override}
                     placeholder={u.sandbox_limit}
                     title="Empty: what the balance funds (ADR 0031)"
-                    class="w-14 rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                    class="w-14 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
                   />
-                  <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>
+                  <button class="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] underline">set</button>
                 </form>
               </td>
               <.extension_cell :for={cell <- u.extension_cells} cell={cell} />
-              <td class="px-4 py-2 text-zinc-500 text-xs">
+              <td class="px-4 py-2 text-[var(--color-text-secondary)] text-xs">
                 {if u.onboarding_completed_at, do: format_date(u.onboarding_completed_at), else: "—"}
               </td>
-              <td class="px-4 py-2 text-zinc-500 text-xs">
+              <td class="px-4 py-2 text-[var(--color-text-secondary)] text-xs">
                 {if u.last_activity_at, do: format_date(u.last_activity_at), else: "—"}
               </td>
-              <td class="px-4 py-2 text-zinc-500 text-xs">{format_date(u.inserted_at)}</td>
+              <td class="px-4 py-2 text-[var(--color-text-secondary)] text-xs">
+                {format_date(u.inserted_at)}
+              </td>
               <td class="px-4 py-2 text-right space-x-3">
                 <button
                   phx-click="toggle_admin"
                   phx-value-id={u.id}
                   data-confirm={"Toggle admin for #{u.email}?"}
-                  class="text-xs text-zinc-600 hover:text-zinc-900 underline"
+                  class="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] underline"
                 >
                   {if u.role == "admin", do: "Remove admin", else: "Make admin"}
                 </button>
@@ -664,7 +678,7 @@ defmodule FountainWeb.AdminLive.Users do
                       else:
                         "Suspend #{u.email}? Sessions and API keys stop working and running conversations are terminated. Reversible; billing is not touched."
                   }
-                  class="text-xs text-amber-700 hover:text-amber-900 underline"
+                  class="text-xs text-[var(--color-warning-text)] hover:text-[var(--color-warning)] underline"
                 >
                   {if u.suspended_at, do: "Unsuspend", else: "Suspend"}
                 </button>
@@ -673,7 +687,7 @@ defmodule FountainWeb.AdminLive.Users do
                   phx-click="delete_user"
                   phx-value-id={u.id}
                   data-confirm={"Permanently delete #{u.email}? This destroys their sandboxes and erases their data. It cannot be undone."}
-                  class="text-xs text-red-600 hover:text-red-800 underline"
+                  class="text-xs text-[var(--color-error-text)] hover:text-[var(--color-error)] underline"
                 >
                   Delete
                 </button>
@@ -683,7 +697,7 @@ defmodule FountainWeb.AdminLive.Users do
         </table>
         <div
           :if={page_count(@total_users) > 1 or @filters.page > 1}
-          class="flex items-center justify-between text-xs text-zinc-500"
+          class="flex items-center justify-between text-xs text-[var(--color-text-secondary)]"
         >
           <span>Page {@filters.page} of {page_count(@total_users)}</span>
           <div class="space-x-3">

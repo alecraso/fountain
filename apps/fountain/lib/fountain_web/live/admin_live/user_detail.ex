@@ -88,7 +88,8 @@ defmodule FountainWeb.AdminLive.UserDetail do
             "inline-flex items-center rounded px-1.5 py-0.5 font-medium border",
             if(@user.role == "admin",
               do: "bg-amber-100 text-amber-800 border-amber-200",
-              else: "bg-zinc-100 text-zinc-600 border-zinc-200"
+              else:
+                "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
             )
           ]}>
             {@user.role}
@@ -106,7 +107,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
           </span>
           <span
             :if={is_nil(@user.email_verified_at)}
-            class="inline-flex items-center rounded px-1.5 py-0.5 font-medium border bg-zinc-100 text-zinc-500 border-zinc-200"
+            class="inline-flex items-center rounded px-1.5 py-0.5 font-medium border bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
           >
             unverified
           </span>
@@ -121,78 +122,81 @@ defmodule FountainWeb.AdminLive.UserDetail do
             href={"https://dashboard.stripe.com/customers/#{@user.stripe_customer_id}"}
             target="_blank"
             rel="noopener"
-            class="text-zinc-400 hover:text-zinc-700 underline"
+            class="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] underline"
           >
             stripe ↗
           </a>
         </div>
-        <p class="text-xs text-zinc-400 mt-2 font-mono">{@user.id}</p>
+        <p class="text-xs text-[var(--color-text-muted)] mt-2 font-mono">{@user.id}</p>
       </div>
 
       <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Joined</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Joined</div>
           <div class="text-sm font-medium">{format_date(@user.inserted_at)}</div>
-          <div class="text-xs text-zinc-500">
+          <div class="text-xs text-[var(--color-text-secondary)]">
             last active {if @last_activity_at, do: format_date(@last_activity_at), else: "—"}
           </div>
         </div>
         <div
           :if={not @credits_enabled}
-          class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
+          class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3"
         >
-          <div class="text-xs text-zinc-500">Onboarding</div>
+          <div class="text-xs text-[var(--color-text-secondary)]">Onboarding</div>
           <div class="text-sm font-medium">
             {if @user.onboarding_completed_at, do: "completed", else: "not completed"}
           </div>
-          <div class="text-xs text-zinc-500">
+          <div class="text-xs text-[var(--color-text-secondary)]">
             {if @user.onboarding_completed_at,
               do: format_date(@user.onboarding_completed_at),
               else: "—"}
           </div>
         </div>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Sandboxes</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Sandboxes</div>
           <div class="text-sm font-medium tabular-nums">
             {@active_sandboxes} / {Fountain.Quotas.sandbox_limit_for(@user)}
           </div>
-          <div class="text-xs text-zinc-500">
+          <div class="text-xs text-[var(--color-text-secondary)]">
             active / limit · {if @user.sandbox_limit_override,
               do: "override",
               else: "what the balance funds"}
           </div>
         </div>
-        <div :if={@credits.active?} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Credits</div>
+        <div
+          :if={@credits.active?}
+          class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3"
+        >
+          <div class="text-xs text-[var(--color-text-secondary)]">Credits</div>
           <div class={[
             "text-sm font-medium tabular-nums",
-            @credits.balance_cents < 0 && "text-amber-700"
+            @credits.balance_cents < 0 && "text-[var(--color-warning-text)]"
           ]}>
             {Fountain.Credits.format_cents(@credits.balance_cents)}
           </div>
-          <div class="text-xs text-zinc-500">
+          <div class="text-xs text-[var(--color-text-secondary)]">
             {Fountain.Credits.format_cents(@credits.purchased_cents)} bought · {Fountain.Credits.format_cents(
               @credits.expiring_cents
             )} expiring
           </div>
         </div>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Resources</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Resources</div>
           <div class="text-sm font-medium tabular-nums">
             {@agent_count}a · {@environment_count}e · {@vault_count}v
           </div>
-          <div class="text-xs text-zinc-500">agents · environments · vaults</div>
+          <div class="text-xs text-[var(--color-text-secondary)]">agents · environments · vaults</div>
         </div>
       </section>
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Conversations (latest {length(@conversations)})</h2>
-        <div :if={@conversations == []} class="text-sm text-zinc-500">None.</div>
+        <div :if={@conversations == []} class="text-sm text-[var(--color-text-secondary)]">None.</div>
         <table
           :if={@conversations != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             <tr>
               <th class="px-4 py-2">Conversation</th>
               <th class="px-4 py-2">Status</th>
@@ -202,7 +206,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
             </tr>
           </thead>
           <tbody>
-            <tr :for={c <- @conversations} class="border-b border-zinc-100 last:border-0">
+            <tr :for={c <- @conversations} class="border-b border-[var(--color-border)] last:border-0">
               <td class="px-4 py-2 text-xs">
                 <.link
                   navigate={~p"/admin/conversations/#{c.id}"}
@@ -210,7 +214,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
                 >
                   {String.slice(c.id, 0, 8)}
                 </.link>
-                <span :if={c.title} class="text-zinc-500 ml-1">{c.title}</span>
+                <span :if={c.title} class="text-[var(--color-text-secondary)] ml-1">{c.title}</span>
                 <.label_chips labels={c.labels} />
               </td>
               <td class="px-4 py-2">
@@ -221,9 +225,13 @@ defmodule FountainWeb.AdminLive.UserDetail do
                   {c.status}
                 </span>
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{c.runtime}</td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(c.inserted_at)}</td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(c.last_active_at)}</td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">{c.runtime}</td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                {format_ts(c.inserted_at)}
+              </td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                {format_ts(c.last_active_at)}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -231,12 +239,12 @@ defmodule FountainWeb.AdminLive.UserDetail do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">API keys ({length(@api_keys)})</h2>
-        <div :if={@api_keys == []} class="text-sm text-zinc-500">None.</div>
+        <div :if={@api_keys == []} class="text-sm text-[var(--color-text-secondary)]">None.</div>
         <table
           :if={@api_keys != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             <tr>
               <th class="px-4 py-2">Name</th>
               <th class="px-4 py-2">Prefix</th>
@@ -247,20 +255,30 @@ defmodule FountainWeb.AdminLive.UserDetail do
             </tr>
           </thead>
           <tbody>
-            <tr :for={k <- @api_keys} class="border-b border-zinc-100 last:border-0">
+            <tr :for={k <- @api_keys} class="border-b border-[var(--color-border)] last:border-0">
               <td class="px-4 py-2 text-xs">{k.name}</td>
               <td class="px-4 py-2 font-mono text-xs">{k.key_prefix}…</td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{Enum.join(k.scopes, ", ")}</td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_date(k.inserted_at)}</td>
-              <td class="px-4 py-2 text-xs text-zinc-500">
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                {Enum.join(k.scopes, ", ")}
+              </td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                {format_date(k.inserted_at)}
+              </td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
                 {if k.last_used_at, do: format_ts(k.last_used_at), else: "never"}
               </td>
               <td class="px-4 py-2 text-xs">
-                <span :if={k.revoked_at} class="text-red-600">revoked</span>
-                <span :if={is_nil(k.revoked_at) and k.expires_at} class="text-zinc-500">
+                <span :if={k.revoked_at} class="text-[var(--color-error-text)]">revoked</span>
+                <span
+                  :if={is_nil(k.revoked_at) and k.expires_at}
+                  class="text-[var(--color-text-secondary)]"
+                >
                   expires {format_date(k.expires_at)}
                 </span>
-                <span :if={is_nil(k.revoked_at) and is_nil(k.expires_at)} class="text-zinc-500">
+                <span
+                  :if={is_nil(k.revoked_at) and is_nil(k.expires_at)}
+                  class="text-[var(--color-text-secondary)]"
+                >
                   active
                 </span>
               </td>
@@ -271,16 +289,20 @@ defmodule FountainWeb.AdminLive.UserDetail do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Admin actions on this account</h2>
-        <div :if={@admin_events == []} class="text-sm text-zinc-500">None recorded.</div>
+        <div :if={@admin_events == []} class="text-sm text-[var(--color-text-secondary)]">
+          None recorded.
+        </div>
         <table
           :if={@admin_events != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
           <tbody>
-            <tr :for={e <- @admin_events} class="border-b border-zinc-100 last:border-0">
-              <td class="px-4 py-1.5 text-xs text-zinc-500">{format_ts(e.inserted_at)}</td>
+            <tr :for={e <- @admin_events} class="border-b border-[var(--color-border)] last:border-0">
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)]">
+                {format_ts(e.inserted_at)}
+              </td>
               <td class="px-4 py-1.5 font-mono text-xs">{e.event_type}</td>
-              <td class="px-4 py-1.5 text-xs text-zinc-500">
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)]">
                 <span :if={e.metadata["from"] != nil}>
                   {e.metadata["from"]} &rarr; {e.metadata["to"]}
                 </span>
@@ -292,19 +314,23 @@ defmodule FountainWeb.AdminLive.UserDetail do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Recent activity (audit trail)</h2>
-        <div :if={@audit_events == []} class="text-sm text-zinc-500">Nothing recorded.</div>
+        <div :if={@audit_events == []} class="text-sm text-[var(--color-text-secondary)]">
+          Nothing recorded.
+        </div>
         <table
           :if={@audit_events != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
           <tbody>
-            <tr :for={e <- @audit_events} class="border-b border-zinc-100 last:border-0">
-              <td class="px-4 py-1.5 text-xs text-zinc-500 whitespace-nowrap">
+            <tr :for={e <- @audit_events} class="border-b border-[var(--color-border)] last:border-0">
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
                 {format_ts(e.inserted_at)}
               </td>
               <td class="px-4 py-1.5 font-mono text-xs">{e.action}</td>
-              <td class="px-4 py-1.5 text-xs text-zinc-500">{e.resource_type}</td>
-              <td class="px-4 py-1.5 text-xs text-zinc-400">{e.request_ip}</td>
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-secondary)]">
+                {e.resource_type}
+              </td>
+              <td class="px-4 py-1.5 text-xs text-[var(--color-text-muted)]">{e.request_ip}</td>
             </tr>
           </tbody>
         </table>

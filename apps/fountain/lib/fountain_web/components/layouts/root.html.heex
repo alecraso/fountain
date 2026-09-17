@@ -113,8 +113,10 @@
     <%!-- Design tokens — must load before Tailwind CDN so CSS vars are defined --%>
     <link rel="stylesheet" href={FountainWeb.StaticVersion.tokens_css()} />
     <%!-- Tailwind CDN config: register token-backed colour utilities --%>
+    <script src="https://cdn.tailwindcss.com?plugins=typography">
+    </script>
+    <%!-- Configure the CDN after it initializes so dark variants follow data-theme. --%>
     <script>
-      window.tailwind = window.tailwind || {};
       window.tailwind.config = {
         darkMode: ["selector", "[data-theme=\"dark\"]"],
         theme: {
@@ -129,8 +131,6 @@
           }
         }
       };
-    </script>
-    <script src="https://cdn.tailwindcss.com?plugins=typography">
     </script>
     <script>
       window.addEventListener("phx:reload", () => location.reload());

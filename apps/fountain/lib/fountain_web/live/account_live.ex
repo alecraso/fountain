@@ -109,28 +109,28 @@ defmodule FountainWeb.Live.AccountLive do
       <h1 class="text-2xl font-semibold">Account</h1>
 
       <%!-- Data export --%>
-      <div class="rounded-lg border bg-white p-6 shadow-sm">
+      <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium" id="export">Export your data</h2>
-        <p class="mb-2 text-sm text-gray-600">
+        <p class="mb-2 text-sm text-[var(--color-text-secondary)]">
           Download a single JSON file containing your agents, environments, vaults,
           conversations with their full log output, and your audit trail.
         </p>
-        <p class="mb-4 text-sm text-gray-600">
+        <p class="mb-4 text-sm text-[var(--color-text-secondary)]">
           Environment and vault <strong>secret values are deliberately excluded</strong>
           — only secret names are listed. Secrets were write-only on the way in and
           stay that way on the way out.
         </p>
 
         <%= if @export do %>
-          <div class="mb-4 rounded-md bg-gray-50 p-4 text-sm" id="export-status">
+          <div class="mb-4 rounded-md bg-[var(--color-bg-2)] p-4 text-sm" id="export-status">
             <%= case export_state(@export) do %>
               <% :pending -> %>
-                <span class="text-gray-700">
+                <span class="text-[var(--color-text-secondary)]">
                   Export requested {Calendar.strftime(@export.inserted_at, "%Y-%m-%d %H:%M UTC")} — generating&hellip; The download will appear here when it is ready.
                 </span>
               <% :ready -> %>
                 <div class="flex items-center justify-between gap-4">
-                  <span class="text-gray-700">
+                  <span class="text-[var(--color-text-secondary)]">
                     Export ready ({format_bytes(@export.byte_size)}) — link expires {Calendar.strftime(
                       @export.expires_at,
                       "%Y-%m-%d %H:%M UTC"
@@ -144,11 +144,11 @@ defmodule FountainWeb.Live.AccountLive do
                   </a>
                 </div>
               <% :expired -> %>
-                <span class="text-gray-500">
+                <span class="text-[var(--color-text-primary)]">
                   Your last export has expired. Request a new one to download your data.
                 </span>
               <% :failed -> %>
-                <span class="text-red-700">
+                <span class="text-[var(--color-error-text)]">
                   The last export failed. Please request a new one; contact support if it
                   keeps failing.
                 </span>
@@ -158,33 +158,33 @@ defmodule FountainWeb.Live.AccountLive do
 
         <button
           phx-click="request_export"
-          class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          class="rounded-md border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)]"
         >
           Request export
         </button>
-        <p class="mt-2 text-xs text-gray-400">
+        <p class="mt-2 text-xs text-[var(--color-text-muted)]">
           One export per hour. Downloads expire after {Exports.ttl_hours()} hours.
         </p>
       </div>
 
       <%!-- Danger zone --%>
-      <div class="rounded-lg border border-red-200 bg-white p-6 shadow-sm">
-        <h2 class="mb-1 text-lg font-medium text-red-700">Delete account</h2>
-        <p class="mb-4 text-sm text-gray-600">
+      <div class="rounded-lg border border-red-200 bg-[var(--color-bg-1)] p-6 shadow-sm">
+        <h2 class="mb-1 text-lg font-medium text-[var(--color-error-text)]">Delete account</h2>
+        <p class="mb-4 text-sm text-[var(--color-text-secondary)]">
           Destroys every running sandbox, and permanently
           deletes your agents, environments, vaults, conversations and stored secrets.
           Secrets are encrypted with a key held only for your account; deleting the
           account destroys that key, so they cannot be recovered afterwards by anyone.
           <strong>This cannot be undone.</strong>
         </p>
-        <p class="mb-4 text-sm text-gray-600" id="delete-export-nudge">
+        <p class="mb-4 text-sm text-[var(--color-text-secondary)]" id="delete-export-nudge">
           Want a copy of your data first?
           <a href="#export" class="underline">Request an export above</a>
           before deleting — nothing can be recovered afterwards.
         </p>
 
         <form phx-submit="delete_account" class="space-y-3">
-          <label class="block text-sm text-gray-700">
+          <label class="block text-sm text-[var(--color-text-secondary)]">
             Type <span class="font-mono font-semibold">{@current_user.email}</span>
             to confirm
             <input
@@ -193,14 +193,14 @@ defmodule FountainWeb.Live.AccountLive do
               autocomplete="off"
               value={@delete_confirmation}
               phx-change="confirm_delete_input"
-              class="mt-1 block w-full rounded border-gray-300 text-sm shadow-sm"
+              class="mt-1 block w-full rounded border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-sm text-[var(--color-text-primary)] shadow-sm"
             />
           </label>
 
           <button
             type="submit"
             disabled={@delete_confirmation != @current_user.email or @deleting}
-            class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-[var(--color-bg-3)]"
           >
             {if @deleting, do: "Deleting…", else: "Delete my account"}
           </button>

@@ -367,6 +367,7 @@ defmodule FountainWeb.AuditLiveFormatTsTest do
 
     assert html =~ "GET /nil-ts-test"
     # The nil inserted_at renders as an empty string — no date visible in the cell
-    assert html =~ ~r|<td class="px-3 py-1\.5 text-zinc-500 text-xs">\s*</td>|
+    assert html =~
+             ~r|<td class="px-3 py-1\.5 text-\[var\(--color-text-secondary\)\] text-xs">\s*</td>|
   end
 end

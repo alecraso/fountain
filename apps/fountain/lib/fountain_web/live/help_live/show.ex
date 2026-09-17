@@ -61,7 +61,7 @@ defmodule FountainWeb.HelpLive.Show do
     ~H"""
     <div class="flex gap-6">
       <aside class="w-48 shrink-0">
-        <div class="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-2 px-2">
+        <div class="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-2 px-2">
           Help topics
         </div>
         <nav class="space-y-1">
@@ -69,9 +69,9 @@ defmodule FountainWeb.HelpLive.Show do
             <.link
               navigate={~p"/help/#{slug}"}
               class={[
-                "block rounded px-3 py-1.5 text-sm hover:bg-zinc-100",
-                @slug == slug && "bg-zinc-100 font-medium",
-                @slug != slug && "text-zinc-600"
+                "block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]",
+                @slug == slug && "bg-[var(--color-bg-2)] font-medium",
+                @slug != slug && "text-[var(--color-text-secondary)]"
               ]}
             >
               {title}
@@ -80,37 +80,37 @@ defmodule FountainWeb.HelpLive.Show do
           <a
             href="/docs"
             target="_blank"
-            class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
+            class="block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)] text-[var(--color-text-secondary)]"
           >
             Full documentation ↗
           </a>
           <a
             href="/api/docs"
             target="_blank"
-            class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
+            class="block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)] text-[var(--color-text-secondary)]"
           >
             API reference (Swagger) ↗
           </a>
           <a
             href="/llms.txt"
             target="_blank"
-            class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
+            class="block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)] text-[var(--color-text-secondary)]"
           >
             For LLMs (/llms.txt) ↗
           </a>
         </nav>
       </aside>
 
-      <article class="flex-1 max-w-3xl bg-white border border-zinc-200 rounded-lg shadow-sm p-8">
-        <%!-- Same class set as /docs (docs_html/show.html.heex), minus the dark
-        variants this page does not use — see the comment there for why the
-        `[&_pre_code]:` resets are needed. --%>
+      <article class="flex-1 max-w-3xl bg-[var(--color-bg-1)] border border-[var(--color-border)] rounded-lg shadow-sm p-8">
+        <%!-- Same class set as /docs (docs_html/show.html.heex), including the
+        `dark:` variants the Typography plugin needs — see the comment there
+        for why the `[&_pre_code]:` resets are needed. --%>
         <div class={[
-          "prose prose-zinc max-w-none",
+          "prose prose-zinc dark:prose-invert max-w-none",
           "prose-headings:font-semibold prose-headings:tracking-tight",
-          "prose-a:text-blue-600",
+          "prose-a:text-blue-600 dark:prose-a:text-indigo-400",
           "prose-pre:bg-[var(--color-code-bg)] prose-pre:text-[var(--color-code-text)] prose-pre:text-xs",
-          "prose-code:text-zinc-800 prose-code:bg-zinc-100",
+          "prose-code:text-zinc-800 prose-code:bg-zinc-100 dark:prose-code:text-zinc-200 dark:prose-code:bg-zinc-800",
           "prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-normal",
           "prose-code:before:content-none prose-code:after:content-none",
           "[&_pre_code]:bg-transparent [&_pre_code]:text-inherit [&_pre_code]:p-0 [&_pre_code]:rounded-none",

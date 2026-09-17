@@ -66,7 +66,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
         <.admin_tabs current={:sandboxes} credits_enabled={@credits_enabled} />
         <h1 class="text-2xl font-semibold mt-4">
           <span class="font-mono">{String.slice(@conv.id, 0, 8)}</span>
-          <span :if={@conv.title} class="text-zinc-500 text-lg ml-2">{@conv.title}</span>
+          <span :if={@conv.title} class="text-[var(--color-text-secondary)] text-lg ml-2">{@conv.title}</span>
         </h1>
         <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
           <span class={[
@@ -75,15 +75,15 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
           ]}>
             {@conv.status}
           </span>
-          <span class="text-zinc-500">runtime {@conv.runtime}</span>
-          <span :if={@conv.source} class="text-zinc-500">via {@conv.source}</span>
+          <span class="text-[var(--color-text-secondary)]">runtime {@conv.runtime}</span>
+          <span :if={@conv.source} class="text-[var(--color-text-secondary)]">via {@conv.source}</span>
         </div>
-        <p class="text-xs text-zinc-400 mt-2 font-mono">{@conv.id}</p>
+        <p class="text-xs text-[var(--color-text-muted)] mt-2 font-mono">{@conv.id}</p>
       </div>
 
       <section class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Owner</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Owner</div>
           <div class="text-sm font-medium font-mono truncate">
             <.link
               :if={@conv.user}
@@ -95,25 +95,27 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
             <span :if={is_nil(@conv.user)}>—</span>
           </div>
         </div>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Agent</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Agent</div>
           <div class="text-sm font-medium truncate">
             {if @conv.agent, do: @conv.agent.name, else: "—"}
           </div>
         </div>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Sandbox</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Sandbox</div>
           <div class="text-sm font-medium font-mono">
             {if @conv.sandbox, do: String.slice(@conv.sandbox.id, 0, 8), else: "—"}
           </div>
-          <div :if={@conv.sandbox} class="text-xs text-zinc-500">{@conv.sandbox.status}</div>
+          <div :if={@conv.sandbox} class="text-xs text-[var(--color-text-secondary)]">
+            {@conv.sandbox.status}
+          </div>
         </div>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Volume</div>
+        <div class="bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)] px-4 py-3">
+          <div class="text-xs text-[var(--color-text-secondary)]">Volume</div>
           <div class="text-sm font-medium tabular-nums">
             {@turn_count} turns · {@log_event_count} log events
           </div>
-          <div class="text-xs text-zinc-500">
+          <div class="text-xs text-[var(--color-text-secondary)]">
             started {format_ts(@conv.inserted_at)}
           </div>
         </div>
@@ -121,15 +123,15 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Turns (latest {length(@turns)})</h2>
-        <p class="text-sm text-zinc-500">
+        <p class="text-sm text-[var(--color-text-secondary)]">
           Metadata only — prompt and output content are not shown to admins.
         </p>
-        <div :if={@turns == []} class="text-sm text-zinc-500">None.</div>
+        <div :if={@turns == []} class="text-sm text-[var(--color-text-secondary)]">None.</div>
         <table
           :if={@turns != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+          class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
         >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+          <thead class="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
             <tr>
               <th class="px-4 py-2">#</th>
               <th class="px-4 py-2">Status</th>
@@ -139,7 +141,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
             </tr>
           </thead>
           <tbody>
-            <tr :for={t <- @turns} class="border-b border-zinc-100 last:border-0">
+            <tr :for={t <- @turns} class="border-b border-[var(--color-border)] last:border-0">
               <td class="px-4 py-2 text-xs tabular-nums">{t.turn_number}</td>
               <td class="px-4 py-2">
                 <span class={[
@@ -152,10 +154,12 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
               <td class="px-4 py-2 text-xs tabular-nums">
                 {if is_nil(t.exit_code), do: "—", else: t.exit_code}
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
                 {format_ts(t.started_at || t.inserted_at)}
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(t.ended_at)}</td>
+              <td class="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                {format_ts(t.ended_at)}
+              </td>
             </tr>
           </tbody>
         </table>

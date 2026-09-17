@@ -121,25 +121,25 @@ defmodule FountainWeb.AdminSandboxesLiveTest do
       assert html =~ "/conversations/#{conv.id}"
     end
 
-    test "renders pending sandbox with fallback zinc status color", %{conn: conn} do
+    test "renders pending sandbox with fallback status color", %{conn: conn} do
       admin = insert_admin()
       _sandbox = insert_sandbox(user_id: admin.id, status: "pending")
       conn = login_user(conn, admin)
       {:ok, _lv, html} = live(conn, ~p"/admin/sandboxes")
 
       assert html =~ "pending"
-      # fallback clause: zinc classes
-      assert html =~ "text-zinc-500"
+      # fallback clause: neutral token classes
+      assert html =~ "text-[var(--color-text-secondary)]"
     end
 
-    test "renders starting sandbox with fallback zinc status color", %{conn: conn} do
+    test "renders starting sandbox with fallback status color", %{conn: conn} do
       admin = insert_admin()
       _sandbox = insert_sandbox(user_id: admin.id, status: "starting")
       conn = login_user(conn, admin)
       {:ok, _lv, html} = live(conn, ~p"/admin/sandboxes")
 
       assert html =~ "starting"
-      assert html =~ "text-zinc-500"
+      assert html =~ "text-[var(--color-text-secondary)]"
     end
 
     test "sandbox inserted_at timestamp is formatted in the table", %{conn: conn} do
