@@ -535,6 +535,10 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("source", source)
       |> Map.put("parent_conversation_id", parent_id)
       |> Map.put("user_id", user.id)
+      # From the body the cast approved, never from the query string, which
+      # this door's `params` also carries and the request schema never sees.
+      # The prompts route reads it the same way; see `client_request_id/1`.
+      |> Map.put("client_request_id", client_request_id(conn))
 
     # `SandboxKey.opts/1` rides along because a `channel_id` resume lands on an
     # *existing* conversation and merges this request's labels into it (#1637);
@@ -562,7 +566,8 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
-  # Exactly the launch keys `Conversations.start_conversation/2` reads, minus
+  # Exactly the launch keys `Conversations.start_conversation/2` reads
+  # (`client_request_id` among them: it waits with the prompt it names), minus
   # the ones this path sets itself (`user_id`, `agent_id`, `source`) and the
   # two it refuses to queue. An allow list rather than a drop list:
   # `ConversationCreateRequest` does not set `additionalProperties: false`, so
@@ -571,7 +576,7 @@ defmodule FountainWeb.ConversationController do
   @queued_attr_keys ~w(prompt title vault_id environment_id inference_credential_id
                        permission_policy sandbox_mode sandbox_api_access sprite_name
                        channel_id fresh parent_conversation_id labels
-                       execution_limits)
+                       execution_limits client_request_id)
 
   # Queueing is opt-in (ADR 0042 decision 2). A caller that did not ask keeps
   # the immediate 429 or 503 its client already handles.
