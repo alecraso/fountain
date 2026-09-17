@@ -14,6 +14,17 @@ defmodule Fountain.Conversations.Turn do
   # for a background cycle that ran after the prompt was answered (#817) —
   # the prompt column then carries a marker, not a person's words.
   @origins ~w(user autonomous)
+  # The API schema declares the same bound, so a request is refused at the
+  # door (422) and this is the backstop for a caller that is not the API.
+  @client_request_id_max 200
+  # The one character the id may not contain. PostgreSQL rejects U+0000 in a
+  # text column with 22021, from inside an insert nothing rescues: an ordinary
+  # prompt would end its conversation server over its label. The API schema
+  # declares this pattern (`Schemas.ClientRequestId`), which makes it a 422 at
+  # the door; `has_nul?/1` below is the same rule for a caller that is not the
+  # API, and "the door's pattern and the row agree about NUL"
+  # (`PromptCorrelationTest`) pins the two statements together.
+  @client_request_id_pattern ~S(^[^\x00]*$)
 
   schema "turns" do
     field :turn_number, :integer
@@ -68,6 +79,11 @@ defmodule Fountain.Conversations.Turn do
     # turns that predate the column (see `Fountain.Release.backfill_turn_replies/0`).
     field :reply_text, :string
     field :origin, :string, default: "user"
+    # The caller's name for the prompt that opened this turn (#1406), so a
+    # client can bind its own work item to the turn without inferring it from
+    # turn order. nil when the caller sent none, and on every autonomous turn.
+    # A correlation, not an idempotency key: it is not unique.
+    field :client_request_id, :string
     belongs_to :conversation, Conversation
     has_many :images, TurnImage, preload_order: [asc: :position]
     timestamps(type: :utc_datetime, updated_at: false)
@@ -75,6 +91,34 @@ defmodule Fountain.Conversations.Turn do
 
   def statuses, do: @statuses
   def origins, do: @origins
+  def client_request_id_max, do: @client_request_id_max
+  def client_request_id_pattern, do: @client_request_id_pattern
+
+  @doc """
+  Whether this id carries the one character a turn cannot store (#1406).
+
+  The door refuses it with 422. `PromptDelivery.travelling/1` asks this before
+  it changes a prompt's message shape, and `changeset/2` asks it again, so an
+  id that would raise 22021 at the insert never reaches turn admission.
+  """
+  @spec has_nul?(String.t()) :: boolean()
+  def has_nul?(value) when is_binary(value), do: String.contains?(value, <<0>>)
+
+  @doc """
+  Put the caller's `client_request_id` (#1406) on a `turn` / `started` stage
+  event, beside its `turn_id`. That event is how a client following the stream
+  finds a candidate turn. It is not the record: `log!/1` redacts every event's
+  data, so an id holding a registered environment value reaches its event with
+  `[REDACTED]` in that place — a string another client may legally have sent as
+  its own id. The row is what the caller sent, and the manual tells a client to
+  confirm a candidate against it. A turn whose caller sent none leaves the
+  event in the shape it always had.
+  """
+  @spec correlate(t(), map()) :: map()
+  def correlate(%__MODULE__{client_request_id: id}, meta) when is_binary(id),
+    do: Map.put(meta, :client_request_id, id)
+
+  def correlate(%__MODULE__{}, meta), do: meta
 
   # The two keys the turn-start inference stamp writes (#1685). Both are also
   # written by `TurnMachine.with_inference/2` at the end of a turn that
@@ -130,9 +174,26 @@ defmodule Fountain.Conversations.Turn do
       :origin,
       :conversation_id
     ])
+    |> cast_client_request_id(attrs)
     |> validate_required([:turn_number, :prompt, :status, :conversation_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:origin, @origins)
+    |> validate_length(:client_request_id, min: 1, max: @client_request_id_max)
+    |> validate_change(:client_request_id, &refuse_nul/2)
     |> unique_constraint([:conversation_id, :turn_number])
   end
+
+  defp refuse_nul(:client_request_id, value) do
+    if has_nul?(value), do: [client_request_id: "cannot contain a null character"], else: []
+  end
+
+  # The caller's id is an opaque label, so it is stored as it was sent. Ecto
+  # trims a string before it decides the value is empty, which turns an id of
+  # spaces into `nil`: the response would echo the id the caller sent while the
+  # turn carried none, and the started event would omit the field the caller is
+  # waiting for. Casting it untrimmed leaves only a literal "" reading as "the
+  # caller sent none", which is what the API (minLength 1) and
+  # `PromptDelivery.travelling/1` already refuse to carry.
+  defp cast_client_request_id(changeset, attrs),
+    do: cast(changeset, attrs, [:client_request_id], trim_values: fn _type, value -> value end)
 end

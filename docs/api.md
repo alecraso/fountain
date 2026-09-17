@@ -372,6 +372,68 @@ event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render ACP output. Historical vendor stdout
 formats are no longer parsed; those events remain available as raw data.
 
+### Find the turn your prompt opened
+
+`POST /api/conversations/{id}/prompts` answers before the turn exists. A
+conversation with no machine must wake first, and the turn opens after that.
+So the response cannot give you a turn ID. Give Fountain your own name for the
+prompt instead.
+
+```json
+{"prompt": "Run the approved plan.", "client_request_id": "plan-7-step-3"}
+```
+
+The response repeats the value. Fountain stores it on the turn that the prompt
+opens, and `GET /api/conversations/{id}/turns` shows it as `client_request_id`.
+The turn holds the value you sent, character for character. It is the record.
+
+The `turn` stage event with the `started` state carries the value next to
+`turn_id`. Use that event to find a candidate turn quickly. Then read the turn
+and compare its `client_request_id` with the value you sent. Bind your work
+item only after that comparison.
+
+Do not bind on the event alone. Fountain removes the sandbox environment values
+from the data of every event. So an event shows `[REDACTED]` in the place of a
+value that your ID contains, and a different client can send that same text as
+its own ID. The two events are then equal and the two turns are not. Every
+later event of the turn carries the same `turn_id`.
+
+Two clients can send a prompt at the same moment. A conversation runs one turn
+at a time, so one prompt opens the turn. The turn carries the value of that
+client. Turn order cannot tell you that. When the conversation has a machine
+that is awake, Fountain answers `conversation_busy` to the other client. When
+the conversation must wake first, Fountain answers `queued` to the two clients.
+It then drops the prompt that arrives second, and the stream does not say so.
+
+The value is a string of 1 to 200 characters. It cannot contain a null
+character; Fountain answers `422` for one that does. Send it in the request
+body: Fountain does not read this field from the query string. Make the value
+unique in the conversation. Fountain does not check that. **It is not an
+idempotency key.**
+A second prompt with the same value opens a second turn, and the two turns
+carry the same value. Do not send a prompt again only because a response was
+lost. Read the turns first.
+
+An accepted prompt does not always open a turn. Fountain can refuse it after
+the response: the machine is at capacity, a limit on the conversation stops
+it, or another prompt opened the turn first. The stream reports some of these
+refusals and not others. So do not wait without a limit for a `started` event
+that carries your value. Set a time limit. Then read the turns.
+
+A turn that carries your value shows that the prompt ran. No turn with your
+value shows nothing. The prompt can still be waiting for the machine that must
+start first, and the rollout below can open its turn without the value. In that
+outcome you do not know whether the prompt ran. If you send it again, the work
+can run two times.
+
+A deployment that updates to the release with this field runs two releases
+for some minutes. In that time, Fountain can deliver a prompt without its
+value. The turn then has a null `client_request_id`.
+
+A turn that Fountain opened by itself has the `autonomous` origin and a null
+`client_request_id`. A webhook delivery carries `turn_id` and does not carry
+this value. Read the turn to get it.
+
 ### Wait for capacity
 
 A start can reach the tenant sandbox cap or the fleet ceiling. Fountain then

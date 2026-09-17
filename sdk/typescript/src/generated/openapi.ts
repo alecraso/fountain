@@ -4191,12 +4191,16 @@ export interface components {
         }) | null;
         /** PromptRequest */
         PromptRequest: {
+            /** @description Your own name for this prompt. Fountain stores it on the turn the prompt opens and sends it on that turn's `started` stage event, beside the `turn_id`, so a client can bind its work item to the exact turn without inferring it from turn order. Use the event to find a candidate turn and the turn itself to confirm it: the event's copy has been through event redaction, and the turn's is what you sent. It is a correlation and not an idempotency key: a second prompt with the same value opens a second turn that carries it too. Make it unique within the conversation. */
+            client_request_id?: string | null;
             /** @description Optional images to attach to this prompt. */
             images?: components["schemas"]["ImageInput"][] | null;
             prompt: string;
         };
         /** PromptResponse */
         PromptResponse: {
+            /** @description The `client_request_id` the request carried, or null when it carried none. The response cannot name the turn: a conversation that has to be woken is answered before its turn exists. Find the turn by this value instead. */
+            client_request_id?: string | null;
             /** @example queued */
             status: string;
         };
@@ -4968,6 +4972,8 @@ export interface components {
          * @description One prompt → exit_code cycle within a conversation.
          */
         Turn: {
+            /** @description The `client_request_id` of the prompt that opened this turn (#1406), or null: the caller sent none, or the turn is `autonomous`. Not unique. This is the value the caller sent, byte for byte, and it is the one to compare against: the copy on the turn's `started` stage event has been through event redaction, which rewrites any registered environment value it contains. */
+            client_request_id?: string | null;
             /** Format: date-time */
             ended_at?: string | null;
             exit_code?: number | null;

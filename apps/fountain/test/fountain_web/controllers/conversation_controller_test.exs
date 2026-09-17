@@ -319,6 +319,27 @@ defmodule FountainWeb.ConversationControllerTest do
       assert turn.id in ids
     end
 
+    test "each turn carries the client_request_id of its prompt, or null (#1406)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      insert_turn(conv, [])
+      insert_turn(conv, client_request_id: "salon-execution-42")
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}/turns")
+
+      ids =
+        conn
+        |> json_response(200)
+        |> Map.fetch!("data")
+        |> Enum.sort_by(& &1["turn_number"])
+        |> Enum.map(& &1["client_request_id"])
+
+      assert ids == [nil, "salon-execution-42"]
+    end
+
     test "each turn says who opened it (#817)", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
       insert_turn(conv, [])
@@ -889,6 +910,174 @@ defmodule FountainWeb.ConversationControllerTest do
         |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
 
       assert json_response(conn, 200)["status"] == "queued"
+    end
+
+    test "echoes client_request_id and sends it on with the prompt (#1406)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      test = self()
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, opts ->
+        send(test, {:prompt_opts, opts})
+        :ok
+      end)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{
+          "prompt" => "hello",
+          "client_request_id" => "salon-execution-42"
+        })
+        |> json_response(200)
+
+      assert body == %{"status" => "queued", "client_request_id" => "salon-execution-42"}
+      assert_received {:prompt_opts, opts}
+      assert opts[:client_request_id] == "salon-execution-42"
+      # Still the audit attribution it always was.
+      assert opts[:actor]
+    end
+
+    test "a prompt that names no request is answered with a null id (#1406)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts -> :ok end)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
+        |> json_response(200)
+
+      assert body == %{"status" => "queued", "client_request_id" => nil}
+
+      # An explicit null is the same as leaving it out, as it is for `images`.
+      body =
+        build_conn()
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{
+          "prompt" => "hello",
+          "client_request_id" => nil
+        })
+        |> json_response(200)
+
+      assert body == %{"status" => "queued", "client_request_id" => nil}
+    end
+
+    test "an empty or oversized client_request_id is refused before the prompt is sent", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      reject(&ConversationServer.send_prompt/4)
+      too_long = String.duplicate("x", Fountain.Conversations.Turn.client_request_id_max() + 1)
+
+      for bad <- ["", too_long, 42] do
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{
+          "prompt" => "hello",
+          "client_request_id" => bad
+        })
+        |> json_response(422)
+      end
+    end
+
+    # PostgreSQL cannot hold U+0000 in a text column: the insert raises 22021
+    # from a place nothing rescues, so an ordinary prompt would end its
+    # conversation server over the label it carried — and on a wake, after the
+    # caller had already been told `queued`. The prompt is fine; the id is not.
+    test "a NUL in the id is refused before the prompt is sent", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      reject(&ConversationServer.send_prompt/4)
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/conversations/#{conv.id}/prompts", %{
+        "prompt" => "hello",
+        "client_request_id" => "plan-7" <> <<0>> <> "step-3"
+      })
+      |> json_response(422)
+    end
+
+    # `replace_params: false` leaves path, query and body merged in `params`,
+    # and the schema validates only the body. A query-only value was therefore
+    # never checked: it was echoed to the caller and then dropped by
+    # `PromptDelivery.travelling/1`, naming a correlation no turn could carry.
+    test "an id supplied only in the query string is not read", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      test = self()
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, opts ->
+        send(test, {:prompt_opts, opts})
+        :ok
+      end)
+
+      too_long = String.duplicate("x", Fountain.Conversations.Turn.client_request_id_max() + 1)
+
+      # The second is the array form, which used to render a list where
+      # `PromptResponse` declares a nullable string.
+      for query <- ["client_request_id=#{too_long}", "client_request_id[]=x"] do
+        body =
+          build_conn()
+          |> authed_with_key(raw_key)
+          |> post_json("/api/conversations/#{conv.id}/prompts?#{query}", %{"prompt" => "hello"})
+          |> json_response(200)
+
+        assert body == %{"status" => "queued", "client_request_id" => nil}
+        assert_received {:prompt_opts, opts}
+        assert is_nil(opts[:client_request_id])
+      end
+    end
+
+    # The door takes these, so the response echoes them and the turn has to
+    # carry the same bytes back (`PromptCorrelationTest`). An id of spaces is
+    # one character to every length check here and an empty string to Ecto's
+    # default casting, which is where it used to disappear.
+    test "an id the door accepts travels as it was sent, spaces and all", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      test = self()
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, opts ->
+        send(test, {:prompt_opts, opts})
+        :ok
+      end)
+
+      combining = String.duplicate("e\u0301", Fountain.Conversations.Turn.client_request_id_max())
+
+      for id <- [" ", "\t\n", combining] do
+        body =
+          build_conn()
+          |> authed_with_key(raw_key)
+          |> post_json("/api/conversations/#{conv.id}/prompts", %{
+            "prompt" => "hello",
+            "client_request_id" => id
+          })
+          |> json_response(200)
+
+        assert body == %{"status" => "queued", "client_request_id" => id}
+        assert_received {:prompt_opts, opts}
+        assert opts[:client_request_id] == id
+      end
     end
 
     test "a machine whose teardown has been asked for answers 409, not a bare atom", %{

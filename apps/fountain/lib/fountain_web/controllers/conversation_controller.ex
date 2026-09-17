@@ -822,19 +822,42 @@ defmodule FountainWeb.ConversationController do
     user = conn.assigns.current_user
 
     with {:ok, images} <- decode_images(params["images"]) do
-      do_prompt(conn, id, prompt, user, images)
+      do_prompt(conn, id, prompt, user, images, client_request_id(conn))
     end
   end
 
-  defp do_prompt(conn, id, prompt, user, images) do
+  # `replace_params: false` leaves `params` as Plug built it: the path, the
+  # query string and the body in one map. The request schema validates the
+  # *body*, so a value that only ever appeared in the query string was never
+  # checked against it. Read the field the cast approved (#1406).
+  #
+  # `?client_request_id=<201 characters>` and `?client_request_id[]=x` both
+  # reach `params` untouched: the first was echoed to the caller and then
+  # dropped by `PromptDelivery.travelling/1`, naming a correlation no turn
+  # could ever carry, and the second rendered a list where `PromptResponse`
+  # declares a nullable string.
+  defp client_request_id(%{private: %{open_api_spex: %{body_params: body}}}),
+    do: from_body(body)
+
+  defp client_request_id(_conn), do: nil
+
+  defp from_body(%{client_request_id: id}), do: id
+  defp from_body(%{"client_request_id" => id}), do: id
+  defp from_body(_body), do: nil
+
+  defp do_prompt(conn, id, prompt, user, images, client_request_id) do
     case Conversations.get_conversation(id, user.id) do
       nil ->
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.send_prompt(id, prompt, images, Audited.attribution(conn)) do
+        # The id rides in the opts to the turn the prompt opens (#1406),
+        # whichever road delivers it; see `Conversations.PromptDelivery`.
+        opts = Audited.attribution(conn, client_request_id: client_request_id)
+
+        case ConversationServer.send_prompt(id, prompt, images, opts) do
           :ok ->
-            json(conn, %{status: "queued"})
+            json(conn, %{status: "queued", client_request_id: client_request_id})
 
           {:error, :not_running} ->
             {:error, :not_found}
