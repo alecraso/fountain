@@ -151,6 +151,7 @@ defmodule Fountain.Machines.Park do
   alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.MachineEvents
   alias Fountain.Conversations.Sandbox
+  alias Fountain.Machines.Admission
   alias Fountain.Machines.Lease
   alias Fountain.Machines.Occupancy
   alias Fountain.Machines.Renewal
@@ -553,6 +554,28 @@ defmodule Fountain.Machines.Park do
   end
 
   defp stamp_then_park(sandbox, epoch, opts) do
+    # The turn this park cuts is ended **before** the stamp, in its own
+    # committed write and not the stamp's transaction, so there is no window in
+    # which a `running` turn sits on a `parking` row — the reading a recovering
+    # actor or a cotenant's admission would otherwise take (stage 8b, the
+    # lead's condition on the cut). See `end_cut_turn/2`.
+    #
+    # The price of that order, and why it is still the right one (round 1,
+    # surfaces review): a `parking` stamp that is then refused — `:stale`
+    # against a newer epoch, `:retired` against a terminal row — has already
+    # written the turn `interrupted` with the reason `machine_parked`, for a
+    # park that did not happen. The alternative is a window where the turn is
+    # `running` on a row that says `parking`, and that window is read by two
+    # things that then do the wrong work: a cotenant's admission counts the
+    # turn against capacity on a machine going to sleep, and a recovering actor
+    # takes it for a turn it should finish. A wrong word on a turn the ceiling
+    # was cutting anyway is the cheaper error, and only the ceiling reaches
+    # here — the server has already dropped its adapter by then, so the turn was
+    # over either way. Between the two committed writes a second connection sees
+    # an interrupted turn on an unstamped row under a live lease, which is a
+    # state nothing refuses.
+    end_cut_turn(sandbox, opts)
+
     case Lease.cas_update(sandbox.id, epoch,
            transition: "parking",
            transition_reason: to_string(Keyword.fetch!(opts, :reason))
@@ -837,7 +860,37 @@ defmodule Fountain.Machines.Park do
     :ok
   end
 
-  # ── after the finalize ────────────────────────────────────────────────────
+  # The one turn a park operates over is the requester's own at the ceiling —
+  # `running_turn_veto?/2`'s exception, the turn the park is cutting — and the
+  # owner ends it (stage 8b) rather than leaving it to the server's own
+  # `terminate/2`, so the recovery that server makes on its way out finds the
+  # turn already terminal. Every other running turn refused the park, or is a
+  # turn nothing is driving that stage 6b deliberately leaves standing: a turn
+  # parked on a person's permission whose server has died is still theirs to
+  # answer, and a park is not the machine going away.
+  #
+  # Strictly before the `parking` stamp, under the lease, and not after the
+  # finalize: from the stamp on, a reader that finds this turn `running` on a
+  # `parking` row would be reading a state that never has to exist. The cost
+  # is a turn ended for a park the stamp then refuses (`:stale`, `:retired`),
+  # and it is no cost: the server that asked has already dropped its adapter
+  # at the ceiling, so the turn could not have continued either way.
+  #
+  # The second door (rule 16) is the server ending the same turn itself, in
+  # either order: `end_turn/3` on a turn already terminal is `:noop` and
+  # records nothing, whichever side got there first. `binding_test.exs` drives
+  # both orders.
+  defp end_cut_turn(%Sandbox{} = sandbox, opts) do
+    with :max_lifetime <- Keyword.fetch!(opts, :reason),
+         requester when is_binary(requester) <- Keyword.get(opts, :requesting_conversation_id) do
+      Admission.end_turns_on(sandbox.id, "machine_parked",
+        only: requester,
+        actor: Lifecycle.teardown_actor(Keyword.fetch!(opts, :actor))
+      )
+    else
+      _ -> :ok
+    end
+  end
 
   # One `sandbox.suspended` event for both paths, and that is a change: on
   # `main` the reaper recorded one (`record_reap/3`) and the conversation

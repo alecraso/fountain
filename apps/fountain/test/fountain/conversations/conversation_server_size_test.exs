@@ -73,6 +73,28 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   # make a number. The server's own `update_sandbox` and
   # `Managoat.Sandbox.destroy` sites are stage 8's, and they are the ones that
   # lower this properly. The file is 2211 lines on this branch.
+  #
+  # 2025 → 2025. **ADR 0058 stage 8b lowers nothing, because the file grew.**
+  # The last-detach decision became the owner's — `handle_call({:terminate_conv,
+  # ..})` asks `Machine.detach/2` once and reads three answers where it used to
+  # ask the fence and read two, `:release_conv` goes through the same door, and
+  # `detach_machine/2` replaces `prepare_termination/2` with a nil-sandbox
+  # clause of its own — and nothing left the file, because the provision and
+  # reattach writes went in 7b. `origin/main` is 2010 lines and this branch is
+  # 2022: twelve more.
+  #
+  # An earlier revision of this PR tightened the pin to 2022, the branch tip's
+  # exact length, which is the #1565 failure mode the moduledoc above names:
+  # zero headroom, mid-stack, with review rounds still to come, and one added
+  # line red. Round 1 caught it. The pin only ever shrinks, and this stage has
+  # nothing to shrink it by, so it stays at the number 8a left. That is fifteen
+  # lines of headroom against `main` and three against this tip — thin, and
+  # said out loud rather than papered over by moving something out to make a
+  # number. The ADR's stage 8 row, which promised the pin would drop here, is
+  # amended to say what actually happened.
+  #
+  # Stage 9 is where this number moves: the two fence columns and their
+  # writers go with the flag.
   @pin 2025
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"

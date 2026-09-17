@@ -204,18 +204,6 @@ defmodule Fountain.Conversations do
     :ok
   end
 
-  @doc """
-  Update a sandbox for provisioning, wake or park, returning `:retired` when
-  another operation has already retired it. Other write errors pass through.
-  """
-  @spec claim_sandbox(Sandbox.t(), map()) :: {:ok, Sandbox.t()} | :retired | {:error, term()}
-  def claim_sandbox(%Sandbox{} = sandbox, attrs) do
-    case update_sandbox(sandbox, attrs) do
-      {:ok, updated} -> {:ok, updated}
-      {:error, reason} -> if sandbox_retired?(reason), do: :retired, else: {:error, reason}
-    end
-  end
-
   @doc "Returns whether a write was rejected because the sandbox is retired."
   @spec sandbox_retired?(term()) :: boolean()
   def sandbox_retired?(%Ecto.Changeset{errors: errors}) do
@@ -915,8 +903,9 @@ defmodule Fountain.Conversations do
   # *not* inside `insert_conversation_row/1`: a caller in a transaction must
   # fire it after that transaction commits, so a rolled-back write reports no
   # request. Every door that inserts a conversation calls it exactly once —
-  # `create_conversation/1`, `create_attached_conversation/3`,
-  # `reserve_initial_conversation/3` — and
+  # `create_conversation/1`, `Fountain.Machines.Binding.attach/3` (the attach
+  # door since ADR 0058 stage 8b, `Launch.create_attached_conversation/3`
+  # before it), `reserve_initial_conversation/3` — and
   # `conversation_creation_seam_test.exs` drives each of them and fails if one
   # stops firing.
   # A door for `Fountain.Conversations.Launch` (#2217); not part of the
@@ -2084,7 +2073,7 @@ defmodule Fountain.Conversations do
 
   The query and the verdict both live in `Fountain.Machines.Occupancy` (ADR
   0058 stage 4), which is the one answer to "is anyone here" that
-  `Lifecycle._unsafe_sandbox_held_by_other?/2` and the two liveness scans also
+  `Machines.Binding.held_by_other?/2` and the two liveness scans also
   take. The semantics that separate them stay separate: this one applies the
   idle window, and `held_by_other?/2` deliberately does not.
 

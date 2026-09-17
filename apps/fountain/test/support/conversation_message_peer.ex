@@ -42,10 +42,22 @@ defmodule Fountain.Test.ConversationMessagePeer do
     {:ok, :caller}
   end
 
+  # The receiver's terminate goes through `Machine.detach/2` since ADR 0058
+  # stage 8b, which reads the row as a `%Sandbox{}` and asks the repo whether a
+  # transaction is open before it reaches the fence; both are stubbed here as
+  # the caller's side already stubs its own repo question.
   def init(state) do
-    start_mimic([Conversations, Lifecycle])
-    Mimic.stub(Conversations, :_unsafe_get_sandbox, fn id -> %{id: id} end)
+    start_mimic([Conversations, Lifecycle, Fountain.Repo])
+    Mimic.stub(Fountain.Repo, :in_transaction?, fn -> false end)
 
+    Mimic.stub(Conversations, :_unsafe_get_sandbox, fn id ->
+      %Fountain.Conversations.Sandbox{id: id, status: "ready"}
+    end)
+
+    # `put` is last-write-wins, so this records WHAT reached the fence and not
+    # HOW MANY times: a duplicate fence call is invisible here, and the
+    # assertions on this term are about the arguments only (round 1, behaviour
+    # review). Counting belongs in a test with a draining receiver.
     Mimic.stub(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
       :persistent_term.put({__MODULE__, :fence}, {sandbox.id, opts})
       {:error, :sandbox_unavailable}

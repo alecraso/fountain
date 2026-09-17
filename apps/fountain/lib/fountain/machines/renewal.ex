@@ -74,15 +74,32 @@ defmodule Fountain.Machines.Renewal do
       exactly the deadline it is already bounded by. A deadline is still a
       deadline: what changes is whose it is.
 
-  **Not taken here: evicting a lease whose `lease_node` is not a connected
-  node.** It is tempting and it is the same mistake #2307 constraint 4 names. A
-  node name is not evidence of liveness — a pod can restart under the same name,
-  `Node.list/0` is per-node and asynchronously converged, and a partitioned node
-  is still running its own operations. The two exits above close the case that
-  motivated the suggestion without deciding liveness from a name; if a
-  node-aware rule is ever wanted it belongs with stage 8b's binding work, where
-  membership is already being reasoned about; stage 8a's admission took no lease
-  and decided nothing from a node name.
+  **A lease whose `lease_node` is not a connected node is not evicted on the
+  name alone.** That would be the mistake #2307 constraint 4 names: a pod can
+  restart under the same name, `Node.list/0` is per-node and asynchronously
+  converged, and a partitioned node is still running its own operations — and
+  still renewing. What stage 8b added, in `Lease.claim/4`, is the rule that
+  reads the *renewals* rather than the name: a holder that is not connected
+  **and** has let its lease run down past the point any live renewer would
+  have extended it — under `Lease.absent_node_headroom_ms/0`, which is *half* a
+  renew interval of the shortest TTL — is taken over before `lease_until`. A
+  partitioned holder that is alive keeps renewing: a single missed renewal
+  still leaves it a whole interval, twice the headroom, and two missed in a row
+  leave it nothing anybody has to take early. Half an interval is the margin
+  the round-1 review's arithmetic asked for; a whole one was a line a live
+  renewer touches.
+
+  **"A whole interval" is only true because the loop below schedules from the
+  slot an attempt was due in** (round 3). Waiting a full interval from each
+  attempt's *return* spent the failing attempt's own duration out of the lease,
+  so a 12 s stall at TTL 60 — inside `DBConnection`'s ordinary 15 s timeout —
+  left 8 s where the early door takes at 10 s, and an alive, renewing holder
+  was taken. The true bound now: any attempt that returns inside its own slot
+  costs the cadence nothing, and only a single attempt overrunning its slot by
+  more than the headroom (30 s at TTL 60) pushes the next renewal past the
+  line — and that figure is measured to the next attempt *starting*, so the
+  true margin is tighter by whatever that attempt itself then costs. A dead holder falls past it, and the takeover saves the rest
+  of its TTL.
 
   ## What a lost lease means, and what a dead renewer does not
 
@@ -113,7 +130,19 @@ defmodule Fountain.Machines.Renewal do
   # GC pause — before the lease anybody else can see has expired. A half would
   # tolerate none, and a tenth would spend ten writes a minute on a machine
   # doing one provider call.
+  #
+  # A holder whose node has left the cluster is judged earlier than expiry, and
+  # that budget is smaller: `Lease.absent_node_headroom_ms/0` is half an
+  # interval, so such a holder may miss one renewal outright before it is taken
+  # over. A *failed* attempt costs it nothing extra, because `loop/1` schedules
+  # from the slot rather than from the return (round 3); what still costs it is
+  # a single attempt that overruns its slot by more than half an interval. Two
+  # missed in a row is past it either way.
   @renew_divisor 3
+
+  @doc "The fraction of a TTL between renewals. See `Lease.absent_node_headroom_ms/0`."
+  @spec divisor() :: pos_integer()
+  def divisor, do: @renew_divisor
 
   # How long `stop/1` waits for the renewer's answer. It is a `receive` in a
   # process that is either idle or inside one short `update_all`, so this is a
@@ -213,6 +242,10 @@ defmodule Fountain.Machines.Renewal do
         caller: Process.monitor(caller),
         deadline: System.monotonic_time(:millisecond) + lifetime_ms,
         lifetime_ms: lifetime_ms,
+        # When the next attempt is *due*, on the monotonic clock, rather than
+        # how long to wait from wherever the last one happened to finish. See
+        # `loop/1`.
+        due_at: System.monotonic_time(:millisecond) + interval,
         verdict: :held
       }
 
@@ -264,7 +297,26 @@ defmodule Fountain.Machines.Renewal do
             "#{state.epoch} died (#{inspect(reason)}); stopping renewals so the lease expires"
         )
     after
-      state.interval ->
+      # **The wait is measured from when the last attempt was due, not from
+      # when it returned** (round 3). `after state.interval` restarted the
+      # clock at the bottom of the attempt, so a slow attempt's own duration
+      # came out of the lease: at TTL 60 s, an attempt due at 20 s that stalled
+      # 12 s inside `DBConnection`'s ordinary 15 s timeout returned at 32 s and
+      # then waited a *whole* interval again, so the next attempt landed at
+      # 52 s of a 60 s lease — 8 s remaining, where the early door takes at
+      # 10 s — and the holder was alive and still reporting `:held`. Driven at
+      # the real numbers, this schedules that second attempt at 40 s with a
+      # whole interval still on the lease. Round 1 lowered the headroom for the same property
+      # and did not close this half of it.
+      #
+      # Due-at arithmetic keeps a slow attempt inside its own slack: an
+      # attempt that returns before its slot is over costs the cadence
+      # nothing, and one that overruns pushes the next by the overrun only,
+      # never by a whole interval on top. `max(.., 0)` makes an attempt that
+      # has already eaten its slot fire the next one at once — at most one
+      # renewal per attempt, so there is no hot loop behind a permanently slow
+      # database.
+      max(state.due_at - System.monotonic_time(:millisecond), 0) ->
         cond do
           System.monotonic_time(:millisecond) >= state.deadline ->
             Logger.warning(
@@ -279,7 +331,7 @@ defmodule Fountain.Machines.Renewal do
             await_stop(:lost)
 
           true ->
-            loop(state)
+            loop(%{state | due_at: state.due_at + state.interval})
         end
     end
   end

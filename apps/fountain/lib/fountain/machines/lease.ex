@@ -19,10 +19,40 @@ defmodule Fountain.Machines.Lease do
   before they query at all. Without that, a caller that never claimed could
   renew a lease into existence and make a machine unclaimable for a whole TTL.
 
-  Takeover is by expiry and nothing else. A TTL on its own is not a hand-over:
-  `take_over/4` still serializes on the sandbox lock, still re-reads the row
-  `FOR UPDATE`, and still refuses while `lease_until` is in the future. A lease
-  is surrendered early only by `release/2`, and even that keeps the epoch.
+  Takeover is by expiry, with one early door (stage 8b). `take_over/4` still
+  serializes on the sandbox lock, still re-reads the row `FOR UPDATE`, and
+  still refuses while `lease_until` is in the future — unless the holder's
+  `lease_node` is not a connected node **and** the lease has run down below
+  `absent_node_headroom_ms/0`, *half* a renew interval of the shortest TTL.
+
+  Half, and not a whole one, because of where a live renewer actually sits. It
+  renews every third of its TTL (`Machines.Renewal`), so it stands at two
+  thirds of the TTL with every renewal made, at **one third — one whole renew
+  interval — with a single renewal missed**, and at nothing with two missed in
+  a row. One renew interval is therefore a line a live, renewing holder
+  *touches*, not one it stays above: with the headroom set there, one slow
+  renewal plus a few milliseconds of latency evicted a holder that was alive,
+  renewing and mid-operation, forty seconds before its lease was due (round 1,
+  protocol review, driven with a real renewer and one faulted renewal). At half
+  an interval a holder may miss one renewal outright and keep its machine.
+
+  **The bound that makes that true is the renewer's, not this constant's**
+  (round 3). `Machines.Renewal` schedules each attempt from the slot it was due
+  in rather than from the moment the last one returned, so an attempt that
+  fails — however slowly, as long as it returns inside its own slot — costs the
+  cadence nothing, and a single miss still leaves one whole interval. Before
+  that, a failing attempt's own duration came out of this headroom as well: a
+  12 s stall at TTL 60, well inside `DBConnection`'s ordinary timeout, left 8 s
+  and the holder was taken while alive and still reporting `:held`. What is left
+  is the honest residue — a *single* attempt overrunning its slot by more than
+  this headroom, which is 30 s at TTL 60, measured to the next attempt
+  *starting*, so the true margin is tighter by what that attempt then costs —
+  and two missed renewals in a row have expired the lease anyway. Below the line it is a node that died with the
+  lease, and every other owner was waiting out the rest of its TTL for
+  nothing. A node name on its own decides nothing (#2307 constraint 4): a
+  partitioned holder that is alive is still renewing, and its lease stays above
+  the line. A lease is surrendered early only by `release/2`, and even that
+  keeps the epoch.
 
   **The clock is the database's** (stage 7a). It used to be the claiming
   node's: `lease_until` was written from one BEAM node's `DateTime.utc_now()`
@@ -75,8 +105,8 @@ defmodule Fountain.Machines.Lease do
   inside an enclosing one (`{:error, :transaction_open}`) unless the caller says
   the nesting is deliberate — one caller does, and `cas_update/4`'s `nest:`
   option is where that is argued. The guard is the same one
-  `Fountain.Conversations.Lifecycle.fence_sandbox_for_teardown/2` and
-  `Fountain.Conversations.SandboxIdentity` use. Nesting would join the caller's
+  `Fountain.Conversations.Lifecycle.fence_sandbox_for_teardown/2` uses.
+  Nesting would join the caller's
   transaction through a savepoint and hold a transaction-scoped advisory lock
   until the outer commit, which is exactly the "short transaction" this module
   promises not to be. Provider I/O happens in the owner, between these calls,
@@ -129,6 +159,20 @@ defmodule Fountain.Machines.Lease do
 
   @typedoc "Why a claim was refused: someone else holds a lease that has not expired."
   @type held :: {:held, String.t(), DateTime.t()}
+
+  # How far a lease may have run down before a holder that is not a connected
+  # node is taken over early. **Half** a renew interval of the shortest TTL the
+  # protocols use (60s / `Renewal.divisor/0` / 2): a live renewer of that TTL
+  # sits at one whole interval with a single renewal missed, so a headroom of
+  # one interval carries no margin at all and takes the machine off a holder
+  # whose next renewal is milliseconds late (round 1). Half of it tolerates one
+  # missed renewal outright — and, since round 3 made `Renewal` schedule from
+  # the slot rather than from the last return, a failing attempt of any length
+  # that still returns inside its own slot — while giving back the other fifty
+  # seconds of a dead node's TTL. The residue is a single attempt overrunning
+  # its slot by more than this much. A holder of a longer TTL sits higher
+  # still. `machine_bounds_test.exs` pins it against every protocol's TTL.
+  @absent_node_headroom_ms 10_000
 
   # The only columns a machine's owner may write through `cas_update/3`.
   # `lease_*` are absent on purpose — a lease changes hands through the
@@ -255,6 +299,14 @@ defmodule Fountain.Machines.Lease do
   # gets a `FunctionClauseError` here rather than a lease that never expires.
   defp at(:db), do: now()
   defp at(%DateTime{} = now), do: now
+
+  @doc """
+  The remaining lease under which a holder that is not a connected node is
+  taken over before `lease_until`. See the moduledoc, and
+  `machine_bounds_test.exs` for the pin.
+  """
+  @spec absent_node_headroom_ms() :: pos_integer()
+  def absent_node_headroom_ms, do: @absent_node_headroom_ms
 
   @doc """
   Take the lease on `sandbox_id` for `node`, for `ttl_ms` from `now`.
@@ -491,6 +543,8 @@ defmodule Fountain.Machines.Lease do
             lock: "FOR UPDATE"
         )
 
+      judged = current && judged_at(now, current)
+
       cond do
         is_nil(current) ->
           {:error, :not_found}
@@ -498,8 +552,10 @@ defmodule Fountain.Machines.Lease do
         # Through `live?/2`, deliberately: a claimant and a reader deciding
         # "is this machine held" by two different renderings of one rule is
         # what stage 6a removed, and inlining the comparison here would put it
-        # back.
-        live?(current, judged_at(now, current)) ->
+        # back. The early door (stage 8b) is judged only on a lease `live?/2`
+        # would refuse, so a reader and a claimant still agree about every row
+        # that is not one a dead node left behind.
+        live?(current, judged) and not abandoned_by_node?(current, judged) ->
           {:error, {:held, current.lease_node, current.lease_until}}
 
         true ->
@@ -519,7 +575,7 @@ defmodule Fountain.Machines.Lease do
 
           case Repo.update_all(claimed, []) do
             {1, _} ->
-              log_claim(kind, sandbox_id, node, epoch, current)
+              log_claim(kind, sandbox_id, node, epoch, current, judged)
               {:ok, epoch}
 
             {0, _} ->
@@ -528,6 +584,19 @@ defmodule Fountain.Machines.Lease do
       end
     end)
   end
+
+  # The early door. Both halves are required, and the order is the cheap one
+  # first: a holder that *is* a connected node is never judged on its
+  # remaining lease, whatever it is.
+  defp abandoned_by_node?(%{lease_node: holder, lease_until: until}, now) do
+    holder not in connected_nodes() and
+      DateTime.diff(until, now, :millisecond) < @absent_node_headroom_ms
+  end
+
+  # This node and the ones it is connected to, in the string form `lease_node`
+  # is written in. `Node.list/0` is this node's view and converges
+  # asynchronously, which is why a name absent from it is only half the rule.
+  defp connected_nodes, do: Enum.map([node() | Node.list()], &to_string/1)
 
   # The clock a claim judges the standing lease against: the one the database
   # handed back with the locked row, or the one a test injected.
@@ -555,14 +624,28 @@ defmodule Fountain.Machines.Lease do
   defp set_deadline(query, %DateTime{} = now, ttl_ms),
     do: update(query, set: [lease_until: ^DateTime.add(now, ttl_ms, :millisecond)])
 
-  defp log_claim(:take_over, sandbox_id, node, epoch, %{lease_node: previous}) do
+  defp log_claim(:take_over, sandbox_id, node, epoch, %{lease_node: previous}, _judged) do
     Logger.info(
       "machine lease taken over on sandbox #{sandbox_id} by #{node} at epoch #{epoch}; " <>
         "previous holder #{previous || "none"} had expired"
     )
   end
 
-  defp log_claim(:claim, _sandbox_id, _node, _epoch, _current), do: :ok
+  # A claim that took a lease still in the future says so, at warning: it is
+  # the one place a claim wins before `lease_until`, it means a node died with
+  # the machine, and an operator reading the log for a machine that changed
+  # hands early should find why without turning the level down.
+  defp log_claim(:claim, sandbox_id, node, epoch, current, judged) do
+    if live?(current, judged) do
+      Logger.warning(
+        "machine lease on sandbox #{sandbox_id} taken by #{node} at epoch #{epoch} before " <>
+          "its expiry (#{inspect(current.lease_until)}): previous holder " <>
+          "#{current.lease_node} is not a connected node and had stopped renewing"
+      )
+    end
+
+    :ok
+  end
 
   # A lease that is really held, at exactly this epoch. The epoch alone is not
   # enough, twice over: `lease_epoch` defaults to 0 on every row, so an
