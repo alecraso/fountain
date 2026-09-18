@@ -115,6 +115,172 @@ defmodule FountainWeb.ConversationEventsControllerTest do
     end
   end
 
+  describe "GET /api/conversations/:id/events?prompts=true" do
+    # A conversation's log feed is everything the runtime wrote and nothing the
+    # human typed, so a client replaying one renders it as a monologue in the
+    # agent's voice. The prompt is already on the turn; this fills the turn's
+    # own `turn`/`started` stage event, whose `blocks` was otherwise always [].
+    defp turn_with_start(conv, overrides) do
+      turn = insert_turn(conv, overrides)
+
+      event =
+        insert_log_event(conv,
+          kind: "stage",
+          stream: "",
+          stage: "turn",
+          state: "started",
+          turn_id: turn.id,
+          data: Jason.encode!(%{turn_id: turn.id})
+        )
+
+      {turn, event}
+    end
+
+    defp blocks_by_id(conn, key, conv, query) do
+      conn
+      |> get_events(key, conv, query)
+      |> json_response(200)
+      |> Map.fetch!("data")
+      |> Map.new(&{&1["id"], &1["blocks"]})
+    end
+
+    test "the prompt is absent until asked for", %{conn: conn, key: key, conv: conv} do
+      {_turn, start} = turn_with_start(conv, %{prompt: "make the heading blue"})
+
+      # No `blocks` key at all without `blocks=true` — the default response
+      # shape does not move.
+      refute conn
+             |> get_events(key, conv)
+             |> json_response(200)
+             |> Map.fetch!("data")
+             |> hd()
+             |> Map.has_key?("blocks")
+
+      assert blocks_by_id(conn, key, conv, "?blocks=true")[start.id] == []
+    end
+
+    test "asked for, the turn's stage event carries one prompt block", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      {_turn, start} = turn_with_start(conv, %{prompt: "make the heading blue"})
+      output = insert_log_event(conv, kind: "output", stream: "stdout", data: "ok")
+
+      blocks = blocks_by_id(conn, key, conv, "?blocks=true&prompts=true")
+
+      assert blocks[start.id] == [%{"kind" => "prompt", "body" => "make the heading blue"}]
+      # Only the anchor. A non-ACP output row still parses to nothing.
+      assert blocks[output.id] == []
+    end
+
+    test "each turn's prompt lands on that turn's own stage event", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      {_first, first_start} = turn_with_start(conv, %{prompt: "first"})
+      {_second, second_start} = turn_with_start(conv, %{prompt: "second"})
+
+      blocks = blocks_by_id(conn, key, conv, "?blocks=true&prompts=true")
+
+      assert blocks[first_start.id] == [%{"kind" => "prompt", "body" => "first"}]
+      assert blocks[second_start.id] == [%{"kind" => "prompt", "body" => "second"}]
+    end
+
+    test "a stage event that is not a turn start stays empty", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      {_turn, start} = turn_with_start(conv, %{prompt: "hello"})
+
+      done =
+        insert_log_event(conv, kind: "stage", stream: "", stage: "turn", state: "done")
+
+      provision = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
+
+      blocks = blocks_by_id(conn, key, conv, "?blocks=true&prompts=true")
+
+      assert blocks[start.id] != []
+      assert blocks[done.id] == []
+      assert blocks[provision.id] == []
+    end
+
+    test "an autonomous turn contributes no prompt (#817)", %{conn: conn, key: key, conv: conv} do
+      # Its prompt is a placeholder the server wrote for a cycle nobody asked
+      # for. Rendering it in the human's voice would put words in his mouth.
+      {_turn, start} =
+        turn_with_start(conv, %{prompt: "(background task follow-up)", origin: "autonomous"})
+
+      assert blocks_by_id(conn, key, conv, "?blocks=true&prompts=true")[start.id] == []
+    end
+
+    test "prompts=true without blocks=true changes nothing", %{conn: conn, key: key, conv: conv} do
+      turn_with_start(conv, %{prompt: "hello"})
+
+      plain = conn |> get_events(key, conv) |> json_response(200)
+      asked = conn |> get_events(key, conv, "?prompts=true") |> json_response(200)
+
+      assert plain == asked
+    end
+
+    test "no event is added, so the cursor and page accounting do not move", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      # The hazard the anchor exists to avoid: `meta.next_cursor` is the last
+      # row's id, so a fabricated event would hand a client a cursor no row has
+      # and corrupt its resume.
+      for _ <- 1..3, do: turn_with_start(conv, %{prompt: "p"})
+
+      without = conn |> get_events(key, conv, "?blocks=true&limit=2") |> json_response(200)
+      with_p = conn |> get_events(key, conv, "?blocks=true&prompts=true&limit=2")
+      with_p = json_response(with_p, 200)
+
+      assert with_p["meta"] == without["meta"]
+      assert Enum.map(with_p["data"], & &1["id"]) == Enum.map(without["data"], & &1["id"])
+
+      next =
+        conn
+        |> get_events(
+          key,
+          conv,
+          "?blocks=true&prompts=true&limit=2&after=#{with_p["meta"]["next_cursor"]}"
+        )
+        |> json_response(200)
+
+      assert Enum.map(next["data"], & &1["id"]) ==
+               conn
+               |> get_events(
+                 key,
+                 conv,
+                 "?blocks=true&limit=2&after=#{without["meta"]["next_cursor"]}"
+               )
+               |> json_response(200)
+               |> Map.fetch!("data")
+               |> Enum.map(& &1["id"])
+    end
+
+    test "streams=acp drops the stage events and the prompts with them", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      # Documented rather than special-cased: the stream filter is older than
+      # this parameter and excludes every stage event, prompt-bearing or not.
+      turn_with_start(conv, %{prompt: "hello"})
+
+      body =
+        conn
+        |> get_events(key, conv, "?blocks=true&prompts=true&streams=acp")
+        |> json_response(200)
+
+      assert body["data"] == []
+    end
+  end
+
   describe "pagination" do
     test "pages through the feed with next_cursor", %{conn: conn, key: key, conv: conv} do
       events = for i <- 1..5, do: insert_log_event(conv, data: "line #{i}")

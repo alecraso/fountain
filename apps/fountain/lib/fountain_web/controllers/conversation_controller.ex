@@ -419,6 +419,21 @@ defmodule FountainWeb.ConversationController do
             "structured blocks a transcript renders (text, thinking, tool_use, " <>
             "tool_result, init, result, error, raw) — the same parse the web UI uses, " <>
             "so no client re-implements a runtime's dialect. Defaults to false."
+      ],
+      prompts: [
+        in: :query,
+        type: :boolean,
+        required: false,
+        description:
+          "With `blocks=true`, fill each turn's `turn`/`started` stage event — whose " <>
+            "`blocks` is otherwise always `[]` — with one `prompt` block carrying the " <>
+            "prompt that opened that turn. Without it the feed holds only what the " <>
+            "runtime wrote, so a client replaying a conversation renders it as a " <>
+            "monologue in the agent's voice. No event is added, removed or reordered, " <>
+            "so `meta.next_cursor`, `has_more` and the page size are unchanged. A turn " <>
+            "whose `origin` is `autonomous` gets no block: nobody typed it. Note that " <>
+            "`streams=acp` excludes stage events, and so excludes these prompts with " <>
+            "them. Ignored without `blocks=true`. Defaults to false."
       ]
     ],
     responses: [
@@ -440,6 +455,7 @@ defmodule FountainWeb.ConversationController do
         after_id = parse_after(params["after"])
         streams = parse_streams_param(params["streams"])
         blocks? = parse_bool_param(params["blocks"], false)
+        prompts? = parse_bool_param(params["prompts"], false)
 
         # Ownership: established by the scoped get_conversation above.
         # One extra row decides has_more without a second count query.
@@ -455,9 +471,25 @@ defmodule FountainWeb.ConversationController do
           events: page,
           has_more: has_more?,
           limit: limit,
-          blocks?: blocks?
+          blocks?: blocks?,
+          prompts: if(prompts?, do: turn_prompts(id), else: %{})
         )
     end
+  end
+
+  # `turn_id => prompt` for `?prompts=true`, the human's half of the transcript
+  # the log feed has no room for. Ownership: established by the scoped
+  # get_conversation above, which is what lets the `turns` action read the same
+  # rows the same way.
+  #
+  # An `autonomous` turn (#817) is left out. Its prompt is a placeholder this
+  # server wrote for a cycle nobody asked for, and rendering that in the
+  # human's voice would put words in his mouth.
+  defp turn_prompts(conversation_id) do
+    conversation_id
+    |> Conversations._unsafe_list_turns()
+    |> Enum.filter(&((&1.origin || "user") == "user" and (&1.prompt || "") != ""))
+    |> Map.new(&{&1.id, &1.prompt})
   end
 
   defp split_page(events, limit) do
