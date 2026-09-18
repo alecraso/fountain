@@ -49,12 +49,25 @@ defmodule Fountain.Conversations.HomeCheckpoint do
   error after it has been recorded.
   """
   @spec on_park(Sandbox.t(), Lease.epoch()) :: {:ok, String.t()} | :skipped | {:error, term()}
-  # A machine whose reset is unconfirmed keeps no checkpoint: the disk is meant
-  # to be gone. `Park` refuses a fenced row before it ever gets here, so this
-  # clause is now belt and braces rather than the guard it was — kept because
-  # the rule belongs to the checkpoint as much as to the park, and a second
-  # caller would arrive without it.
+  # A machine whose destruction has been asked for keeps no checkpoint: the disk
+  # is meant to be gone. `Park` refuses a fenced row before it ever gets here,
+  # so these clauses are belt and braces rather than the guard they were — kept
+  # because the rule belongs to the checkpoint as much as to the park, and a
+  # second caller would arrive without them.
+  #
+  # The `destroying` stamp is the second of the two since ADR 0058 stage 9a,
+  # and it is the one that outlives the column. The race the first draft of
+  # this note described — a fence landing mid-suspend, whose stamp
+  # `Lease.cas_update/4` then keeps — cannot actually reach here: the
+  # checkpoint is taken *before* the finalize, so a fence arriving during the
+  # suspend arrives after this ran (review). What the clause is for is a second
+  # caller: `Park` refuses a fenced row today, and the rule belongs to the
+  # checkpoint as much as to the park.
   def on_park(%Sandbox{reset_requested_at: at}, _epoch) when not is_nil(at), do: :skipped
+
+  def on_park(%Sandbox{transition: "destroying", status: status}, _epoch)
+      when status not in ["terminated", "failed"],
+      do: :skipped
 
   def on_park(%Sandbox{mode: "persistent", machine_name: name} = sandbox, epoch)
       when is_binary(name) do

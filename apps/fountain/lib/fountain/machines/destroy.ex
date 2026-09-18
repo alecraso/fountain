@@ -84,22 +84,46 @@ defmodule Fountain.Machines.Destroy do
   9. **Tell the co-tenants**, through `MachineEvents.tell_cotenants/5`, the
      one sender of that cast — when the caller supplies the notice to send.
 
-  ## Takeover
+  ## Takeover, and the stamp as the fence
 
   A claim that finds `transition: "destroying"` on a row that is **not yet
-  terminal** is looking at a destroy whose owner died between step 4 and step
-  6. It skips the fence (already written) and the stamp (already there) and
-  continues from step 5, which is safe because destroying a machine twice is
-  destroying it once — the second call answers `:not_found`.
+  terminal** skips the fence (already written) and the stamp (already there)
+  and continues from step 5, which is safe because destroying a machine twice
+  is destroying it once — the second call answers `:not_found`.
 
-  The status check in front of that is not defensive padding.
-  `SandboxReaper.finish_teardown/1` writes an abandoned teardown terminal
-  through `Conversations.update_sandbox/2`, which knows nothing about
-  `transition` and leaves the stamp on, so a *finished* destroy still wearing
-  the stamp is an ordinary state of the fleet. Continuing from it would call
-  the provider again and record a second `sandbox.destroyed` for a machine that
-  was already gone. Such a row answers `{:ok, :already_terminal}` and has its
-  stale stamp cleared.
+  Until stage 9a that only ever described a takeover: an owner that died
+  between step 4 and step 6. It now also describes the first pass of any
+  destroy whose fence ran before the claim, because the fence writes the stamp
+  with it — `Lifecycle.fence_sandbox_for_teardown/2` and
+  `Conversations.reset_sandbox/2` both do, so that no row records the intent in
+  a column stage 9b deletes and nowhere else. `SandboxReaper`'s driver for
+  abandoned fences is the third such caller. Reaching this clause is therefore
+  the same assertion `caller_fenced_destroy/3` makes for
+  `fence: :held_by_caller` — a `destroying` stamp is written by a fence or by
+  this protocol, never by anything else.
+
+  **The stamp is the one transition a reader may not clear** (stage 9a). Every
+  other one — `parking`, `resuming`, `provisioning` — is an abandoned operation
+  that `Conversations.register_server/2`, `Resume.under_lease/3` and
+  `Provision.clear_foreign_stamp/2` take off a lease-less row so the machine
+  can be used again. A `destroying` stamp with a dead lease is not an abandoned
+  operation; it is an unfinished destroy, and `Lease.cas_update/4` keeps it
+  through any write that does not retire the row.
+
+  The status check in front of that is not defensive padding. A terminal write
+  that knows nothing about `transition` leaves the stamp on, so a *finished*
+  destroy still wearing one is a state the fleet can be in. Continuing from it
+  would call the provider again and record a second `sandbox.destroyed` for a
+  machine that was already gone. Such a row answers
+  `{:ok, :already_terminal}` and has its stale stamp cleared.
+
+  `SandboxReaper.finish_teardown/1` was that writer until stage 9a, where it
+  became a driver and its write became this protocol's own finalize — which
+  carries an epoch and clears the stamp. On a fleet where every replica runs
+  9a, nothing produces the shape. The check stays because **a replica that
+  predates 9a still produces it**, from the same sweep, for as long as a
+  rollout is half done; `destroy_test.exs` builds the row with that write
+  rather than forging it.
 
   That idempotence is the *sequential* argument, and it is the only one stage
   5a makes. Nothing renews the lease across the provider call — the renew timer
@@ -182,6 +206,57 @@ defmodule Fountain.Machines.Destroy do
   # Where a machine stops. Same two as `Fountain.Conversations`'
   # `@billable_terminal` and `Lease`'s `@terminal_statuses`.
   @terminal_statuses ~w(terminated failed)
+
+  # **The destroy vocabulary**, closed and owned here because this module is
+  # what puts it on the row and in the trail. `:reason` becomes
+  # `transition_reason` on the machine and `"reason"` in `sandbox.destroyed`.
+  #
+  # It is deliberately *not* the fence vocabulary. `Lifecycle`'s own
+  # `sandbox.teardown_requested` says why a caller asked
+  # ("conversation_terminated", "agent_deleted", "reaped", …) and this says what
+  # happened to the machine; the two are paired at every call site and the
+  # option names keep them apart (`:reason` against `:fence_reason`, or
+  # `:destroy_reason` against `:reason` one layer up in `Termination`).
+  @reasons ~w(terminated idle max_lifetime reclaimed reset admin_reap home_destroyed
+              provider_gone replaced account_deleted principal_closed compute_stopped
+              teardown)a
+
+  @reason_by_string Map.new(@reasons, &{Atom.to_string(&1), &1})
+  @known_reason_strings Map.keys(@reason_by_string)
+
+  @doc """
+  The destroy reason a `transition_reason` string names, as an atom.
+
+  A machine's `transition_reason` is written by this protocol's stamp and, since
+  ADR 0058 stage 9a, by the fence that precedes it — which stamps this
+  vocabulary rather than its own precisely so that one column means one thing.
+  `SandboxReaper`'s driver reads it back to continue a destroy somebody
+  abandoned, and it must get the same word the original caller gave or the row
+  and the trail will disagree about why a machine went away.
+
+  **Total, and explicitly so.** The first version of the driver used
+  `String.to_existing_atom/1` with a fallback, which is wrong twice over: whether
+  a term converts depends on what else happens to be loaded — `"reaped"`
+  converted under the suite and raised under `mix run`, so two replicas could
+  write two different reasons for one row — and a term that does convert is not
+  thereby the right one, since `"reaped"` is the *fence's* word for a machine
+  whose destroy reason is `:admin_reap`. A closed vocabulary is matched, not
+  parsed.
+
+  Anything else is `:teardown`, which is the word `Lifecycle`'s fence defaults
+  its own event to. Reaching it means a row carries a reason no caller in this
+  release writes — an older replica's, or a hand-edited row — and finishing that
+  destroy with a generic word is better than refusing to finish it.
+  """
+  @spec reason_from_string(String.t() | nil) :: atom()
+  def reason_from_string(reason) when reason in @known_reason_strings,
+    do: @reason_by_string[reason]
+
+  def reason_from_string(_other), do: :teardown
+
+  @doc "The closed destroy vocabulary, for the tests that pin it term by term."
+  @spec reasons() :: [atom()]
+  def reasons, do: @reasons
 
   @doc """
   Destroy the machine behind `sandbox_id`.
@@ -421,22 +496,60 @@ defmodule Fountain.Machines.Destroy do
       # destroy that stopped it. **Checked before the continuation below**, and
       # that order is the whole point: matching on `transition` alone would
       # send a finished destroy back through the provider and record a second
-      # `sandbox.destroyed` for a machine that was gone. Not a forged state —
-      # `SandboxReaper.finish_teardown/1` writes `terminated` through
-      # `Conversations.update_sandbox/2`, which knows nothing about
-      # `transition` and leaves the stamp exactly here.
+      # `sandbox.destroyed` for a machine that was gone. Not a forged state: a
+      # terminal write that knows nothing about `transition` leaves the stamp
+      # exactly here, and until stage 9a
+      # `SandboxReaper.finish_teardown/1` was that write. Since 9a it goes
+      # through this protocol and clears the stamp, so on a fleet where every
+      # replica runs 9a nothing produces the shape — and a replica that
+      # predates it still does, for as long as a rollout is half done. See the
+      # moduledoc.
       %Sandbox{transition: "destroying", status: status} = done
       when status in @terminal_statuses ->
         clear_stale_transition(done, epoch)
         already_terminal(done, opts)
 
-      # Step 4 landed and step 6 did not: the previous holder died in the
-      # middle of its provider call, or was superseded before it could
-      # finalize. The fence is already written and the intent is already on the
-      # row, so this owner picks the work up at step 5.
+      # The intent is already on the row, so this owner picks the work up at
+      # step 5. Two shapes reach here and they are not the same thing.
+      #
+      # The one this clause was written for is a **takeover**: step 4 landed and
+      # step 6 did not, because the previous holder died in the middle of its
+      # provider call or was superseded before it could finalize.
+      #
+      # The other arrived with stage 9a and is now the *ordinary* path for every
+      # destroy whose fence ran before the claim: the fence writes the stamp in
+      # the same commit as the columns, so `reset_sandbox/2`'s reset, and
+      # `SandboxReaper`'s driver continuing a fence somebody abandoned, both
+      # come through here on their first pass rather than through the fence
+      # below. What that skips is the fence write (already done, and idempotent
+      # anyway) and `stamp_then_destroy/3` (which would rewrite the same
+      # reason). What it must not skip is `caller_fenced_destroy/3`'s assertion
+      # that a `fence: :held_by_caller` caller really holds one — and it does
+      # not: a `destroying` stamp is written by a fence or by this protocol and
+      # by nothing else, so reaching this clause *is* that assertion, one
+      # column over.
+      #
+      # It also skips the fence's *re-ask* under the sandbox lock, and that is
+      # worth being exact about, because two callers fence before they get
+      # here: `Lifecycle.prepare_destroy/2`, so the conversation server can
+      # close its adapter knowing nothing can be admitted behind it, and
+      # `Binding.fence_then_finish/4`, whose fence with the ending conversation
+      # *is* the detach decision. Three things the re-ask could answer
+      # differently, and none of them can:
+      #
+      #   * `:not_found` and a terminal status — both are read here, from the
+      #     row, in the two clauses above.
+      #   * `:sandbox_kept` — needs a `terminating_conversation_id`, and
+      #     neither caller passes one to the protocol; the detach makes that
+      #     decision at its own fence and hands this `nil` precisely so it is
+      #     not reopened.
+      #   * a co-tenant attaching in between — impossible, because the fence has
+      #     committed and `Binding.attachable/5` refuses a fenced machine.
+      #
+      # So what the stamp removes is a second read, not a second decision.
       %Sandbox{transition: "destroying"} = interrupted ->
         Logger.info(
-          "machine #{sandbox_id}: continuing an interrupted destroy " <>
+          "machine #{sandbox_id}: continuing a destroy already stamped on the row " <>
             "(#{interrupted.transition_reason || "no reason"}) at epoch #{epoch}"
         )
 
@@ -463,6 +576,12 @@ defmodule Fountain.Machines.Destroy do
   # fence, so a row with no `reset_requested_at` means either a caller bug or a
   # fence that vanished under it, and neither is a reason to destroy a machine
   # that is still open to admission on every other node.
+  #
+  # **Unreachable since stage 9a for the one caller that passes the option**:
+  # the reset door stamps `destroying` in the same commit as the column, so
+  # `under_lease/3`'s continuation clause takes that row first. It stays while a
+  # pre-9a replica can still write a column-only reset fence, and it is on
+  # #2344's stage 9b inventory to delete with the columns.
   defp caller_fenced_destroy(%Sandbox{status: status} = done, _epoch, opts)
        when status in @terminal_statuses,
        do: already_terminal(done, opts)
@@ -525,7 +644,14 @@ defmodule Fountain.Machines.Destroy do
 
     [
       actor: Keyword.fetch!(opts, :actor),
-      reason: Keyword.get(opts, :fence_reason) || to_string(reason)
+      reason: Keyword.get(opts, :fence_reason) || to_string(reason),
+      # The row's word, in this module's own vocabulary — the same one
+      # `stamp_then_destroy/3` writes a step later. The fence commits first and
+      # the stamp only follows it, so an owner that dies between the two leaves
+      # this value for `SandboxReaper`'s driver to hand back through
+      # `reason_from_string/1`. Without it every such row read `teardown`, and
+      # the sweep recorded a reason the caller never gave (review, round 2).
+      transition_reason: reason
     ]
     |> put_unless_nil(:request_ip, Keyword.get(opts, :request_ip))
     # Merged into `sandbox.teardown_requested` by the fence, for a caller whose
@@ -653,9 +779,10 @@ defmodule Fountain.Machines.Destroy do
   # to run, and so does the co-tenant notice: `main`'s `do_destroy/4` called
   # `stop_cotenants/5` unconditionally, and a co-tenant server still holding a
   # handle to a machine that is already gone is exactly what it exists to stop.
-  # The turns too (stage 8b), and for the same reason: a machine
-  # `SandboxReaper.finish_teardown/1` wrote terminal has had no owner end its
-  # turns, and ending one twice is a `:noop`.
+  # The turns too (stage 8b), and for the same reason: a machine written
+  # terminal without an owner — a pre-9a replica's `finish_teardown/1`, on a
+  # half-done rollout — has had no owner end its turns, and ending one twice is
+  # a `:noop`.
   defp already_terminal(%Sandbox{} = sandbox, opts) do
     end_turns(sandbox, opts)
     notify_cotenants(sandbox, opts)

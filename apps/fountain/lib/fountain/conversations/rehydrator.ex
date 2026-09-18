@@ -41,6 +41,11 @@ defmodule Fountain.Conversations.Rehydrator do
   alias Fountain.Machines.Lease
   alias Fountain.Machines.Machine
 
+  # Where a machine stops. A terminal row's `destroying` stamp is leftovers
+  # rather than intent (`Machines.Destroy`'s takeover clause), and a server
+  # started on a retired row discovers that for itself.
+  @terminal_statuses ~w(terminated failed)
+
   def run(opts \\ []) do
     if clustering_enabled?() do
       peers = await_stable_cluster(opts)
@@ -168,6 +173,13 @@ defmodule Fountain.Conversations.Rehydrator do
         {:error, :sandbox_unavailable} ->
           skipped(conv, {:skip, :machine_busy})
 
+        # The door's other refusal, and `check_machine_free/2`'s below: a
+        # machine somebody has asked to be destroyed (ADR 0058 stage 9a). Named
+        # rather than left to the catch-all so the log says which of the two
+        # this was — a busy machine comes back, this one does not.
+        {:error, :sandbox_reset_pending} ->
+          skipped(conv, {:skip, :machine_destroying})
+
         other ->
           skipped(conv, other)
       end
@@ -209,11 +221,38 @@ defmodule Fountain.Conversations.Rehydrator do
   # would leave the conversation with no server until something else gave up on
   # the row (round 1).
   #
+  # **Except `destroying`** (ADR 0058 stage 9a). That stamp is durable intent
+  # rather than an operation in flight, so it is refused whatever the lease
+  # says, and this is the one place stage 6a round 1's reasoning genuinely
+  # inverts.
+  #
+  # Round 1 restored a server here because refusing withheld a machine that
+  # `main` would have handed over at once. That is true of an abandoned *park*
+  # or *resume* and false of an abandoned destroy, and the difference is the
+  # fence rather than anything this stage invents: `main` answers
+  # `:sandbox_reset_pending` — 409 — to a prompt on a fenced row already, so
+  # such a conversation is **blocked either way** until the machine is gone,
+  # and then gets a fresh one. Skipping the boot sweep costs it nothing it
+  # would have had.
+  #
+  # What starting a server there does cost is real: a second writer on a disk
+  # that is about to be deleted, and the intent itself, since
+  # `Conversations.register_server/2` would clear the stamp on the way in.
+  #
   # Skipping, not failing: the next boot sweep or the conversation's own next
   # prompt comes back, and by then the operation has finished or its lease has
   # expired. `{:skip, _}` is the sweep's own "not now" shape.
   defp check_machine_free(%{sandbox: %Sandbox{} = sandbox}, lease_now) do
-    if Machine.busy?(sandbox, lease_now), do: {:skip, :machine_busy}, else: :ok
+    cond do
+      sandbox.transition == "destroying" and sandbox.status not in @terminal_statuses ->
+        {:skip, :machine_destroying}
+
+      Machine.busy?(sandbox, lease_now) ->
+        {:skip, :machine_busy}
+
+      true ->
+        :ok
+    end
   end
 
   # `_unsafe_list_resumable_conversations/0` joins the sandbox and preloads it,

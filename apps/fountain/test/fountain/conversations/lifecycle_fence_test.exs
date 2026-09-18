@@ -89,6 +89,31 @@ defmodule Fountain.Conversations.LifecycleFenceTest do
     assert [_] = Audit.list_for_user(ctx.user.id, action_prefix: "sandbox.teardown_requested")
   end
 
+  test "the server's fence carries its expiry as the row's destroy reason", ctx do
+    # ADR 0058 stage 9a: the fence stamps `transition_reason`, and an owner that
+    # dies between the fence and its own intent stamp leaves that value for
+    # `SandboxReaper`'s driver to record on `sandbox.destroyed`. A caller that
+    # stopped passing it would have the fence fall back to `teardown`. The row
+    # cannot show that here — the protocol's stamp rewrites the reason a step
+    # later — so this pins what `prepare_destroy/2` hands the fence, recorded
+    # inside the stub and asserted outside it (the protocol rescues a raise).
+    test = self()
+
+    expect(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
+      send(test, {:fence_opts, opts})
+      Mimic.call_original(Lifecycle, :fence_sandbox_for_teardown, [sandbox, opts])
+    end)
+
+    stub(Managoat.Sandbox, :close_stdin, fn :adapter -> :ok end)
+    stub(Managoat.Sandbox, :stop_command, fn :adapter -> :ok end)
+    stub(Managoat.Sandbox, :destroy, fn _ -> :ok end)
+
+    assert {:stop, :normal, _} = ConversationServer.handle_info(:lifecycle_check, ctx.state)
+
+    assert_received {:fence_opts, opts}
+    assert opts[:transition_reason] == :idle
+  end
+
   for sandbox? <- [true, false] do
     test "an enclosing transaction refuses destruction with sandbox=#{sandbox?}", ctx do
       reject(Managoat.Sandbox, :destroy, 1)
@@ -133,11 +158,21 @@ defmodule Fountain.Conversations.LifecycleFenceTest do
   end
 
   test "a refusal after adapter shutdown keeps the fenced machine for retry", ctx do
+    # The pre-check fence commits, the server closes its adapter, and the
+    # destroy is then refused — the shape that must leave a fenced, `ready`
+    # machine for a retry rather than a half-torn-down one.
+    #
+    # The refusal used to be the *second* fence call, stubbed to `:not_found`.
+    # Since ADR 0058 stage 9a there is no second call: the pre-check stamps
+    # `transition: "destroying"`, so `Machines.Destroy` continues from the
+    # stamp instead of fencing again. So the refusal is now what the protocol
+    # actually refuses with on this path — another owner holding the machine —
+    # which reaches the server as the same `{:error, _}` from the same call.
     expect(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, opts ->
       Mimic.call_original(Lifecycle, :fence_sandbox_for_teardown, [sandbox, opts])
     end)
 
-    expect(Lifecycle, :fence_sandbox_for_teardown, fn _, _ -> {:error, :not_found} end)
+    expect(Fountain.Machines.Destroy, :run, fn _id, _opts -> {:error, :machine_busy} end)
 
     expect(Managoat.Sandbox, :close_stdin, fn :adapter -> :ok end)
     expect(Managoat.Sandbox, :stop_command, fn :adapter -> :ok end)
@@ -146,8 +181,13 @@ defmodule Fountain.Conversations.LifecycleFenceTest do
     assert {:noreply, retry} = ConversationServer.handle_info(:lifecycle_check, ctx.state)
     assert retry.current_command == nil
     assert retry.handle == ctx.handle
-    assert Repo.reload!(ctx.sandbox).reset_requested_at
-    assert Repo.reload!(ctx.sandbox).status == "ready"
+    fenced = Repo.reload!(ctx.sandbox)
+    assert fenced.reset_requested_at
+    assert fenced.status == "ready"
+    # And the stamp the pre-check wrote is still on the row, which is what the
+    # retry — this server's next tick, or `SandboxReaper`'s driver — continues
+    # from once the columns are gone.
+    assert fenced.transition == "destroying"
     assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
 
     refute Repo.exists?(

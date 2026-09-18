@@ -33,32 +33,9 @@ defmodule Fountain.Workers.SandboxResetReconciler do
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"sandbox_id" => id}}) do
     case Repo.get(Sandbox, id) do
-      %Sandbox{mode: "persistent", status: status, reset_requested_at: at} = sandbox
-      when status in ["ready", "suspended"] and not is_nil(at) ->
-        if Fountain.SandboxProviders.enabled?(Conversations.sandbox_provider_atom(sandbox)) do
-          case Conversations.retry_pending_sandbox_reset(sandbox,
-                 actor: "system:sandbox_reset_reconciler"
-               ) do
-            {:ok, _} ->
-              :ok
-
-            # Not a failed delete: another teardown of this machine holds its
-            # lease and this job has nothing to reconcile yet (ADR 0058 stage
-            # 5c). Snoozing rather than erroring keeps the job's `max_attempts`
-            # for the thing they are for — a provider that will not confirm —
-            # so contention, which stage 6 makes ordinary, cannot exhaust a job
-            # into `discarded` without a single provider call being made. The
-            # sweep's own guard keeps most of these out of the queue; this is
-            # the one that arrives after the lease is taken.
-            {:error, :sandbox_unavailable} ->
-              {:snooze, 60}
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-        else
-          {:snooze, 300}
-        end
+      %Sandbox{mode: "persistent", status: status} = sandbox
+      when status in ["ready", "suspended"] ->
+        if fenced?(sandbox), do: retry(sandbox), else: :ok
 
       _ ->
         :ok
@@ -74,7 +51,7 @@ defmodule Fountain.Workers.SandboxResetReconciler do
     from(s in Sandbox,
       where:
         s.mode == "persistent" and s.status in ["ready", "suspended"] and
-          not is_nil(s.reset_requested_at),
+          (not is_nil(s.reset_requested_at) or s.transition == "destroying"),
       select: %{id: s.id, lease_node: s.lease_node, lease_until: s.lease_until}
     )
     # A machine whose owner holds a live lease is not a lost caller; it is a
@@ -104,5 +81,63 @@ defmodule Fountain.Workers.SandboxResetReconciler do
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+  end
+
+  # An unconfirmed reset, in the column and in the stamp (ADR 0058 stage 9a).
+  # `reset_sandbox/2` writes both in one commit and stage 9b drops the column,
+  # so reading either keeps this worker finding the same rows across the change.
+  #
+  # A *forced* teardown matches too, exactly as it always has — the teardown
+  # fence sets `reset_requested_at` beside its own column, and stamps
+  # `destroying` with the destroy's reason. That is deliberate and unchanged:
+  # this worker and `SandboxReaper.sweep_fenced_teardowns/0` both reach such a
+  # row, `Machines.Destroy` serializes them on the machine's lease, and the
+  # loser finds the row terminal.
+  #
+  # **Do not narrow this to resets, and do not give this worker a budget.**
+  # Both look like tidy-ups and both reopen a leak somewhere else, because
+  # `SandboxReaper.@driver_floor` is sized against what this worker covers.
+  # That floor reserves part of the reaper's per-run destroy allowance for
+  # abandoned teardowns, and it is sized for the population the reaper alone
+  # reaches — every `ephemeral` machine, and a `persistent` home still
+  # `pending` or `starting`. A persistent home that is `ready` or `suspended`
+  # is left out of that reckoning **because this worker reaches it**, every
+  # five minutes, with no cap on how many rows one sweep may enqueue.
+  #
+  # So narrowing the predicate to resets would leave a forced teardown whose
+  # caller died waiting the reaper's hour instead of five minutes — and, on a
+  # fleet whose expiry backlog is spending the reaper's allowance, waiting for
+  # ever behind a floor that was never sized to carry it. Capping the sweep
+  # would do the same by the other route. `sandbox_reset_reconciler_test.exs`
+  # fails on the narrowing; the sizing argument lives beside `@driver_floor`.
+  defp fenced?(%Sandbox{reset_requested_at: at, transition: transition}) do
+    not is_nil(at) or transition == "destroying"
+  end
+
+  defp retry(sandbox) do
+    if Fountain.SandboxProviders.enabled?(Conversations.sandbox_provider_atom(sandbox)) do
+      case Conversations.retry_pending_sandbox_reset(sandbox,
+             actor: "system:sandbox_reset_reconciler"
+           ) do
+        {:ok, _} ->
+          :ok
+
+        # Not a failed delete: another teardown of this machine holds its
+        # lease and this job has nothing to reconcile yet (ADR 0058 stage
+        # 5c). Snoozing rather than erroring keeps the job's `max_attempts`
+        # for the thing they are for — a provider that will not confirm —
+        # so contention, which stage 6 makes ordinary, cannot exhaust a job
+        # into `discarded` without a single provider call being made. The
+        # sweep's own guard keeps most of these out of the queue; this is
+        # the one that arrives after the lease is taken.
+        {:error, :sandbox_unavailable} ->
+          {:snooze, 60}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:snooze, 300}
+    end
   end
 end

@@ -20,6 +20,7 @@ defmodule Fountain.Machines.DestroyTest do
   alias Fountain.Audit
   alias Fountain.Conversations
   alias Fountain.Conversations.ConversationServer
+  alias Fountain.Conversations.Lifecycle
   alias Fountain.Conversations.Sandbox
   alias Fountain.Machines.Destroy
   alias Fountain.Machines.Lease
@@ -119,6 +120,48 @@ defmodule Fountain.Machines.DestroyTest do
 
     assert {:ok, ^pid} = ConversationServer.await_registered(conversation_id, 2_000)
     pid
+  end
+
+  describe "an owner that dies between the fence and its own stamp" do
+    # The fence commits and the owner's intent stamp follows it
+    # (`fence_then_destroy/3`), so for one write the row carries only what the
+    # fence wrote. An owner that dies there leaves that value for
+    # `SandboxReaper`'s driver, which reads `transition_reason` back to record
+    # why the machine was destroyed. These read the row at exactly that instant
+    # — after the real fence has committed, before the stamp — which is the one
+    # place a missing reason shows: by the provider call the stamp has already
+    # rewritten it, so a test that looked there would pass either way.
+    #
+    # The row is recorded from inside the fence and asserted on outside it: the
+    # protocol rescues what its steps raise, so an assertion inside the stub
+    # could fail without failing the test.
+    for reason <- [:terminated, :idle, :max_lifetime, :admin_reap, :provider_gone, :replaced] do
+      test "leaves `#{reason}` on the row for the driver, not `teardown`", ctx do
+        test = self()
+        reason = unquote(reason)
+
+        expect(Lifecycle, :fence_sandbox_for_teardown, fn sandbox, fence_opts ->
+          result =
+            Mimic.call_original(Lifecycle, :fence_sandbox_for_teardown, [sandbox, fence_opts])
+
+          send(test, {:after_fence, Repo.reload!(ctx.sandbox)})
+          result
+        end)
+
+        stub(Managoat.Sandbox, :destroy, fn _ -> :ok end)
+
+        assert {:ok, :destroyed} = Destroy.run(ctx.sandbox.id, opts(ctx, reason: reason))
+
+        assert_received {:after_fence, fenced}
+        assert fenced.transition == "destroying"
+
+        assert fenced.transition_reason == Atom.to_string(reason),
+               "the fence stamped #{inspect(fenced.transition_reason)}; an owner dying " <>
+                 "here would have the driver record that instead of #{inspect(reason)}"
+
+        assert Destroy.reason_from_string(fenced.transition_reason) == reason
+      end
+    end
   end
 
   describe "the happy path" do
@@ -505,11 +548,19 @@ defmodule Fountain.Machines.DestroyTest do
   end
 
   describe "a finished destroy wearing its own stamp" do
-    # The shape `SandboxReaper.finish_teardown/1` leaves behind: it writes
-    # `terminated` through `Conversations.update_sandbox/2`, which knows nothing
-    # about `transition`, so the stamp stays on. Before the status check in
+    # The shape a terminal write that knows nothing about `transition` leaves
+    # behind: the row stops, the stamp stays on. Before the status check in
     # front of the takeover clause, this re-destroyed the machine at the
     # provider and recorded a second `sandbox.destroyed` for one already gone.
+    #
+    # `SandboxReaper.finish_teardown/1` produced it until ADR 0058 stage 9a,
+    # where that pass became a driver and its terminal write became the
+    # protocol's own finalize — which carries an epoch and clears the stamp. So
+    # the producer on this release is a **replica that predates 9a**, still
+    # writing `terminated` through `Conversations.update_sandbox/2` while the
+    # rollout is half done, which is exactly what the test below builds. The
+    # clause stays for as long as such a replica can exist, and the mixed-version
+    # paragraph in the ADR says so.
     for terminal <- ["terminated", "failed"] do
       test "a #{terminal} row still stamped destroying is not destroyed again", ctx do
         abandon_mid_destroy(ctx)
@@ -534,21 +585,15 @@ defmodule Fountain.Machines.DestroyTest do
       end
     end
 
-    test "the reaper's own sweep is what produces that shape", ctx do
-      # Built with the reaper rather than forged, so the regression above
-      # cannot drift away from what production actually leaves.
+    test "an old replica's terminal write is what produces that shape", ctx do
+      # Built with the write an old replica actually makes rather than forged
+      # from a changeset, so the regression above cannot drift away from what
+      # the rollout can leave. `Conversations.update_sandbox/2` is that write,
+      # and the two things about it that matter here are both still true: it
+      # carries no epoch, and it says nothing about `transition`.
       abandon_mid_destroy(ctx)
 
-      Repo.update_all(from(s in Sandbox, where: s.id == ^ctx.sandbox.id),
-        set: [
-          teardown_requested_at: DateTime.add(DateTime.utc_now(), -20 * 60, :second),
-          lease_until: DateTime.add(DateTime.utc_now(), -60, :second)
-        ]
-      )
-
-      ExUnit.CaptureLog.capture_log(fn ->
-        assert SandboxReaper.sweep_fenced_teardowns() == 1
-      end)
+      {:ok, _} = Conversations.update_sandbox(Repo.reload!(ctx.sandbox), %{status: "terminated"})
 
       swept = row(ctx)
       assert swept.status == "terminated"
@@ -558,6 +603,34 @@ defmodule Fountain.Machines.DestroyTest do
       assert {:ok, :already_terminal} = Destroy.run(ctx.sandbox.id, opts(ctx))
       assert is_nil(row(ctx).transition)
       assert events(ctx, "sandbox.destroyed") == []
+    end
+
+    test "this release's reaper leaves no such row", ctx do
+      # The other half of the paragraph above, and the reason it is a paragraph
+      # rather than a deletion: on a fleet where every replica runs stage 9a,
+      # the sweep drives the destroy through the owner, so the finalize carries
+      # an epoch and takes the stamp off with it. A terminal row still wearing
+      # `destroying` is therefore evidence of a mixed-version fleet and of
+      # nothing else.
+      abandon_mid_destroy(ctx)
+
+      Repo.update_all(from(s in Sandbox, where: s.id == ^ctx.sandbox.id),
+        set: [
+          teardown_requested_at: DateTime.add(DateTime.utc_now(), -20 * 60, :second),
+          lease_until: DateTime.add(DateTime.utc_now(), -60, :second)
+        ]
+      )
+
+      stub(Managoat.Sandbox, :destroy, fn _ -> :ok end)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert SandboxReaper.sweep_fenced_teardowns() == {1, 0}
+      end)
+
+      swept = row(ctx)
+      assert swept.status == "terminated"
+      assert is_nil(swept.transition)
+      assert is_nil(swept.transition_reason)
     end
   end
 

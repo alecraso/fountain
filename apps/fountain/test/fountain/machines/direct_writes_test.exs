@@ -266,7 +266,42 @@ defmodule Fountain.Machines.DirectWritesTest do
   # the owner; and the reset fence (`do_reset_sandbox/2`) and the teardown
   # fence (`do_fence_sandbox_for_teardown/2`) are the two columns stage 9
   # deletes with the flag. Stage 9's inventory on #2344 carries all seven.
-  @row_writes 7
+  #
+  # 7 -> 6: stage 9a made `destroying` the one durable transition and turned
+  # the sweep that reads it into a driver.
+  #
+  #   gone  `sandbox_reaper.ex`  `finish_teardown/1`'s `update_sandbox/2`. The
+  #                              pass asks the machine's owner now
+  #                              (`Termination._unsafe_destroy_machine/2`),
+  #                              which continues from the `destroying` stamp
+  #                              the fence wrote, calls the provider and
+  #                              finalizes on its own epoch — so the write it
+  #                              made with no epoch, which left the stamp
+  #                              behind and recorded no `sandbox.destroyed`,
+  #                              is gone with it.
+  #
+  # **Six remain and the two fences are now the interesting ones.** They still
+  # write the row from outside `machines/`, and stage 9a added a column to what
+  # they write — `transition: "destroying"` beside `reset_requested_at` and
+  # `teardown_requested_at`, so that no row records the intent in a column 9b
+  # deletes and nowhere else. That is one more column on an existing write, not
+  # a new writer, which is why the number goes down rather than up; 9b takes
+  # the two columns and leaves the stamp, and the writes leave with the fence
+  # when the gate does.
+  #
+  # `release_stuck_sandboxes/0`'s `update_sandbox/2` is the reaper's last and
+  # stays — but **not** for the reason the first draft of this note gave. It
+  # said no owner verb covers those rows; `Machine.fail_provision/2` takes
+  # exactly `~w(pending starting)`, which is this pass's whole population, so
+  # the verb is right there (review, blocker H). What it does not have is this
+  # pass's *reason to act*: `fail_provision/2` is the provision bracket failing
+  # a machine it was building, under the lease that bracket holds, and this
+  # sweep is a stranger to every row it touches — no lease, no bracket, and a
+  # sixty-minute cutoff instead of a deadline. Routing it through the verb is a
+  # stage of its own and is on #2344's stage 9 inventory, not a line this PR
+  # could have taken. `create_sandbox/1`'s insert, `do_update_sandbox/2`'s own
+  # `Repo.update/1` and `register_server/2`'s marker are unchanged from 8b.
+  @row_writes 6
   @provider_mutations 3
 
   @provider_verbs ~w(create_checkpoint create resume suspend destroy)
@@ -335,7 +370,8 @@ defmodule Fountain.Machines.DirectWritesTest do
   @sandbox_update_all_files ["apps/fountain/lib/fountain/conversations.ex"]
   @sandbox_write_files [
     # `create_sandbox/1`'s insert, `do_update_sandbox/2`'s own `Repo.update/1`,
-    # and `do_reset_sandbox/2`'s reset fence.
+    # and `do_reset_sandbox/2`'s reset fence — which stamps `destroying`
+    # beside the column since stage 9a.
     "apps/fountain/lib/fountain/conversations.ex",
     "apps/fountain/lib/fountain/conversations.ex",
     "apps/fountain/lib/fountain/conversations.ex",

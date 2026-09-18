@@ -75,11 +75,12 @@ kubectl logs -n fountain -l app=fountain --since=2h | grep 'reaper:'
 `parked` counts the idle sandboxes the reaper suspended. The reaper can undo
 that, and it is not a teardown.
 
-`refused` counts the sandboxes the reaper decided to reclaim or park and then
-could not reach: another operation was holding the machine, or the provider or
-the database would not answer. A non-zero value is not a fault on its own — the
-next run looks again — but a value that stays high run after run means machines
-are not being reclaimed, and those machines are still billing.
+`refused` counts the sandboxes the reaper decided to reclaim, park or finish
+deleting and then could not reach: another operation was holding the machine, or
+the provider or the database would not answer. A non-zero value is not a fault
+on its own — the next run looks again — but a value that stays high run after
+run means machines are not being reclaimed, and those machines are still
+billing.
 
 `skipped` counts the sandboxes the reaper decided to act on and then left
 alone, because by the time it took the machine somebody was using it again, or
@@ -87,8 +88,20 @@ it was no longer past a bound, or a reset or teardown had been asked for. That
 is the reaper being told it was out of date, which is normal on a busy fleet
 and is deliberately kept out of `refused`.
 
-A reaper run parks or reclaims at most a fixed number of machines, so a large
-backlog drains over several runs rather than all at once.
+`reconciled` counts the deletions the reaper finished for somebody else. A
+deletion records its intent on the machine first and deletes it second, so a
+Fountain server that dies between the two leaves a machine nobody is deleting
+and nothing else can see. Once it is fifteen minutes old, the reaper's next
+hourly run finishes it: the machine is deleted at the provider on that run and the trail records both
+`sandbox.destroyed` and `sandbox.teardown_reconciled`. So a non-zero value is
+not routine reclamation — it says a deletion was abandoned somewhere upstream,
+and the number is how many.
+
+A reaper run parks or reclaims at most a fixed number of machines. The
+abandoned deletions it finishes are guaranteed a small share of their own on
+top of that, so a steady stream of ordinary expiries cannot hold one back
+indefinitely. A large backlog of either still drains over several runs rather
+than all at once.
 
 ## Related
 

@@ -501,10 +501,15 @@ defmodule Fountain.Conversations.Lifecycle do
   Refuses an enclosing transaction; a successful fence commits before returning.
   Already-admitted turns may still be interrupted by this forced reclaim.
 
-  A pre-check, not the fence of record: `destroy/4` reaches the same fence
-  through `Machine.destroy/2`, and a repeat adds no second request event. What
-  this buys the server is the *timing* — it closes its adapter knowing nothing
-  can be admitted behind it, and a refusal here costs no teardown at all.
+  A pre-check, and since ADR 0058 stage 9a it is also the fence of record.
+  `destroy/4` used to reach the same fence again through `Machine.destroy/2`,
+  which wrote no second request event and could not reach a different verdict;
+  now the `transition: "destroying"` this one stamps sends the protocol down
+  its continuation clause instead, so the fence runs once. `Machines.Destroy`'s
+  takeover section lists what that second read could have answered and why none
+  of it can change. What this buys the server is the *timing* — it closes its
+  adapter knowing nothing can be admitted behind it, and a refusal here costs
+  no teardown at all.
   """
   @spec prepare_destroy(String.t() | nil, :idle | :max_lifetime) :: :ok | {:error, term()}
   def prepare_destroy(sandbox_id, reason) do
@@ -517,16 +522,23 @@ defmodule Fountain.Conversations.Lifecycle do
 
       true ->
         with %Conversations.Sandbox{} = sandbox <- Conversations._unsafe_get_sandbox(sandbox_id),
-             # `lifecycle_fence_test.exs` pins this fence through `Lifecycle`
-             # with Mimic, to simulate a race on the second call —
-             # `Machines.Destroy`'s, once the adapter is already closed. A
-             # self-call written `__MODULE__.fence_sandbox_for_teardown(...)`
-             # keeps that stub able to intercept this one too, as
-             # `Interruption.interrupt_dead/1` does for `wake_for_interrupt/1`.
+             # A self-call written `__MODULE__.fence_sandbox_for_teardown(...)`
+             # so `lifecycle_fence_test.exs` can drive this fence with Mimic,
+             # as `Interruption.interrupt_dead/1` does for
+             # `wake_for_interrupt/1`. It used to pin a race on the *second*
+             # call — `Machines.Destroy`'s, once the adapter was already
+             # closed — and since stage 9a there is no second call: the stamp
+             # this one writes sends the protocol down its continuation
+             # clause.
              {:ok, _} <-
                __MODULE__.fence_sandbox_for_teardown(sandbox,
                  actor: "system:conversation_server",
-                 reason: to_string(reason)
+                 reason: to_string(reason),
+                 # `reason` here is `:idle | :max_lifetime`, which is already
+                 # the destroy vocabulary — `destroy/4` hands `Machine.destroy/2`
+                 # the same atom — so the fence stamps exactly what the protocol
+                 # would have.
+                 transition_reason: reason
                ) do
           :ok
         else
@@ -673,9 +685,15 @@ defmodule Fountain.Conversations.Lifecycle do
 
   Reuses the reset fence so every existing reuse path refuses the machine,
   retaining capacity until retirement completes. `teardown_requested_at`
-  distinguishes forced teardown from an ordinary reset. A new forced intent
+  distinguishes forced teardown from an ordinary reset. Since ADR 0058 stage 9a
+  the same commit also stamps `transition: "destroying"` with the fence's own
+  reason — the **destroy** reason the caller is about to ask for
+  (`Fountain.Machines.Destroy.reasons/0`), passed as `:transition_reason`, where
+  `:reason` is this event's own wording — so that a row never records the intent
+  in a column alone and stage 9b can drop the columns without losing it. A
+  caller that names none stamps `:teardown`. A new forced intent
   records `sandbox.teardown_requested` after commit; repeats preserve both
-  timestamps. Escalating an existing reset preserves its admission fence.
+  timestamps and the stamp. Escalating an existing reset preserves its admission fence.
   Refuses an enclosing transaction. `opts` carries actor, request_ip, reason and
   `:metadata` — extra keys merged into the event, for a caller whose own delete
   is about to nilify `user_id` on both the event and the sandbox it names.
@@ -797,7 +815,20 @@ defmodule Fountain.Conversations.Lifecycle do
             current
             |> Ecto.Changeset.change(
               reset_requested_at: current.reset_requested_at || now,
-              teardown_requested_at: now
+              teardown_requested_at: now,
+              # The same intent on the column stage 9b keeps, written in the
+              # same statement as the two it replaces so no row ever carries
+              # one without the other (ADR 0058 stage 9a). Not through
+              # `Lease.cas_update/4`: this fence is written by a caller that
+              # holds no lease — that is what a fence *is* — and the protocol's
+              # own stamp, one step later and under its epoch, restates it with
+              # the destroy's reason.
+              #
+              # Escalating a reset to a forced teardown rewrites the reason and
+              # keeps both timestamps, which is the rule the two columns above
+              # already follow: the machine is going away for the newer reason.
+              transition: "destroying",
+              transition_reason: transition_reason(opts)
             )
             |> Repo.update!()
 
@@ -807,6 +838,40 @@ defmodule Fountain.Conversations.Lifecycle do
           {current, false}
       end
     end)
+  end
+
+  # What the fence writes into `transition_reason`.
+  #
+  # **The destroy vocabulary, not this module's** (`Machines.Destroy.reasons/0`),
+  # and the distinction is the whole of surfaces' S1. The fence's own `:reason`
+  # is the *event's* wording — "conversation_terminated", "agent_deleted",
+  # "reaped" — and `Machines.Destroy` documents at length that the two
+  # vocabularies are deliberately different. Before stage 9a this column only
+  # ever held the destroy vocabulary, because `Destroy.stamp_then_destroy/3`
+  # wrote it; 9a made the fence stamp first and the protocol continue from that
+  # stamp without writing its own, so a fence that wrote its own word here would
+  # have silently changed what the column means and made `SandboxReaper`'s
+  # driver record `teardown` where the owner records `terminated`.
+  #
+  # So the caller passes `:transition_reason` — the atom it is about to hand
+  # `Destroy` as `:reason` — and every caller that knows one does. A caller that
+  # does not gets `:teardown`, the word this module's own event defaults to and
+  # the one `Destroy.reason_from_string/1` falls back to: one unknown, spelled
+  # the same at both ends.
+  #
+  # Total over what a caller can pass, which the first draft was not: it read
+  # the caller-supplied `:reason` straight into the changeset, so a non-binary
+  # one — and `:reason` carries interpolated provider errors on several paths —
+  # raised `Ecto.ChangeError` from inside the fence's transaction, a crash path
+  # that did not exist before this stage (protocol review). Only an atom or a
+  # binary is a reason; anything else is the unknown, spelled `:teardown` at
+  # both ends.
+  defp transition_reason(opts) do
+    case Keyword.get(opts, :transition_reason, :teardown) do
+      reason when is_atom(reason) and not is_nil(reason) -> Atom.to_string(reason)
+      reason when is_binary(reason) -> reason
+      _other -> "teardown"
+    end
   end
 
   # One clock read, and only for a caller that asked for either check: the
