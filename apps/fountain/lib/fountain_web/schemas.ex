@@ -759,7 +759,10 @@ defmodule FountainWeb.Schemas do
               "Merged with the agent's own policy, taking the stricter of the two. It may " <>
               "only narrow: a policy that would loosen any tool is refused with 422 " <>
               "permission_policy_widens rather than silently clamped, and one the runtime " <>
-              "never consults is refused with 422 permission_policy_unenforceable."
+              "never consults is refused with 422 permission_policy_unenforceable. " <>
+              "If a queued request with a prompt and a nonempty policy resumes an existing " <>
+              "channel, it fails with permission_policy_requires_fresh_conversation before " <>
+              "sending the prompt. Set fresh: true to create a conversation for that policy."
         },
         prompt: %Schema{
           type: :string,
@@ -771,8 +774,9 @@ defmodule FountainWeb.Schemas do
         client_request_id:
           ClientRequestId.request(
             "Your own name for the first prompt. Ignored when the request carries no " <>
-              "`prompt`, and when `channel_id` resumes a conversation: a resume does not " <>
-              "deliver the prompt, so send the value with it on the prompts route. "
+              "`prompt`. An immediate `channel_id` resume does not deliver the prompt; " <>
+              "send the value with it on the prompts route. If a queued start resumes " <>
+              "a channel bound while it waited, the queue delivers the prompt and value. "
           ),
         title: %Schema{
           type: :string,
@@ -893,7 +897,10 @@ defmodule FountainWeb.Schemas do
           type: :string,
           format: :uuid,
           nullable: true,
-          description: "The conversation the request became, once it started."
+          description:
+            "The conversation the request started, or the target when a failed request " <>
+              "reports prompt_delivery_unknown. Inspect it before resubmitting: after a " <>
+              "timeout or connection loss, the prompt may have run or may still execute."
         },
         error: %Schema{type: :string, nullable: true},
         position: %Schema{

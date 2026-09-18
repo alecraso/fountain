@@ -33,6 +33,7 @@ defmodule Fountain.SandboxQueue do
   require Logger
 
   alias Fountain.Audit
+  alias Fountain.Conversations.{ConversationServer, Launch, PromptDelivery}
   alias Fountain.Repo
   alias Fountain.SandboxQueue.Request
 
@@ -62,7 +63,8 @@ defmodule Fountain.SandboxQueue do
   # It is the shortest-lived of these — one provider round trip — and it was
   # the one missing, which is how a queued start could be failed by a condition
   # that had already cleared.
-  @transient_errors ~w(busy provisioning runner_offline sandbox_at_capacity sandbox_unavailable)a
+  @transient_errors ~w(busy provisioning runner_offline sandbox_at_capacity sandbox_unavailable
+                       sprite_probe_failed sandbox_resume_failed)a
 
   # Every replay and every terminal write the drain makes is attributed to the
   # queue, not to whoever originally asked. The audit vocabulary is closed
@@ -297,6 +299,15 @@ defmodule Fountain.SandboxQueue do
             release(request, fence)
             drain_loop(user_id, counts, [request.id | skipped])
 
+          {:error, {:prompt_delivery_unknown, conversation_id}} ->
+            finish(request, fence, %{
+              status: "failed",
+              error: "prompt_delivery_unknown",
+              conversation_id: conversation_id
+            })
+
+            drain_loop(user_id, {started, failed + 1}, skipped)
+
           {:error, reason} ->
             finish(request, fence, %{status: "failed", error: describe(reason)})
             drain_loop(user_id, {started, failed + 1}, skipped)
@@ -392,8 +403,10 @@ defmodule Fountain.SandboxQueue do
       |> Map.put("agent_id", request.agent_id)
       |> put_unless_nil("source", request.source)
 
-    with {:ok, conversation, _outcome} <-
-           Fountain.Conversations.Launch.start_or_resume_conversation(attrs, replay_opts(request)) do
+    opts = replay_opts(request)
+
+    with {:ok, conversation, outcome} <- Launch.start_or_resume_conversation(attrs, opts),
+         :ok <- deliver_resumed_prompt(conversation, outcome, attrs, opts) do
       {:ok, conversation.id}
     end
   end
@@ -410,6 +423,37 @@ defmodule Fountain.SandboxQueue do
         end
     end
   end
+
+  # A launch policy belongs to the conversation created for it. Prompt
+  # delivery has no per-turn override, and checking a resumed row's current
+  # policy would not bind the later turn's policy. Refuse any nonempty launch
+  # override before sending; fresh replay goes through normal launch admission.
+  defp deliver_resumed_prompt(
+         _conversation,
+         :resumed,
+         %{"prompt" => prompt, "permission_policy" => policy},
+         _opts
+       )
+       when is_binary(prompt) and prompt != "" and policy not in [nil, %{}],
+       do: {:error, :permission_policy_requires_fresh_conversation}
+
+  # A live client sends its prompt separately after a channel resume. A queue
+  # replay has no client, so it must deliver before reporting started. Let
+  # definite refusals reach the drain's retry/terminal handling. A timeout or
+  # distribution loss can follow acceptance, so record uncertainty and its
+  # conversation for inspection instead of automatically sending it again.
+  defp deliver_resumed_prompt(conversation, :resumed, %{"prompt" => prompt} = attrs, opts)
+       when is_binary(prompt) and prompt != "" do
+    opts =
+      [uncertain_error: :prompt_delivery_unknown] ++ PromptDelivery.from_request(attrs) ++ opts
+
+    case ConversationServer.send_prompt(conversation.id, prompt, attrs["images"] || [], opts) do
+      {:error, :prompt_delivery_unknown} -> {:error, {:prompt_delivery_unknown, conversation.id}}
+      result -> result
+    end
+  end
+
+  defp deliver_resumed_prompt(_conversation, _outcome, _attrs, _opts), do: :ok
 
   # What the door passed, minus what only a live request has. `source` is the
   # provenance the API inferred from the parent-conversation header, so a

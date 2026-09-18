@@ -418,9 +418,11 @@ lost. Read the turns first.
 goes to turn 1 of a new conversation, and to the first turn of a conversation
 that you attach to a sandbox with `sandbox_id`. A start that waits in the queue
 keeps the value until it starts. Fountain ignores the value when the request
-has no `prompt`. Fountain also ignores it when `channel_id` resumes a
-conversation, because a resume does not deliver the prompt. Send the prompt to
-the resumed conversation on the prompts route, with the value.
+has no `prompt`. When an immediate `channel_id` request returns a resumed
+conversation, it does not deliver the prompt. Send the prompt to that
+conversation on the prompts route, with the value. A queued start is different:
+if its channel becomes bound while it waits, the queue delivers the prompt and
+its value to the resumed conversation itself.
 
 An accepted prompt does not always open a turn. Fountain can refuse it after
 the response: the machine is at capacity, a limit on the conversation stops
@@ -459,8 +461,27 @@ a conversation when capacity is free.
 
 `GET /api/sandbox-queue` lists your requests in position order.
 `GET /api/sandbox-queue/{id}` reports the status of one request. It carries
-`conversation_id` after the start. `DELETE /api/sandbox-queue/{id}` cancels a
+`conversation_id` after the start, or when delivery to that conversation has an
+unknown outcome. `DELETE /api/sandbox-queue/{id}` cancels a
 request that still has the `queued` status.
+
+If a queued request carries a prompt and a nonempty `permission_policy`, it
+cannot automatically send that prompt to an existing channel conversation.
+It ends with `status: "failed"` and
+`error: "permission_policy_requires_fresh_conversation"`, without sending the
+prompt or changing that conversation's policy. This applies even if its saved
+policy currently matches: prompt delivery does not accept a per-turn override.
+Set `fresh: true` when queueing restricted work to create a conversation that
+stores and enforces the requested policy. An omitted, null, or empty policy
+does not block queued channel delivery.
+
+A queued channel resume waits for a later pass if the conversation is busy or
+the provider cannot be reached to wake it. If a prompt call times out or loses
+its connection to the conversation's node, the prompt may have run or may still
+execute later. The request instead ends with `status: "failed"` and
+`error: "prompt_delivery_unknown"`; the queue does not send it again. Inspect
+the linked conversation before deciding to resubmit. This error does not mean
+the prompt was cancelled or that it did not run.
 
 Each tenant holds ten requests at once. A request waits one hour at most. A
 full queue keeps the immediate `429` or `503` answer. A start with images does
