@@ -44,7 +44,7 @@ export class Fixtures {
             !existing.resources.some(item => item.kind === 'environment' && item.id === r.environment_id)) {
           throw new Error('Conversation manifest must reference recorded agent/environment fixtures');
         }
-        if (r.vault_id !== undefined && (!uuid.test(r.vault_id) || !existing.resources.some(item => item.kind === 'vault' && item.id === r.vault_id))) throw new Error('Conversation must reference a recorded vault');
+        if (r.vault_id != null && (!uuid.test(r.vault_id) || !existing.resources.some(item => item.kind === 'vault' && item.id === r.vault_id))) throw new Error('Conversation must reference a recorded vault');
       }
     }
     validateScheduleManifest(existing);
@@ -157,16 +157,32 @@ export class Fixtures {
     if (sandbox.status === 200 && (sandbox.body.data?.agent_id !== r.agent_id || !['terminated', 'failed'].includes(sandbox.body.data?.status))) throw new Error('Run-owned sandbox is still live or has changed owner');
   }
   async cleanup(signal) {
+    if (this.manifest.recovery) {
+      // Recheck reconstructed evidence on every replay, before any mutation.
+      // A newly visible create or co-tenant must not lose its parent evidence.
+      try {
+        const { validateRecoveryEvidence, verifyRecoveryDependencies } = await import('./fixture-recovery.mjs');
+        validateRecoveryEvidence({ ...this.manifest, ...this.manifest.recovery,
+          resources: this.manifest.resources.map(r => r.kind === 'conversation'
+            ? { ...r, vault_id: r.vault_id ?? null, sandbox_id: r.sandbox_id ?? null } : r) }, this.client.baseUrl);
+        await verifyRecoveryDependencies(this.client, this.manifest.resources, this.manifest.run_id, signal, this.manifest.recovery);
+      } catch (error) { return [{ kind: 'recovery', error: error.message }]; }
+    }
     const failures = await cleanupSchedule(this, signal);
     // Stop outbound sources before conversation teardown can emit more events.
     const resources = [...this.manifest.resources].reverse();
     resources.sort((a, b) => Number(b.kind === 'webhook') - Number(a.kind === 'webhook'));
+    const isSource = r => ['environment', 'vault'].includes(r.kind);
+    // Reconstructed agent intents may lack their submitted source references.
+    // Reconcile every agent before sources, including across combined profiles.
+    if (this.manifest.recovery) resources.sort((a, b) => Number(isSource(a)) - Number(isSource(b)));
     for (const r of resources) {
       if (r.state === 'cleaned') continue;
       try {
         const source = this.manifest.schedule;
         if (source && source.state !== 'cleaned' && [source.agent_id, source.environment_id].includes(r.id)) throw new Error('Retaining parent fixture until schedule cleanup succeeds');
         if (r.kind !== 'conversation' && this.manifest.resources.some(child => child.kind === 'conversation' && child.state !== 'cleaned' && (r.kind === 'binding' || [child.agent_id, child.environment_id, child.vault_id].includes(r.id)))) throw new Error('Retaining parent fixture until conversation cleanup succeeds');
+        if (this.manifest.recovery && isSource(r) && this.manifest.resources.some(agent => agent.kind === 'agent' && agent.state !== 'cleaned')) throw new Error('Retaining source fixture until all recovered agents are cleaned');
         signal?.throwIfAborted();
         const collection = collections[r.kind];
         let value;
