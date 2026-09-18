@@ -472,24 +472,38 @@ defmodule FountainWeb.ConversationController do
           has_more: has_more?,
           limit: limit,
           blocks?: blocks?,
-          prompts: if(prompts?, do: turn_prompts(id), else: %{})
+          prompts: turn_prompts(id, page, blocks? and prompts?)
         )
     end
   end
 
   # `turn_id => prompt` for `?prompts=true`, the human's half of the transcript
-  # the log feed has no room for. Ownership: established by the scoped
-  # get_conversation above, which is what lets the `turns` action read the same
-  # rows the same way.
+  # the log feed has no room for.
   #
-  # An `autonomous` turn (#817) is left out. Its prompt is a placeholder this
-  # server wrote for a cycle nobody asked for, and rendering that in the
-  # human's voice would put words in his mouth.
-  defp turn_prompts(conversation_id) do
-    conversation_id
-    |> Conversations._unsafe_list_turns()
-    |> Enum.filter(&((&1.origin || "user") == "user" and (&1.prompt || "") != ""))
-    |> Map.new(&{&1.id, &1.prompt})
+  # Only the page's own turns are read, and only when a prompt block can
+  # actually be rendered. `prompts=true` without `blocks=true` is documented as
+  # ignored, `streams=acp` filters the anchors out, and a drained cursor has no
+  # events left, so all three collect nothing and never reach PostgreSQL.
+  # Hydrating the whole conversation for those would make a client draining a
+  # long transcript re-read every turn, and every prompt image, once per page.
+  defp turn_prompts(_conversation_id, _page, false), do: %{}
+
+  # ownership: established by the scoped get_conversation/2 above, which is what
+  # lets the `turns` action read the same rows the same way. The page's anchors
+  # only choose which ids are asked for; the conversation id inside the query is
+  # what keeps another tenant's turn id from resolving.
+  defp turn_prompts(conversation_id, page, true) do
+    Conversations._unsafe_list_turn_prompts(conversation_id, anchor_turn_ids(page))
+  end
+
+  # The events that can carry a prompt block: `put_blocks/4` renders one onto a
+  # turn's start anchor and nowhere else, so asking for any other turn's prompt
+  # would fetch a row no renderer would read.
+  defp anchor_turn_ids(page) do
+    for %LogEvent{kind: "stage", stage: "turn", state: "started", turn_id: turn_id} <- page,
+        turn_id != nil,
+        uniq: true,
+        do: turn_id
   end
 
   defp split_page(events, limit) do

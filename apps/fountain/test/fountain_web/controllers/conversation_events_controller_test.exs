@@ -9,6 +9,8 @@ defmodule FountainWeb.ConversationEventsControllerTest do
 
   use FountainWeb.ConnCase, async: true
 
+  alias Fountain.Conversations
+
   setup do
     user = insert_verified_user()
     {_rec, key} = insert_api_key(user)
@@ -278,6 +280,111 @@ defmodule FountainWeb.ConversationEventsControllerTest do
         |> json_response(200)
 
       assert body["data"] == []
+    end
+
+    # Everything above asserts the response body, and the body is the same
+    # whether the prompts came from the page's own turns or from re-reading the
+    # conversation. The two below assert the work instead, which is the only
+    # way this stays bounded: `?prompts=true` used to hand the whole
+    # conversation to `_unsafe_list_turns/1`, images preloaded, per page.
+    defp watch_turn_reads do
+      me = self()
+      handler = "events-prompts-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler,
+        [:fountain, :repo, :query],
+        fn _event, _measure, meta, _config ->
+          if self() == me and meta[:source] in ["turns", "turn_images"] do
+            send(me, {:read, meta[:source], rows_returned(meta)})
+          end
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+    end
+
+    defp rows_returned(%{result: {:ok, %{num_rows: rows}}}), do: rows
+    defp rows_returned(_meta), do: :unknown
+
+    # `{source, rows}` per query since `watch_turn_reads/0`, in order.
+    defp turn_reads(acc \\ []) do
+      receive do
+        {:read, source, rows} -> turn_reads([{source, rows} | acc])
+      after
+        0 -> Enum.reverse(acc)
+      end
+    end
+
+    defp with_image(turn) do
+      {:ok, 1} =
+        Conversations._unsafe_insert_turn_images(turn.id, [
+          %{media_type: "image/png", data: <<137, 80, 78, 71, 13, 10, 26, 10>>}
+        ])
+
+      turn
+    end
+
+    test "hydration reads the page's turn and no image row at all", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      # Four turns, each carrying an image. The old lookup read all four turns
+      # and preloaded all four image rows, `data` column included, to render a
+      # page holding one of them; an accepted prompt image may be 10 MiB, so a
+      # client draining this feed paid the conversation's whole attachment
+      # history once per page.
+      [first | _] =
+        for i <- 1..4 do
+          {turn, start} = turn_with_start(conv, %{prompt: "prompt #{i}"})
+          with_image(turn)
+          start
+        end
+
+      watch_turn_reads()
+
+      blocks = blocks_by_id(conn, key, conv, "?blocks=true&prompts=true&limit=1")
+
+      # The prompt still renders, so this is a bounded read and not a skipped one.
+      assert blocks[first.id] == [%{"kind" => "prompt", "body" => "prompt 1"}]
+
+      # One query, and it returned the page's single turn rather than all four.
+      # `turn_images` is absent entirely: no image byte is read to render text.
+      assert turn_reads() == [{"turns", 1}]
+    end
+
+    test "a request that cannot render a prompt never reaches the turns table", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      {turn, start} = turn_with_start(conv, %{prompt: "hello"})
+      with_image(turn)
+      provision = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
+
+      watch_turn_reads()
+
+      # Documented as ignored: `blocks=true` is what renders a prompt.
+      assert conn |> get_events(key, conv, "?prompts=true") |> json_response(200)
+
+      # The stream filter drops every stage event, so no anchor reaches the page.
+      assert conn
+             |> get_events(key, conv, "?blocks=true&prompts=true&streams=acp")
+             |> json_response(200)
+
+      # A drained cursor: nothing left to hydrate.
+      assert conn
+             |> get_events(key, conv, "?blocks=true&prompts=true&after=#{provision.id}")
+             |> json_response(200)
+
+      # A page with events but no turn start on it.
+      assert conn
+             |> get_events(key, conv, "?blocks=true&prompts=true&limit=1&after=#{start.id}")
+             |> json_response(200)
+
+      assert turn_reads() == []
     end
   end
 
