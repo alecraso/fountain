@@ -38,12 +38,25 @@ class Conversation:
         prompt: str,
         *,
         images: Optional[List[Dict[str, Any]]] = None,
+        client_request_id: Optional[str] = None,
         timeout: Optional[float] = None,
         collect_events: bool = False,
     ) -> Run:
+        """Send the next turn.
+
+        ``client_request_id`` is your own name for this submission. It is
+        carried to the turn the prompt opens and onto that turn's ``started``
+        event (#1406), so a caller reads back which turn was its own rather
+        than guessing from turn order. It is not an idempotency key: sending
+        the same value twice opens two turns.
+        """
         body: Dict[str, Any] = {"prompt": prompt}
         if images:
             body["images"] = images
+        # Presence, not truthiness: an explicitly empty id is a 422 the caller
+        # has to see, not a prompt that quietly runs uncorrelated.
+        if client_request_id is not None:
+            body["client_request_id"] = client_request_id
 
         def plan() -> Any:
             after = self.cursor()

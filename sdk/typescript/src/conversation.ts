@@ -7,6 +7,13 @@ import { conversationUrl } from "./config.ts";
 export interface SendOptions extends RunOptions {
   /** Images to attach to the prompt, as the API's `ImageInput` shape. */
   images?: unknown[];
+  /**
+   * Your own name for this submission, carried to the turn the prompt opens
+   * and onto that turn's `started` event (#1406). Read it back on the turn to
+   * find which turn was yours, instead of guessing from turn order. Not an
+   * idempotency key: sending the same value twice opens two turns.
+   */
+  clientRequestId?: string;
 }
 
 export interface ReapplyOptions {
@@ -76,6 +83,11 @@ export class Conversation {
   send(prompt: string, options: SendOptions = {}): Run {
     const body: Record<string, unknown> = { prompt };
     if (options.images?.length) body.images = options.images;
+    // Presence, not truthiness: an explicitly empty id is a 422 the caller has
+    // to see, not a prompt that quietly runs uncorrelated.
+    if (options.clientRequestId !== undefined) {
+      body.client_request_id = options.clientRequestId;
+    }
 
     const run = new Run(
       this.http,
