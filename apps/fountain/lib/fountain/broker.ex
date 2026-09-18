@@ -234,6 +234,27 @@ defmodule Fountain.Broker do
     Map.get(@inference_prefix, key, "") <> "__" <> String.downcase(key) <> "__"
   end
 
+  @doc """
+  True when `value` is what the sandbox holds for `key` in place of a secret.
+
+  The sandbox's copy of a brokered key is `placeholder/1`, which is generated
+  from the key and is not a secret: the value it stands for never entered the
+  sandbox, and the broker puts it back on the way out. So a placeholder is
+  left out of the redaction registry, where it would hold back every chunk of
+  output ending in `_` and print the agent's own `__github_token__` back as
+  `[REDACTED]` (#2366).
+
+  This answers "is this the placeholder for that key", and nothing more. It is
+  not evidence that the broker replaced anything: an unbrokered secret is free
+  to hold `__password__`, and it is still a secret. A caller asks this only of
+  a key the broker's own map says it took custody of.
+  """
+  @spec placeholder?(String.t(), term()) :: boolean()
+  def placeholder?(key, value) when is_binary(key) and is_binary(value),
+    do: value == placeholder(key)
+
+  def placeholder?(_key, _value), do: false
+
   # Inference credentials (gate 3): the env var each runtime reads, the host
   # it talks to, and the prefix its vendor's tokens carry. Substitution
   # rewrites the placeholder wherever it appears in a header value or in the
@@ -451,6 +472,45 @@ defmodule Fountain.Broker do
   @spec ca_keys() :: [String.t()]
   def ca_keys,
     do: ~w(NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS)
+
+  @doc """
+  The secrets inside a set of proxy variables: each session token, and not
+  the URL that carries it.
+
+  `proxy_env/1` puts the token in a URL's userinfo, so registering the pairs
+  themselves with `Fountain.Conversations.Redaction` would register a value
+  beginning `http://`. Every chunk of sandbox output ending in `h` would then
+  be held back as a possible start of it (#2366), and the URL around the
+  token is not a secret anyway: the proxy's host is on the broker stage event.
+  Redacting the token alone still covers the whole URL wherever an agent
+  prints its environment, as `http://[REDACTED]:vault@host`.
+
+  The vault label beside it is not a secret either. It is there so git accepts
+  the URL, and it is published on the same stage event.
+  """
+  @spec proxy_secrets([{String.t(), String.t()}]) :: [String.t()]
+  def proxy_secrets(pairs) when is_list(pairs) do
+    proxy_keys = proxy_keys()
+
+    for {key, url} <- pairs,
+        to_string(key) in proxy_keys,
+        is_binary(url),
+        token = userinfo_token(url),
+        is_binary(token),
+        uniq: true,
+        do: token
+  end
+
+  def proxy_secrets(_), do: []
+
+  # `URI.to_string/1` writes the userinfo verbatim, so the token is the part
+  # before the first `:` exactly as it was minted.
+  defp userinfo_token(url) do
+    case URI.parse(url) do
+      %URI{userinfo: info} when is_binary(info) -> info |> String.split(":", parts: 2) |> hd()
+      _ -> nil
+    end
+  end
 
   @doc "The variables that carry the session token, which `Identity` keeps off the shared `.env`."
   @spec process_only_keys() :: [String.t()]
