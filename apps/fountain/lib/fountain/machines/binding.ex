@@ -147,6 +147,18 @@ defmodule Fountain.Machines.Binding do
   before the column existed keeps the old rule for every source, and the way
   forward on one is still an ephemeral sandbox or a reset of the home.
 
+  `codex_peer_homes` is set in one of two places. A codex conversation's
+  first bind sets it while the machine is still being built. A machine a
+  claude conversation builds carries it from its reservation
+  (`Fountain.Machines.Provision.reserve/1`, #2516), because nothing on it has
+  touched `~/.codex`. That is how a codex conversation of another agent
+  attached to a claude home (ADR 0023, amended 2026-09-26) makes the first
+  Codex bind on an already built machine, and how a codex home rebuilt by a
+  claude guest takes its host's bind again. On a flagged machine every bind
+  that uses the shared file records itself, so an empty record means the file
+  was never written. A built machine without the flag and without a record
+  keeps the old refusal, because its file may predate the record.
+
   ## Vocabulary
 
   Every answer here is a word the callers already handled on `main`:
@@ -634,6 +646,9 @@ defmodule Fountain.Machines.Binding do
 
   Refused with `{:error, {:rebuild_required, :shared_sandbox}}` when the
   identity moves and a co-tenant still declares the old one; with
+  `{:error, {:rebuild_required, :guest}}` when it moves at the request of a
+  conversation whose runtime is not the machine's — a guest on another
+  agent's home (#2516); with
   `{:error, :sandbox_unavailable}` on a terminal or missing row. A move onto
   a persistent home that already exists is the changeset's `:home` error, as
   it was through `Conversations.update_sandbox/2`.
@@ -693,6 +708,9 @@ defmodule Fountain.Machines.Binding do
       moves_identity?(current, attrs) and shared?(current, Keyword.get(opts, :conversation_id)) ->
         {:error, {:rebuild_required, :shared_sandbox}}
 
+      moves_identity?(current, attrs) and guest?(current, Keyword.get(opts, :conversation_id)) ->
+        {:error, {:rebuild_required, :guest}}
+
       fingerprint_changed?(current, Keyword.get(opts, :expected_fingerprint)) ->
         {:error, {:rebuild_required, :environment}}
 
@@ -716,6 +734,24 @@ defmodule Fountain.Machines.Binding do
 
   defp shared?(%Sandbox{id: sandbox_id}, conv_id), do: held_by_other?(sandbox_id, conv_id)
 
+  # A guest (ADR 0023, amended 2026-09-26): a conversation of another runtime
+  # attached to this machine by `sandbox_id`. Its reapply names its own agent,
+  # so moving the identity would hand the home to it — relabelling a machine
+  # built for one runtime with an agent of another. Refused whether or not
+  # the home's own conversations are still here (#2516). The conversation's
+  # runtime, not its agent: a reapply has already written the selected agent
+  # to the row in the same transaction, and `check/2` has already refused a
+  # runtime change, so the runtime is still the one it attached with.
+  defp guest?(_current, nil), do: false
+  defp guest?(%Sandbox{runtime: nil}, _conv_id), do: false
+
+  defp guest?(%Sandbox{runtime: machine_runtime}, conv_id) do
+    case Repo.one(from c in Conversation, where: c.id == ^conv_id, select: c.runtime) do
+      nil -> false
+      runtime -> runtime != machine_runtime
+    end
+  end
+
   defp fingerprint_changed?(_current, nil), do: false
   defp fingerprint_changed?(%Sandbox{build_fingerprint: fp}, expected), do: fp != expected
 
@@ -727,8 +763,10 @@ defmodule Fountain.Machines.Binding do
 
   `InferenceBinding.compatible_machine/2` until stage 8b, unchanged in what it
   decides for a source that uses the shared `~/.codex/auth.json`: a machine
-  still being built takes any source; a built one takes a source whose kind,
-  identity and revision match its recorded binding, and only if every Codex
+  still being built takes any source, and so does a built one whose
+  reservation stamped `codex_peer_homes` and that records no binding yet
+  (#2516); a built one takes a source whose kind, identity and revision
+  match its recorded binding, and only if every Codex
   co-tenant's does too. Legacy peers without a binding are incompatible. A
   source with a `CODEX_HOME` of its own is outside that rule on a machine
   with `codex_peer_homes` (the moduledoc, "The Codex auth binding"). Must be
@@ -777,6 +815,8 @@ defmodule Fountain.Machines.Binding do
 
       # Decided once, at the machine's very first Codex bind: nothing is
       # recorded, nobody else is here, and the machine is still being built.
+      # A machine built by another runtime's conversation carries the flag
+      # from its reservation instead (`Provision.reserve/1`, #2516).
       peer_homes? =
         sandbox.codex_peer_homes or
           (fresh? and is_nil(sandbox.codex_inference_source) and peers == [])
