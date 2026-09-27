@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "A persistent sandbox per agent, offered beside the sandbox-per-conversation model"
-description: "Built 2026-08-24 (#1057–#1068). Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Amended 2026-09-11 (#1565): a home's identity key moves through one narrow door, the reapply action, which refuses any selection that would change the build inputs, the runtime, or a cotenant's configuration. Amended 2026-09-26 (#2517, not built): an agent of another runtime may attach to a home by `sandbox_id`, on the same environment and vault. Companion design note: #805."
+description: "Built 2026-08-24 (#1057–#1068). Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Amended 2026-09-11 (#1565): a home's identity key moves through one narrow door, the reapply action, which refuses any selection that would change the build inputs, the runtime, or a cotenant's configuration. Amended 2026-09-26 (#2517, built by #2515 with #2520, #2521 and #2522): an agent of another runtime may attach to a home by `sandbox_id`, on the same environment and vault. Companion design note: #805."
 tags: [sandbox, lifecycle, conversations, product]
 status: stable
 adr: "0023"
@@ -45,7 +45,7 @@ apps), which was opened later the same day and merged first. Line references in
 the survey below were re-checked against `main` on the same date. Anything
 citing "ADR 0021" for a persistent sandbox — #793, #805 — means this file.
 
-**Amended 2026-09-26 — a second agent may attach if its runtime differs (#2517). Not built.**
+**Amended 2026-09-26 — a second agent may attach if its runtime differs (#2517). Built 2026-09-26 by #2515, with #2520, #2521 and #2522.**
 
 The maintainer chose to let one `claude` agent and one `codex` agent share a
 sandbox. This is narrower than the per-user sandbox rejected under
@@ -99,6 +99,45 @@ Three rules come with it:
 
 The consequence under **Consequences** that "two agents can never share a
 home" now holds only for agents of the same runtime.
+
+As built (#2515, `Fountain.Machines.Binding.attachable/5`), the rule is
+stricter than the text above in five places. Every conversation another agent
+has run on the machine counts, retired ones included, because its files stay on
+the disk until a reset; a conversation deleted, or repointed at another
+machine, while its machine is live leaves a non-secret descriptor on the
+machine (`sandboxes.departed_conversations`, written by a trigger on every
+conversation delete and every change of `conversations.sandbox_id`), which the
+attach rule and the redaction registry read beside the rows. A runtime with no known config
+root refuses on either side, which rules out `acp` as guest and as host. Only a
+persistent home with a recorded runtime and a living agent takes a guest. A
+claude home reserved before #2522 stamped `codex_peer_homes` refuses a codex
+guest with `codex_inference_conflict` until it is reset. And the guest is held
+to the environment and vault it was admitted on: attaching pins its
+environment on its row, and a guest whose binding moves anyway (a teammate
+rebinding) never reattaches to the shared disk — its next wake or rotation
+moves it to a machine of its own (a wake builds an ephemeral one; a rotation
+starts the conversation in the agent's default mode) and leaves the home as it
+was, with the guest's files and its descriptor still on it.
+
+The rule is general over directories, so it admits every pair of distinct
+runtimes among claude (`/home/sprite/.claude`), codex (`/home/sprite/.codex`),
+gemini (`/tmp/.gemini`) and opencode (`/tmp/.config/opencode`), in either
+direction. Files outside those roots were checked against `Layout` and the
+runtime modules of `managoat_runtimes` 0.5.4: claude's `/home/sprite/.mcp.json`
+and `~/.claude.json`, codex's `/home/sprite/.codex-grants`, opencode's
+`/tmp/.local/share/opencode` and `/tmp/opencode-workspace`, gemini's
+`/tmp/gemini-workspace` are each one runtime's; the ACP adapters install
+under per-package directories in `/home/sprite/.local/share/managoat/acp` and
+`/home/sprite/.local/bin`; `/home/sprite/.env` is shared by design (same
+environment and vault). One location is shared by every runtime and not
+separated: skills.sh keeps its global state under `/home/sprite/.agents` (the
+`.skill-lock.json` Fountain reads for ownership recovery, and possibly the
+canonical copies its default install mode links from), because every GitHub
+skill install runs with the image's HOME. Two agents on one machine that select
+the same GitHub skill can therefore share its installed copy, and a reinstall at another
+version changes it for both; inline skills are written into each runtime's own
+root and are not affected. The maintainer accepted this on 2026-09-26 and
+shipped it documented; separating skills.sh's state per runtime is #2523.
 
 **Amended 2026-09-18 — runtime is part of a home's identity (#2379).**
 

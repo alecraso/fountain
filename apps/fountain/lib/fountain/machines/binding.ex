@@ -183,6 +183,8 @@ defmodule Fountain.Machines.Binding do
   alias Fountain.Machines.Lease
   alias Fountain.Machines.Occupancy
   alias Fountain.Repo
+  alias Fountain.RuntimeDispatch
+  alias Managoat.Runtimes.Layout
 
   require Logger
 
@@ -320,6 +322,8 @@ defmodule Fountain.Machines.Binding do
     # before the write, so an expired caller gains nothing.
     if expired?(Keyword.get(opts, :deadline), now), do: Repo.rollback(:attach_expired)
 
+    attrs = pin_guest_identity(attrs, sandbox)
+
     with {:ok, limits} <-
            Conversations.resolve_admission_limits(attrs.user_id, Keyword.get(opts, :request)),
          {:ok, conv} <- Conversations.insert_conversation_row(attrs),
@@ -331,6 +335,47 @@ defmodule Fountain.Machines.Binding do
       {:error, reason} -> Repo.rollback(reason)
     end
   end
+
+  # A guest (#2515) is pinned to the environment it was admitted on. With no
+  # override a conversation follows its agent's environment wherever that
+  # moves, and a guest that followed would carry another environment's values
+  # onto a disk it shares: its next reattach rewrites `/home/sprite/.env`, which
+  # the home's conversations read and do not redact. Pinned, a later change to
+  # the guest's agent leaves the guest where it was admitted; a teammate
+  # rebinding that does move it is caught by `guest_moved?/3` on its next wake.
+  # The vault is always explicit on the row.
+  defp pin_guest_identity(%{agent_id: agent_id} = attrs, %Sandbox{agent_id: home} = sandbox)
+       when is_binary(home) and agent_id != home,
+       do: Map.put(attrs, :environment_id, attrs[:environment_id] || sandbox.environment_id)
+
+  defp pin_guest_identity(attrs, _sandbox), do: attrs
+
+  @doc """
+  Whether `conv` is a guest on `sandbox` (a conversation of another agent,
+  ADR 0023, amended 2026-09-26) whose environment or vault is no longer the
+  machine's.
+
+  The attach rule admits a guest only on the machine's environment and vault,
+  but a guest's binding can move afterwards (a teammate rebinding). Such a
+  guest must not reattach to the machine: a reattach rewrites the shared
+  `/home/sprite/.env` from the guest's environment and vault, which the
+  machine's other conversations would read and do not redact. The wake moves
+  it to a machine of its own instead (`Wake`), and a server that reaches a
+  reattach anyway stops before writing (`Reattachment.guest_moved?/3`).
+  `agent` is the guest's, for an environment it inherits.
+  """
+  @spec guest_moved?(Sandbox.t() | nil, Conversation.t(), Agents.Agent.t() | nil) :: boolean()
+  def guest_moved?(
+        %Sandbox{agent_id: home} = sandbox,
+        %Conversation{agent_id: own} = conv,
+        agent
+      )
+      when is_binary(home) and home != own do
+    {sandbox.environment_id, sandbox.vault_id} !=
+      {conv.environment_id || (agent && agent.environment_id), conv.vault_id}
+  end
+
+  def guest_moved?(_sandbox, _conv, _agent), do: false
 
   # A conversation whose admission resolved no inference source — a teammate's
   # successor, which inherits the machine's binding on its first prompt —
@@ -346,12 +391,21 @@ defmodule Fountain.Machines.Binding do
 
   The attach door's rule, as `Launch.check_attachable/4` had it: the fence
   first (409, the most specific answer) — the reset column, and since stage 9a
-  the `destroying` stamp that will outlive it — then the status, then the three
-  permanent refusals — identity, identity, runtime — and last the transient
-  one, a live lease. That order is the contract (stage 6a round 1): a permanent
-  no outranks a temporary one, so an identity-mismatched attach onto a busy
-  machine is 422 rather than a 503 telling the caller to retry something that
-  will never work.
+  the `destroying` stamp that will outlive it — then the status, then the
+  permanent refusals — vault, environment, agent, runtime — and last the
+  transient one, a live lease. That order is the contract (stage 6a round 1):
+  a permanent no outranks a temporary one, so an identity-mismatched attach
+  onto a busy machine is 422 rather than a 503 telling the caller to retry
+  something that will never work.
+
+  The agent need not be the home's (ADR 0023, amended 2026-09-26, #2515): a
+  conversation of another agent attaches as a guest when the machine is a
+  home with a recorded runtime and the guest's runtime keeps its config and
+  skills roots apart from those of every other agent's runtime on the disk
+  (a codex agent on a claude home, and the other way round). Anything else
+  of another agent is `:sandbox_identity_mismatch`; the machine's own agent
+  on a runtime it has since changed is `:sandbox_runtime_mismatch`. The
+  machine's `agent_id` and `runtime` stay the home's.
 
   `now` is the clock the lease is judged against; a caller holding the row
   under a lock passes the `statement_timestamp()` it read it with, and the
@@ -386,18 +440,24 @@ defmodule Fountain.Machines.Binding do
 
   def attachable(%Sandbox{} = sandbox, %Agents.Agent{} = agent, vault_id, env_id, now) do
     cond do
-      sandbox.agent_id != agent.id ->
-        {:error, :sandbox_identity_mismatch}
-
       sandbox.vault_id != vault_id ->
         {:error, :sandbox_identity_mismatch}
 
       sandbox.environment_id != (env_id || agent.environment_id) ->
         {:error, :sandbox_identity_mismatch}
 
+      # Another agent: a guest, admitted only on the terms below (ADR 0023,
+      # amended 2026-09-26, #2515). Last of the identity refusals, so the
+      # query it makes is spent only on an otherwise matching identity.
+      sandbox.agent_id != agent.id and not guest_admissible?(sandbox, agent) ->
+        {:error, :sandbox_identity_mismatch}
+
       # The disk was shaped by the runtime that first ran on it; an agent
-      # whose runtime changed since gets a new machine, not this one.
-      (sandbox.runtime || newest_runtime(sandbox.id)) not in [nil, agent.runtime] ->
+      # whose runtime changed since gets a new machine, not this one. A
+      # guest's runtime differs from the machine's by construction, and the
+      # clause above has already judged it.
+      sandbox.agent_id == agent.id and
+          (sandbox.runtime || newest_runtime(sandbox.id)) not in [nil, agent.runtime] ->
         {:error, :sandbox_runtime_mismatch}
 
       # An owner holds a live lease (stage 6a): a destroy, a reset, a park or
@@ -411,6 +471,106 @@ defmodule Fountain.Machines.Binding do
         :ok
     end
   end
+
+  # A conversation of an agent other than the home's (ADR 0023, amended
+  # 2026-09-26, #2515). The caller has already matched the user (the row was
+  # read tenant-scoped), the environment and the vault. What is left is the
+  # disk: the guest's runtime must keep its files where no other agent's
+  # runtime on this machine keeps any.
+  #
+  #   * A home, with a recorded runtime and a living agent. `Termination`
+  #     ends guests with the home's agent and `Reapply` refuses them by the
+  #     home's runtime; a per-conversation machine, a legacy machine with no
+  #     runtime and an orphaned one have neither, so they take no guest.
+  #   * Directories, not runtime names. The guest's config root and skills
+  #     root must not overlap (equal to, or inside, one another) either root
+  #     of the machine's runtime or of any runtime a conversation of another
+  #     agent has run here. Retired conversations count: a runtime's files
+  #     stay on the disk until it is destroyed or reset, as
+  #     `Occupancy.other_runtime_ids/2` counts them for redaction. So do
+  #     deleted ones, through the descriptor the machine keeps of each
+  #     (`Sandbox.departed_conversations`). The
+  #     guest's own agent's earlier conversations on the same runtime do not:
+  #     those are its files.
+  #   * A runtime whose roots are not known refuses, on either side. The
+  #     `acp` command runtime has no config root (the command can write
+  #     anywhere, `~/.codex/auth.json` included) and its skills root is
+  #     claude's (`Fountain.CommandRuntime.skills_root/0`).
+  #
+  # Inside `attach/3` this runs under the machine's advisory lock, on the
+  # transaction's connection, so a second guest racing this one is decided
+  # after this one's row is visible.
+  defp guest_admissible?(%Sandbox{mode: "persistent", runtime: machine_runtime} = sandbox, agent)
+       when is_binary(machine_runtime) and is_binary(sandbox.agent_id) do
+    case runtime_roots(agent.runtime) do
+      {:ok, guest_roots} ->
+        [
+          machine_runtime
+          | other_agents_runtimes(sandbox, agent) ++ departed_runtimes(sandbox, agent)
+        ]
+        |> Enum.uniq()
+        |> Enum.all?(fn runtime ->
+          case runtime_roots(runtime) do
+            {:ok, roots} -> not overlapping?(guest_roots, roots)
+            :unknown -> false
+          end
+        end)
+
+      :unknown ->
+        false
+    end
+  end
+
+  defp guest_admissible?(_sandbox, _agent), do: false
+
+  # Every runtime a conversation of another agent has run on the machine,
+  # retired ones included; nil for a row that recorded none, which
+  # `runtime_roots/1` refuses. `is_nil/1` spelled out so that a row whose
+  # agent was deleted (a nil `agent_id`) counts as another agent's rather
+  # than falling through a NULL comparison.
+  defp other_agents_runtimes(%Sandbox{id: sandbox_id, user_id: user_id}, agent) do
+    Repo.all(
+      from c in Conversation,
+        where:
+          c.sandbox_id == ^sandbox_id and c.user_id == ^user_id and
+            (is_nil(c.agent_id) or is_nil(c.runtime) or c.agent_id != ^agent.id or
+               c.runtime != ^agent.runtime),
+        distinct: true,
+        select: c.runtime
+    )
+  end
+
+  # The same question of the conversations whose rows were deleted while the
+  # machine was live: the descriptors it keeps of them (#2515). Read off the
+  # row `attach/3` holds locked, so a deletion that committed before the lock
+  # is here, as a row or as a descriptor.
+  defp departed_runtimes(%Sandbox{departed_conversations: departed}, agent) do
+    for d <- departed || [],
+        d["agent_id"] != agent.id or d["runtime"] != agent.runtime,
+        do: d["runtime"]
+  end
+
+  # Where a runtime keeps its files: its config root (`Layout.config_root/1`)
+  # and the skills root its module installs into, which is the one that
+  # differs from the layout's for the `acp` command runtime.
+  @spec runtime_roots(String.t() | nil) :: {:ok, [String.t()]} | :unknown
+  defp runtime_roots(runtime) when is_binary(runtime) do
+    with config when is_binary(config) <- Layout.config_root(runtime),
+         {:ok, module} <- RuntimeDispatch.for_agent(%{runtime: runtime, user_id: nil}),
+         skills when is_binary(skills) <- module.skills_root() do
+      {:ok, Enum.uniq([config, skills])}
+    else
+      _ -> :unknown
+    end
+  end
+
+  defp runtime_roots(_runtime), do: :unknown
+
+  defp overlapping?(left, right),
+    do: Enum.any?(left, fn a -> Enum.any?(right, &nested?(a, &1)) end)
+
+  defp nested?(a, b),
+    do: a == b or String.starts_with?(a, b <> "/") or String.starts_with?(b, a <> "/")
 
   # The runtime of the newest conversation on the machine, or nil when it has
   # none. `Launch._unsafe_sandbox_runtime/1` until stage 8b.
