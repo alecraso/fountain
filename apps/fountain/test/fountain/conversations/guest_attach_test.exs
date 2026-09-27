@@ -112,12 +112,18 @@ defmodule Fountain.Conversations.GuestAttachTest do
     {home, host}
   end
 
-  defp attach(ctx, agent, sandbox, extra \\ %{}) do
+  # A full-scope caller's attach, as `ConversationController.create/2` makes
+  # it for an owner's own key (#2525). `attach_as/5` names the options.
+  defp attach(ctx, agent, sandbox, extra \\ %{}),
+    do: attach_as(ctx, agent, sandbox, extra, guest_ok: true)
+
+  defp attach_as(ctx, agent, sandbox, extra, opts) do
     Launch.start_conversation(
       Map.merge(
         %{"agent_id" => agent.id, "user_id" => ctx.user.id, "sandbox_id" => sandbox.id},
         extra
-      )
+      ),
+      opts
     )
   end
 
@@ -200,8 +206,15 @@ defmodule Fountain.Conversations.GuestAttachTest do
     end
 
     test "capacity stays per runtime: a busy host does not hold a guest's first turn", ctx do
-      # opencode runs one turn at a time; claude's files are elsewhere.
-      host_agent = agent_of(ctx, "opencode")
+      # Claude and codex both run turns side by side, and only they pair
+      # (#2525), so the host's runtime is held to one turn here to show the
+      # count is per runtime.
+      stub(Fountain.RuntimeDispatch, :concurrency, fn
+        "codex" -> 1
+        _runtime -> :unbounded
+      end)
+
+      host_agent = agent_of(ctx, "codex")
       guest_agent = agent_of(ctx, "claude")
       {home, host} = home_row(ctx, host_agent)
 
@@ -218,6 +231,119 @@ defmodule Fountain.Conversations.GuestAttachTest do
       # The host's own runtime is still at capacity.
       assert {:error, :sandbox_at_capacity} =
                attach(ctx, host_agent, home, %{"prompt" => "hello"})
+    end
+  end
+
+  describe "who may make the pairing (#2525)" do
+    test "a caller that is not full scope may not attach a guest", ctx do
+      host_agent = agent_of(ctx, "claude")
+      guest_agent = agent_of(ctx, "codex")
+      {home, _host} = launched_home(ctx, host_agent)
+
+      # No option at all is the default a new caller gets, and a sandbox
+      # token's request says `false`.
+      for opts <- [[], [guest_ok: false], [sandbox_key_id: Ecto.UUID.generate()]] do
+        assert {:error, :guest_attach_requires_full_scope} =
+                 attach_as(ctx, guest_agent, home, %{}, opts)
+      end
+
+      assert [_host] = Conversations._unsafe_list_cotenant_ids(home.id, Ecto.UUID.generate())
+      assert Repo.reload!(home).codex_inference_source == nil
+
+      # The home's own agent is no guest: unchanged for any caller.
+      assert {:ok, _} = attach_as(ctx, host_agent, home, %{}, [])
+    end
+
+    test "a refusal of the pair outranks the caller's scope", ctx do
+      {home, _host} = home_row(ctx, agent_of(ctx, "claude"))
+
+      assert {:error, :sandbox_identity_mismatch} =
+               attach_as(ctx, agent_of(ctx, "claude"), home, %{}, [])
+
+      assert {:error, :sandbox_identity_mismatch} =
+               attach_as(ctx, agent_of(ctx, "opencode"), home, %{}, [])
+    end
+
+    test "a second conversation of an admitted guest is still a new pairing", ctx do
+      host_agent = agent_of(ctx, "claude")
+      guest_agent = agent_of(ctx, "codex")
+      {home, _host} = launched_home(ctx, host_agent)
+      assert {:ok, _guest} = attach(ctx, guest_agent, home)
+
+      assert {:error, :guest_attach_requires_full_scope} =
+               attach_as(ctx, guest_agent, home, %{}, [])
+    end
+
+    test "an ended predecessor of the same agent on the same machine is a successor", ctx do
+      host_agent = agent_of(ctx, "claude")
+      guest_agent = agent_of(ctx, "codex")
+      {home, host} = launched_home(ctx, host_agent)
+      assert {:ok, guest} = attach(ctx, guest_agent, home)
+
+      # Live, it is not: a successor beside it would be a second guest.
+      assert {:error, :guest_attach_requires_full_scope} =
+               Binding.attachable(Repo.reload!(home), guest_agent, nil, ctx.env.id, :db,
+                 successor_of: guest.id
+               )
+
+      # Released first, as a team rotation does.
+      {:ok, _} = Conversations.update_conversation(guest, %{status: "terminated"})
+
+      assert :ok =
+               Binding.attachable(Repo.reload!(home), guest_agent, nil, ctx.env.id, :db,
+                 successor_of: guest.id
+               )
+
+      # Not a conversation of another agent, of another machine, or no id.
+      {:ok, _} = Conversations.update_conversation(host, %{status: "terminated"})
+      {_other_home, other_guest} = home_row(ctx, guest_agent, %{status: "ready"})
+      {:ok, _} = Conversations.update_conversation(other_guest, %{status: "terminated"})
+
+      for id <- [host.id, other_guest.id, Ecto.UUID.generate(), "not-a-uuid"] do
+        assert {:error, :guest_attach_requires_full_scope} =
+                 Binding.attachable(Repo.reload!(home), guest_agent, nil, ctx.env.id, :db,
+                   successor_of: id
+                 )
+      end
+    end
+
+    # The review probe (#2525): a `fresh` channel rotation only unbinds its
+    # predecessor, which keeps running, so letting it through would let a
+    # sandbox token that knows a guest's channel stack live guests.
+    test "a channel rotation of a guest needs a full-scope caller", ctx do
+      host_agent = agent_of(ctx, "claude")
+      guest_agent = agent_of(ctx, "codex")
+      {home, _host} = launched_home(ctx, host_agent)
+      channel = %{"channel_id" => "chan-2525", "environment_id" => ctx.env.id}
+      assert {:ok, guest} = attach(ctx, guest_agent, home, channel)
+
+      rotation =
+        Map.merge(channel, %{
+          "agent_id" => guest_agent.id,
+          "user_id" => ctx.user.id,
+          "sandbox_id" => home.id,
+          "fresh" => true
+        })
+
+      for _ <- 1..3 do
+        assert {:error, :guest_attach_requires_full_scope} =
+                 Launch.start_or_resume_conversation(rotation, [])
+      end
+
+      # Nothing stacked, and the channel is still the guest's.
+      assert [guest.id] ==
+               Repo.all(
+                 from c in Fountain.Conversations.Conversation,
+                   where: c.sandbox_id == ^home.id and c.agent_id == ^guest_agent.id,
+                   select: c.id
+               )
+
+      assert Conversations._unsafe_get_conversation!(guest.id).channel_id == "chan-2525"
+
+      assert {:ok, fresh, :created} =
+               Launch.start_or_resume_conversation(rotation, guest_ok: true)
+
+      assert fresh.sandbox_id == home.id
     end
   end
 
@@ -270,7 +396,7 @@ defmodule Fountain.Conversations.GuestAttachTest do
 
     test "a machine with no recorded runtime, or not a home", ctx do
       host_agent = agent_of(ctx, "claude")
-      guest_agent = agent_of(ctx, "opencode")
+      guest_agent = agent_of(ctx, "codex")
 
       {legacy, _} = home_row(ctx, host_agent)
 
@@ -311,6 +437,66 @@ defmodule Fountain.Conversations.GuestAttachTest do
       assert {:error, :sandbox_identity_mismatch} = attach(ctx, agent_of(ctx, "claude"), home)
     end
 
+    test "any pair but claude and codex, though the directories are apart (#2525)", ctx do
+      for {host, guest} <- [
+            {"claude", "opencode"},
+            {"claude", "gemini"},
+            {"codex", "gemini"},
+            {"codex", "opencode"},
+            {"gemini", "opencode"},
+            {"opencode", "claude"},
+            {"gemini", "codex"}
+          ] do
+        {home, _host} = home_row(ctx, agent_of(ctx, host))
+
+        assert {:error, :sandbox_identity_mismatch} = attach(ctx, agent_of(ctx, guest), home),
+               "#{guest} on a #{host} home"
+      end
+    end
+
+    test "claude and codex, once a third runtime has run on the machine", ctx do
+      host_agent = agent_of(ctx, "codex")
+      {home, _host} = home_row(ctx, host_agent)
+
+      # A retired conversation of an opencode agent, from before the rule.
+      insert_conversation(
+        user_id: ctx.user.id,
+        agent: agent_of(ctx, "opencode"),
+        sandbox: home,
+        status: "terminated"
+      )
+
+      assert {:error, :sandbox_identity_mismatch} = attach(ctx, agent_of(ctx, "claude"), home)
+    end
+
+    test "a second agent of a runtime already on the machine, by that rule alone", ctx do
+      host_agent = agent_of(ctx, "claude")
+      first = agent_of(ctx, "codex")
+      {home, _host} = home_row(ctx, host_agent, %{codex_peer_homes: true})
+      insert_conversation(user_id: ctx.user.id, agent: first, sandbox: home, status: "idle")
+
+      # Every call gets roots of its own, so the directory rule finds no
+      # overlap anywhere: only one-agent-per-runtime is left to refuse.
+      stub(Managoat.Runtimes.Layout, :config_root, fn runtime ->
+        "/unique/#{runtime}/#{System.unique_integer([:positive])}"
+      end)
+
+      stub(Fountain.RuntimeDispatch, :for_agent, fn _agent ->
+        {:ok, __MODULE__.DistinctRoots}
+      end)
+
+      second = agent_of(ctx, "codex")
+
+      assert {:error, :sandbox_identity_mismatch} =
+               Binding.attachable(Repo.reload!(home), second, nil, ctx.env.id, :db,
+                 guest_ok: true
+               )
+
+      # The stubs admit what they should: the first codex agent is no second.
+      assert :ok =
+               Binding.attachable(Repo.reload!(home), first, nil, ctx.env.id, :db, guest_ok: true)
+    end
+
     test "the home's own agent on a runtime it has since changed", ctx do
       host_agent = agent_of(ctx, "claude")
       {home, _host} = home_row(ctx, host_agent)
@@ -319,5 +505,10 @@ defmodule Fountain.Conversations.GuestAttachTest do
       assert {:error, :sandbox_runtime_mismatch} =
                Binding.attachable(home, moved, nil, ctx.env.id)
     end
+  end
+
+  defmodule DistinctRoots do
+    @moduledoc false
+    def skills_root, do: "/unique/skills/#{System.unique_integer([:positive])}"
   end
 end
