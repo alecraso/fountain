@@ -18,7 +18,7 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.Conversations.{BoundedTurn, CallbackKey, Connection, Conversation}
   alias Fountain.Conversations.{DetachedRequest, Egress, FreshProvision, Interruption}
   alias Fountain.Conversations.{Lifecycle, MachineEvents, McpServers, Output, Pending}
-  alias Fountain.Conversations.{PromptDelivery, Provisioning, ProvisionWatchdog, Reattachment}
+  alias Fountain.Conversations.{PromptDelivery, ProvisionWatchdog, Reattachment}
   alias Fountain.Conversations.{Redaction, SpriteEnv, Termination, TurnLaunch, TurnMachine, Wake}
   alias Fountain.Machines.Machine
 
@@ -101,12 +101,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # `images` travels the wake road too, or the woken turn opens
           # without them while this still answers :ok (#2373; see `Wake`). The
           # correlation rides with the prompt, in the shape `Wake` takes.
-          case Wake.wake_conversation(conv_id, PromptDelivery.for_wake(prompt, opts), images) do
-            {:ok, _conv} -> :ok
-            {:error, :gone} -> {:error, :gone}
-            {:error, :not_found} -> {:error, :not_running}
-            {:error, _} = err -> err
-          end
+          Wake.for_prompt(conv_id, PromptDelivery.for_wake(prompt, opts), images, opts)
 
         pid ->
           PromptDelivery.deliver(pid, prompt, images, opts)
@@ -617,35 +612,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
       {state, _conv} = rotate_callback_api_key(state, conv)
       sprite_env = build_sprite_env(state, agent, env, secrets, nil, ca_files)
-
-      # The callback token just rotated. The connection entries in the file
-      # carry a broker placeholder rather than it since #2152 (an
-      # extension-served server reaches claude through `session/new` and is
-      # never in `.mcp.json`), so this rewrite keeps the file current with the
-      # agent's resolved servers rather than with the token. Idempotent for an
-      # agent without one. Best effort here, like the CA below: the turn's
-      # own failure says more than a refused wake would.
-      case Provisioning.write_runtime_config(
-             handle,
-             state.runtime_module,
-             Egress.with_connection_servers(
-               agent,
-               state.user_id,
-               state.conversation_id,
-               state.callback_token
-             )
-           ) do
-        :ok -> :ok
-        {:error, reason} -> Logger.warning("runtime config write on wake: #{inspect(reason)}")
-      end
-
-      # A machine provisioned before its tenant was brokered has no CA yet;
-      # on one that has it this is an idempotent rewrite. Best effort here:
-      # the turn's own failure says more than a refused wake would.
-      case Egress.install_ca(state.broker, handle, state.conversation_id) do
-        :ok -> :ok
-        {:error, reason} -> Logger.warning("broker CA install on wake: #{inspect(reason)}")
-      end
 
       with :ok <- Reattachment.prepare_source(handle, state, conv, agent, sprite_env) do
         # Validate even a cached ready row: retirement may have won while the
@@ -1455,11 +1421,7 @@ defmodule Fountain.Conversations.ConversationServer do
     state = drop_connection(state, "terminated")
     opts = Keyword.put(opts, :terminating_conversation_id, nil)
 
-    case Termination._unsafe_destroy_machine(state.sandbox_id, opts) do
-      {:ok, _outcome} -> :ok
-      {:error, reason} -> Logger.warning("conv #{state.conversation_id}: #{inspect(reason)}")
-    end
-
+    Termination.destroy_after_terminate(state.sandbox_id, opts)
     Egress.release(state.conversation_id)
     finish_termination(state, %{})
   end

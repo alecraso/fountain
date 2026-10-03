@@ -393,7 +393,7 @@ defmodule Fountain.Conversations.Provisioning do
           publish_stage(conv_id, "network", "started", %{type: "broker", hosts: 1})
 
           case Retry.with_backoff(
-                 fn -> Sandbox.apply_network_policy(handle, %NetworkPolicy{allow: [host]}) end,
+                 fn -> policy_attempt(handle, %NetworkPolicy{allow: [host]}) end,
                  label: "broker network floor"
                ) do
             :ok ->
@@ -721,7 +721,7 @@ defmodule Fountain.Conversations.Provisioning do
         publish_stage(conv_id, "network", "started", %{type: "limited", hosts: length(hosts)})
 
         case Retry.with_backoff(
-               fn -> Sandbox.apply_network_policy(handle, %NetworkPolicy{allow: hosts}) end,
+               fn -> policy_attempt(handle, %NetworkPolicy{allow: hosts}) end,
                label: "network policy"
              ) do
           :ok ->
@@ -737,6 +737,32 @@ defmodule Fountain.Conversations.Provisioning do
   end
 
   def apply_network_policy(_handle, _env, _conv_id), do: :ok
+
+  # One network policy request, in a process of its own (#2559). On a sprite
+  # that is waking, Sprites answers the policy POST only once the machine is
+  # up, which in production has been 20–35 s; Req gives up at 30 s, and the
+  # 204 that arrives after that is a message to whichever process made the
+  # request. The retry's request ran in the same process and took the stale
+  # `{:status, ref, 204}` for its own response, a `CaseClauseError`. A task
+  # per attempt keeps a late answer away from the next one: it arrives at a
+  # process that has already exited and is dropped.
+  defp policy_attempt(handle, policy) do
+    Task.Supervisor.async_nolink(Fountain.TaskSupervisor, fn ->
+      Sandbox.apply_network_policy(handle, policy)
+    end)
+    |> Task.yield(:infinity)
+    |> case do
+      {:ok, result} ->
+        result
+
+      # Raised in the task: raised here, so `Retry` treats it as it always has.
+      {:exit, {exception, stacktrace}} when is_exception(exception) ->
+        reraise exception, stacktrace
+
+      {:exit, reason} ->
+        {:error, {:policy_request_crashed, reason}}
+    end
+  end
 
   # ── git clone ─────────────────────────────────────────────────────────────
 
@@ -979,6 +1005,23 @@ defmodule Fountain.Conversations.Provisioning do
       nil
   end
 
+  # The setup step ends when the user's script exits, not when the exec's
+  # output pipe closes (#2558). A process the script leaves running — a dev
+  # server, a keepalive loop, a `sleep` it killed the parent of — inherits that
+  # pipe, and an exec collects output until EOF: a provision waited up to 30 s
+  # on a lingering `sleep 30`, and a server started with `&` held it until the
+  # setup timeout failed it. So the script writes to a private file instead,
+  # which is read back once it exits; anything still running keeps the
+  # unlinked file, not the step. stdin is closed for the same reason.
+  @setup_wrapper ~S"""
+  out=$(mktemp) || exit 1
+  bash -lc "$1" >"$out" 2>&1 </dev/null
+  rc=$?
+  cat "$out"
+  rm -f "$out"
+  exit "$rc"
+  """
+
   def run_setup_script(_handle, nil, _sprite_env, _conv_id), do: :ok
   def run_setup_script(_handle, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
 
@@ -989,7 +1032,10 @@ defmodule Fountain.Conversations.Provisioning do
       fn ->
         publish_stage(conv_id, "setup", "started")
 
-        case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
+        case Managoat.Sandbox.exec(
+               handle,
+               "bash",
+               ["-c", @setup_wrapper, "fountain-setup", script],
                env: sprite_env,
                stderr_to_stdout: true,
                timeout: Map.get(environment, :setup_timeout_seconds, 120) * 1000
