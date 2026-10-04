@@ -684,6 +684,8 @@ defmodule Fountain.Accounts do
 
     * `:scopes` — defaults to `["full"]`
     * `:expires_at` — required for principal scope; other scopes default to no expiry
+    * `:runner_name` — the runner a `["runner"]`-scoped key is bound to;
+      required there and refused on any other scope
     * `:actor` — who minted it, for the audit trail. Defaults to `"self"`;
       pass `FountainWeb.Audited.attribution/2` from a web surface, or a
       `"system:<worker>"` string from a background one.
@@ -713,7 +715,8 @@ defmodule Fountain.Accounts do
         key_hash: hash_key(raw),
         key_prefix: String.slice(raw, 0, 8),
         scopes: Keyword.get(opts, :scopes, ["full"]),
-        expires_at: Keyword.get(opts, :expires_at)
+        expires_at: Keyword.get(opts, :expires_at),
+        runner_name: Keyword.get(opts, :runner_name)
       })
 
     {changeset, raw}
@@ -731,7 +734,8 @@ defmodule Fountain.Accounts do
       metadata: %{
         "name" => key.name,
         "scopes" => key.scopes,
-        "key_prefix" => key.key_prefix
+        "key_prefix" => key.key_prefix,
+        "runner_name" => key.runner_name
       }
     })
   end
@@ -757,11 +761,26 @@ defmodule Fountain.Accounts do
         |> Ecto.Changeset.change(revoked_at: DateTime.utc_now() |> DateTime.truncate(:second))
         |> Repo.update()
         |> case do
-          {:ok, revoked} -> record_api_key_revoked(revoked, opts)
-          error -> error
+          {:ok, revoked} ->
+            drop_runner_connection(revoked)
+            record_api_key_revoked(revoked, opts)
+
+          error ->
+            error
         end
     end
   end
+
+  # Revoking stops a key authenticating, but a runner key's daemon is already
+  # past that: its socket stays up for as long as it likes. Closing the
+  # connection is what makes revoking it mean "that machine is off" (arugula
+  # fork). A second key bound to the same name loses its live socket too; the
+  # daemon reconnects with it.
+  defp drop_runner_connection(%ApiKey{scopes: ["runner"], runner_name: name, user_id: user_id}) do
+    Fountain.Runners.disconnect(user_id, name)
+  end
+
+  defp drop_runner_connection(_key), do: :ok
 
   @doc "Audit a committed key revocation outside the transaction that changed it."
   def record_api_key_revoked(%ApiKey{} = key, opts \\ []) do

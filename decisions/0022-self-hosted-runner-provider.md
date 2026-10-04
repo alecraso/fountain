@@ -144,6 +144,26 @@ The daemon speaks `hello` first (name, hostname, os, arch, version, root); the
 server rejects a `hello` for a runner name that already has a live connection
 (two daemons with one name would split a sandbox's sessions across them).
 
+### Runner keys (arugula fork)
+
+A daemon on a machine where untrusted agent code runs must not hold a
+full-scope key, so `api_keys` gains a `runner` scope and a nullable
+`runner_name`: one scope, never combined, with a name (a CHECK on the table
+enforces both directions). `POST /api/runners/keys {name}` mints one, full scope
+only, and shows it once. A runner key authenticates at `GET /api/runners/ws`
+only, and there registers only its bound name (403 `runner_name_mismatch`);
+every other `/api` route answers 403 `insufficient_scope`.
+
+That is decided inside `TenantAPIAuth` (`RunnerKeyGate`) as a default-deny with
+a one-route allow-list, not with a guard per scope block, because the existing
+guards are opt-in: a route nobody guards is open to a `sprite` key, and would
+be to this one. The socket's pipeline admits it with
+`RequireFullScope, allow_runner: true`. Revoking a runner key closes that
+runner's live connection (`Runners.disconnect/2`); two keys bound to one name
+share that effect. The key proves possession of a name, not of a machine: it
+does not stop a second host from dialing under that name while the first is
+offline.
+
 ## Consequences
 
 - A user gets a sandbox provider for the price of a `fountain runner` process;

@@ -119,6 +119,13 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.RequireFullScope
   end
 
+  # The daemon's socket is the one door a `runner` key opens. It is admitted
+  # here, and held to this route and its bound name at authentication
+  # (`RunnerKeyGate`), so no other pipeline needs to know the scope exists.
+  pipeline :require_full_or_runner_scope do
+    plug FountainWeb.Plugs.RequireFullScope, allow_runner: true
+  end
+
   # Layered on top of :api + :require_full_scope for the operator surface.
   pipeline :require_admin_api do
     plug FountainWeb.Plugs.RequireAdminApi
@@ -361,11 +368,14 @@ defmodule FountainWeb.Router do
   # Self-hosted runners (ADR 0022). Full scope: a sandbox's per-conversation
   # token must not be able to attach a machine that then runs the account's
   # agents. `/ws` is the daemon's WebSocket; it authenticates like any other
-  # /api route (bearer key) and upgrades in the controller.
+  # /api route (bearer key) and upgrades in the controller. A `runner`-scoped
+  # key reaches `/ws` alone, and only as its bound name, by the default-deny in
+  # `TenantAPIAuth`; `POST /keys` mints one and is full scope like its siblings.
   scope "/api/runners", FountainWeb do
     pipe_through [:accepts_json, :api, :require_full_scope]
 
     get "/", RunnerController, :index
+    post "/keys", RunnerController, :create_key
     delete "/:id", RunnerController, :delete
   end
 
@@ -442,7 +452,7 @@ defmodule FountainWeb.Router do
   # WebSocket client sends no JSON `Accept`, and the upgrade is not a JSON
   # response.
   scope "/api/runners", FountainWeb do
-    pipe_through [:api, :require_full_scope]
+    pipe_through [:api, :require_full_or_runner_scope]
 
     get "/ws", RunnerController, :connect
   end

@@ -674,6 +674,39 @@ refusals:
 An agent pinned to one runner for every conversation (`agents.runner_id`) is not
 built.
 
+### Connect a runner with a key that can do nothing else
+
+`fountain runner` dials `GET /api/runners/ws` with a bearer key, and a
+full-scope key there would let anything on that machine act as your whole
+account. Mint a key bound to one runner name instead. It needs a full-scope key:
+
+```bash
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mini"}' \
+  https://fountain.example/api/runners/keys
+```
+
+```json
+{ "id": "…", "runner_name": "mini", "key": "…", "prefix": "…", "created_at": "…" }
+```
+
+`key` is shown once and cannot be read again; `GET /api/auth/api-keys` lists the
+key's metadata with `scopes: ["runner"]` and `runner_name`. The name follows the
+runner name rules (lowercase letters, digits, dots, dashes, underscores, at most
+63) and may be one that has not connected yet. A runner key authenticates at
+`GET /api/runners/ws` and nowhere else:
+
+| Status | `error` / `reason` | When |
+|---|---|---|
+| 403 | `reason: insufficient_scope` | Any other route, whatever its method. This includes the routes a conversation's own token may use. |
+| 403 | `error: runner_name_mismatch` | The socket's `name` is not the one the key is bound to, or is missing. Nothing is registered. |
+
+`POST /api/runners/keys` itself answers 403 to a runner key or a conversation
+token. Revoke with `DELETE /api/auth/api-keys/:id`; that also closes the
+runner's open connection.
+
 ### Labels
 
 A label is a `key=value` pair of strings on a conversation. A program stamps

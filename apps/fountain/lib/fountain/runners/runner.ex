@@ -20,6 +20,9 @@ defmodule Fountain.Runners.Runner do
 
   @type t :: %__MODULE__{}
 
+  @doc "The shape a runner name must have; runner keys are bound to one."
+  def name_format, do: @name_format
+
   schema "runners" do
     field :name, :string
     field :hostname, :string

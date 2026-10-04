@@ -118,6 +118,21 @@ defmodule Fountain.Runners do
     result
   end
 
+  @doc """
+  Close the live connection of the named runner, leaving its row. `:ok` whether
+  or not it was connected. The connection treats this like a deleted runner and
+  hangs up; the daemon may redial if it still holds a working key.
+  """
+  @spec disconnect(binary(), String.t()) :: :ok
+  def disconnect(user_id, name) do
+    with %Runner{id: id} <- get_runner_by_name(user_id, name),
+         pid when is_pid(pid) <- whereis(id) do
+      send(pid, {:runner_deleted, id})
+    end
+
+    :ok
+  end
+
   # ── registry ───────────────────────────────────────────────────────────────
 
   @doc "The registry name; the connection process registers itself here."

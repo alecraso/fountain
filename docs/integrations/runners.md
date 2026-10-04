@@ -70,6 +70,29 @@ processes belong to the daemon. It reconnects with backoff on any drop. It
 gives up only when Fountain refuses the key, rejects the name, or has runners
 switched off.
 
+### On a machine you do not fully trust
+
+A full-scope key on the machine lets whatever runs there act as your account.
+Where agent code runs on the machine, give the daemon a runner key instead, a
+key that can connect one named runner and call nothing else:
+
+```bash
+# from somewhere that holds a full-scope key, not from the machine
+curl --fail-with-body -X POST -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" -d '{"name":"mini"}' \
+  https://fountain.example/api/runners/keys
+
+# on the machine, with the `key` the response returned
+FOUNTAIN_API_KEY=<that key> fountain runner --name mini
+```
+
+The daemon must run under the name the key is bound to; any other name is
+refused with 403 `runner_name_mismatch`, and the daemon gives up. The key does
+not work with `fountain auth login` or any other command. Revoking it, in the
+console or by `DELETE /api/auth/api-keys/:id`, disconnects the runner at once.
+The [API reference](../api.md#connect-a-runner-with-a-key-that-can-do-nothing-else)
+has the request and refusals.
+
 Then pin an agent to it. Use **Agents**, then **edit**, then **Sandbox provider**, then **runner**,
 or send `sandbox_provider: "runner"` to `POST /api/agents`.
 

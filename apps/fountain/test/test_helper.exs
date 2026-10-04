@@ -44,6 +44,7 @@ Mimic.copy(Horde.DynamicSupervisor)
 # server, which is what stops that test racing a loaded runner (#921).
 Mimic.copy(Horde.Registry)
 Mimic.copy(Req)
+Mimic.copy(WebSockAdapter)
 # A sandbox-files read's cutoff must hold when its caller dies the moment its
 # task starts (#2435 review). Stubbing `async_nolink` is the only way to kill
 # the caller at exactly that point.

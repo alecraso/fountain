@@ -26,9 +26,17 @@ defmodule Fountain.Accounts.ApiKey do
       was opened from. What it can do is build and run a computer — agents,
       environments, vaults, conversations, sandboxes, the team — which is the
       whole of what an anonymous visitor's application needs.
+    * `"runner"` — the credential a machine's `fountain runner` daemon dials
+      with (ADR 0022, arugula fork). It is bound to one runner name in
+      `runner_name`, never combines with another scope, and authenticates at
+      exactly one route, `GET /api/runners/ws`, where it may register only its
+      bound name. That is decided by `FountainWeb.Plugs.RunnerKeyGate` at
+      authentication as a default-deny, not route by route: a machine that
+      runs untrusted agent code holds this key, so it must reach nothing a
+      future route might add.
   """
 
-  @scopes ~w(full sprite principal)
+  @scopes ~w(full sprite principal runner)
 
   # Scopes permitted to issue, list, or revoke API keys.
   @key_management_scopes ~w(full)
@@ -42,6 +50,8 @@ defmodule Fountain.Accounts.ApiKey do
     field :revoked_at, :utc_datetime
     field :expires_at, :utc_datetime
     field :scopes, {:array, :string}, default: ["full"]
+    # The runner a `runner`-scoped key may register as; nil for every other key.
+    field :runner_name, :string
 
     belongs_to :user, Fountain.Accounts.User
 
@@ -49,6 +59,9 @@ defmodule Fountain.Accounts.ApiKey do
   end
 
   def scopes, do: @scopes
+
+  @doc "Whether `key` is a runner key: scoped to connecting one named runner and nothing else."
+  def runner_key?(%__MODULE__{scopes: scopes}), do: "runner" in scopes
 
   @doc "Whether `key` may issue, list, or revoke API keys."
   def may_manage_keys?(%__MODULE__{scopes: scopes}) do
@@ -70,12 +83,14 @@ defmodule Fountain.Accounts.ApiKey do
   """
   def changeset(api_key, attrs) do
     api_key
-    |> cast(attrs, [:name, :key_hash, :key_prefix, :user_id, :scopes, :expires_at])
+    |> cast(attrs, [:name, :key_hash, :key_prefix, :user_id, :scopes, :expires_at, :runner_name])
     |> validate_required([:name, :key_hash, :key_prefix, :user_id, :scopes])
     |> validate_length(:name, min: 1, max: 200)
     |> validate_length(:scopes, min: 1)
     |> validate_subset(:scopes, @scopes)
     |> require_principal_expiry()
+    |> validate_runner_name()
+    |> check_constraint(:runner_name, name: :api_keys_runner_name_matches_scope)
     |> check_constraint(:expires_at, name: :api_keys_active_principal_expiry_required)
     |> unique_constraint(:key_hash)
     |> foreign_key_constraint(:user_id)
@@ -87,6 +102,30 @@ defmodule Fountain.Accounts.ApiKey do
       validate_required(changeset, [:expires_at])
     else
       changeset
+    end
+  end
+
+  # A runner key is only meaningful with a name to hold it to, and a name on any
+  # other key would be a binding nothing enforces. Both are refused here and,
+  # for rows written some other way, by the table's own CHECK.
+  defp validate_runner_name(changeset) do
+    scopes = get_field(changeset, :scopes) || []
+
+    cond do
+      "runner" in scopes and scopes != ["runner"] ->
+        add_error(changeset, :scopes, "runner cannot be combined with another scope")
+
+      "runner" in scopes ->
+        changeset
+        |> validate_required([:runner_name])
+        |> validate_format(:runner_name, Fountain.Runners.Runner.name_format(),
+          message: "must be lowercase letters, digits, dots, dashes or underscores (max 63)"
+        )
+
+      true ->
+        validate_change(changeset, :runner_name, fn :runner_name, name ->
+          if is_nil(name), do: [], else: [runner_name: "is only allowed on a runner key"]
+        end)
     end
   end
 end

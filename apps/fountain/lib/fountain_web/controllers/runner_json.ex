@@ -5,6 +5,17 @@ defmodule FountainWeb.RunnerJSON do
 
   def index(%{runners: runners}), do: %{data: Enum.map(runners, &summary/1)}
 
+  @doc "Response for runner key minting — includes the raw key (shown once only)."
+  def key_created(%{key: key, raw_key: raw_key}) do
+    %{
+      id: key.id,
+      runner_name: key.runner_name,
+      key: raw_key,
+      prefix: key.key_prefix,
+      created_at: key.inserted_at
+    }
+  end
+
   def show(%{runner: runner, online: online}), do: summary(%{runner: runner, online: online})
 
   defp summary(%{runner: %Runner{} = runner, online: online}) do

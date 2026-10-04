@@ -4,10 +4,12 @@ defmodule FountainWeb.RunnerController do
 
       GET    /api/runners        — the user's runners, with live online status
       DELETE /api/runners/:id    — forget one (a live daemon is disconnected)
+      POST   /api/runners/keys   — mint a key that can connect one named runner
       GET    /api/runners/ws     — the daemon's socket (WebSocket upgrade)
 
   The socket authenticates like every other `/api` route — a bearer API key,
-  full scope — and then hands the connection to `Managoat.Runner.Connection`
+  full scope, or a `runner` key bound to the name being registered
+  (`FountainWeb.Plugs.RunnerKeyGate`) — and then hands the connection to `Managoat.Runner.Connection`
   with `Fountain.Runners.Host` behind it.
   The daemon identifies itself in the query string (`name`, plus `hostname`,
   `os`, `arch`, `version`, `root` for the row) so registration happens
@@ -17,6 +19,7 @@ defmodule FountainWeb.RunnerController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
+  alias Fountain.Accounts
   alias Fountain.Runners
   alias FountainWeb.Audited
   alias FountainWeb.ChangesetJSON
@@ -74,6 +77,51 @@ defmodule FountainWeb.RunnerController do
     end
   end
 
+  operation(:create_key,
+    summary: "Mint a runner key",
+    description:
+      "A key that can do exactly one thing: connect the runner named `name` at " <>
+        "`GET /api/runners/ws`. Every other route answers 403 " <>
+        "`insufficient_scope`, and the socket refuses any other runner name. " <>
+        "For a machine that runs code you do not trust, in place of a full-scope " <>
+        "key. The response is the only time the plaintext key is available; " <>
+        "revoke it with `DELETE /api/auth/api-keys/:id`, which also hangs up the " <>
+        "runner's live connection. Full scope only.",
+    request_body: {"Runner name", "application/json", Schemas.RunnerKeyRequest, required: true},
+    responses: [
+      created:
+        {"The new key, with plaintext", "application/json", Schemas.RunnerKeyCreatedResponse},
+      unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
+      forbidden: {"The presented key lacks full scope", "application/json", Schemas.Error},
+      unprocessable_entity: {"Missing or invalid name", "application/json", Schemas.Error}
+    ]
+  )
+
+  def create_key(conn, %{"name" => name}) when is_binary(name) do
+    user = conn.assigns.current_user
+
+    opts = [scopes: ["runner"], runner_name: name] ++ Audited.attribution(conn)
+
+    case Accounts.create_api_key(user.id, "runner:" <> name, opts) do
+      {:ok, {key, raw_key}} ->
+        conn
+        |> put_status(:created)
+        |> render(:key_created, key: key, raw_key: raw_key)
+
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> put_view(ChangesetJSON)
+        |> render(:error, changeset: changeset)
+    end
+  end
+
+  def create_key(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "name is required"})
+  end
+
   operation(:connect,
     summary: "Connect a runner (WebSocket)",
     description:
@@ -99,7 +147,9 @@ defmodule FountainWeb.RunnerController do
       switching_protocols: "Upgraded",
       bad_request: {"Not a WebSocket upgrade, or a bad name", "application/json", Schemas.Error},
       unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
-      forbidden: {"The presented key lacks full scope", "application/json", Schemas.Error},
+      forbidden:
+        {"The presented key lacks full scope, or is a runner key for another name",
+         "application/json", Schemas.Error},
       not_found: {"Runners are disabled on this instance", "application/json", Schemas.Error},
       conflict:
         {"A runner with this name is already connected", "application/json", Schemas.Error}

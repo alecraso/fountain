@@ -4433,7 +4433,12 @@ defmodule FountainWeb.Schemas do
             "`full` for a key a person minted; `sprite:<conversation_id>` for the " <>
               "auto-issued token a sandbox holds."
         },
-        expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
+        expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        runner_name: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The runner a `runner` key is bound to; null for every other key."
+        }
       },
       required: [:id, :name, :prefix, :created_at]
     })
@@ -4920,6 +4925,45 @@ defmodule FountainWeb.Schemas do
         created_at: %Schema{type: :string, format: :"date-time"}
       },
       required: [:id, :name, :key, :prefix]
+    })
+  end
+
+  defmodule RunnerKeyRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "RunnerKeyRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{
+          type: :string,
+          minLength: 1,
+          description:
+            "The runner the key is bound to (lowercase letters, digits, dots, " <>
+              "dashes, underscores; max 63). It may be a runner that has not connected yet."
+        }
+      },
+      required: [:name]
+    })
+  end
+
+  defmodule RunnerKeyCreatedResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "RunnerKeyCreatedResponse",
+      description: "The one and only response that carries a runner key's material.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid, description: "The key id, for revoking it."},
+        runner_name: %Schema{type: :string},
+        key: %Schema{type: :string, description: "Plaintext key. Not recoverable afterwards."},
+        prefix: %Schema{type: :string},
+        created_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :runner_name, :key, :prefix]
     })
   end
 

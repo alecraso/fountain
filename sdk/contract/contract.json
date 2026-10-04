@@ -6822,6 +6822,50 @@
         }
       }
     },
+    "POST /api/runners/keys": {
+      "operation_id": "FountainWeb.RunnerController.create_key",
+      "path_params": [],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "RunnerKeyRequest"
+          }
+        },
+        "required": true
+      },
+      "responses": {
+        "201": {
+          "application/json": {
+            "ref": "RunnerKeyCreatedResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "POST /api/secret-bindings": {
       "operation_id": "FountainWeb.SecretBindingController.create",
       "path_params": [],
@@ -8843,6 +8887,11 @@
           "required": true,
           "type": "string"
         },
+        "runner_name": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "scopes": {
           "items": {
             "type": "string"
@@ -10802,6 +10851,12 @@
           "required": false,
           "type": "boolean"
         },
+        "runner_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "sandbox_api_access": {
           "enum": [
             "none",
@@ -12370,6 +12425,42 @@
         "version": {
           "nullable": true,
           "required": false,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "RunnerKeyCreatedResponse": {
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "required": false,
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "key": {
+          "required": true,
+          "type": "string"
+        },
+        "prefix": {
+          "required": true,
+          "type": "string"
+        },
+        "runner_name": {
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "RunnerKeyRequest": {
+      "properties": {
+        "name": {
+          "required": true,
           "type": "string"
         }
       },

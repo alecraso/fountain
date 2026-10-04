@@ -21,6 +21,10 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
   An unverified account is refused with 403 and `email_unverified` (#533) —
   the one non-401 here, because the key itself is fine and the account, not
   the credential, is what needs fixing.
+
+  A `runner`-scoped key is admitted at one route only, and only for its bound
+  runner name (`FountainWeb.Plugs.RunnerKeyGate`); everything else is 403
+  `insufficient_scope`, so the deny sits here, ahead of every route's own guard.
   """
 
   import Plug.Conn
@@ -30,13 +34,15 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
 
   alias Fountain.Accounts
   alias FountainWeb.Plugs.RateLimit
+  alias FountainWeb.Plugs.RunnerKeyGate
 
   def init(opts), do: opts
 
   def call(conn, _opts) do
     with [auth_header] <- get_req_header(conn, "authorization"),
          "Bearer " <> raw_key <- auth_header,
-         {:ok, user, api_key} <- Accounts.authenticate_api_key(raw_key) do
+         {:ok, user, api_key} <- Accounts.authenticate_api_key(raw_key),
+         :ok <- RunnerKeyGate.admit(conn, api_key) do
       # Unlinked and supervised (#1040). `Task.async` linked this to the conn
       # process and nothing ever awaited it, so a pool blip stamping a column
       # nothing reads on the hot path could kill a request that had already
@@ -86,6 +92,24 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
           "email_unverified"
         )
 
+      # A runner key is authenticated and then held to its one route and one
+      # name (`RunnerKeyGate`); the same refusal shape as `RequireFullScope`.
+      {:error, :insufficient_scope} ->
+        refuse(
+          conn,
+          :forbidden,
+          "This API key is not permitted to use this endpoint",
+          "insufficient_scope"
+        )
+
+      {:error, :runner_name_mismatch} ->
+        # `error` is the code here, as on `RunnerController`'s own refusals,
+        # because a daemon branches on it; `reason` repeats it for clients that
+        # read every 401/403 from this plug by `reason`.
+        refuse(conn, :forbidden, "runner_name_mismatch", "runner_name_mismatch", %{
+          message: "this API key may only connect the runner it is bound to"
+        })
+
       _ ->
         unauthorized(conn, "Invalid or missing API key", "api_key_invalid")
     end
@@ -93,7 +117,7 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
 
   defp unauthorized(conn, message, reason), do: refuse(conn, :unauthorized, message, reason)
 
-  defp refuse(conn, status, message, reason) do
+  defp refuse(conn, status, message, reason, extra \\ %{}) do
     conn = RateLimit.call(conn, RateLimit.init(bucket: "api-auth-failure", max: 600))
 
     if conn.halted do
@@ -101,7 +125,7 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
     else
       conn
       |> put_status(status)
-      |> json(%{error: message, reason: reason})
+      |> json(Map.merge(extra, %{error: message, reason: reason}))
       |> halt()
     end
   end

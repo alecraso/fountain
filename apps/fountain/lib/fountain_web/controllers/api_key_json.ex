@@ -28,7 +28,8 @@ defmodule FountainWeb.ApiKeyJSON do
       # Surfacing scope and expiry is what makes those distinguishable from a
       # key the user created and is responsible for.
       scopes: key.scopes,
-      expires_at: key.expires_at
+      expires_at: key.expires_at,
+      runner_name: key.runner_name
     }
   end
 end

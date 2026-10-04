@@ -17,6 +17,11 @@ defmodule FountainWeb.Plugs.RequireFullScope do
   `reason: "insufficient_scope"` and `required_scope: "full"` so callers can
   branch on shape rather than prose.
 
+  `allow_runner: true` also admits a `runner` key (ADR 0022, arugula fork), for
+  the daemon's socket alone. The key is already confined to that route and its
+  bound name by `FountainWeb.Plugs.RunnerKeyGate` at authentication; this only
+  stops the option from widening any other route should it be copied.
+
   Session-authenticated browser routes never reach this plug; it guards the
   bearer-token API pipeline only.
   """
@@ -30,8 +35,8 @@ defmodule FountainWeb.Plugs.RequireFullScope do
 
   def init(opts), do: opts
 
-  def call(%{assigns: %{current_api_key: %ApiKey{}}} = conn, opts) do
-    if full_scope?(conn) do
+  def call(%{assigns: %{current_api_key: %ApiKey{} = key}} = conn, opts) do
+    if full_scope?(conn) or (Keyword.get(opts, :allow_runner, false) and ApiKey.runner_key?(key)) do
       conn
     else
       refuse(conn, Keyword.get(opts, :error, @default_error))
