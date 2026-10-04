@@ -51,6 +51,11 @@ defmodule Fountain.Conversations.Launch do
                                 "fountain-<short-user-id>-<suffix>"; defaults to a random
                                 suffix. Refused with `sandbox_api_access: "none"`, and on
                                 the runner provider, whose names carry placement (#1632)
+    - `runner_id`             — optional runner (dashed UUID) to place the sandbox on,
+                                instead of the user's most recently connected one
+                                (arugula fork). Runner provider only; fetched under
+                                `user_id`. Refused with `sandbox_id`, which already has a
+                                placement, and when the identity's home already exists
     - `vault_id`              — optional vault whose secrets override the env's
     - `environment_id`        — optional environment to provision from instead of the
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
@@ -83,7 +88,9 @@ defmodule Fountain.Conversations.Launch do
   # resolved the same way; only the sandbox step differs.
   def start_conversation(%{"sandbox_id" => sandbox_id} = attrs, opts)
       when is_binary(sandbox_id) and sandbox_id != "" do
-    attach_conversation(sandbox_id, attrs, opts)
+    if present?(attrs["runner_id"]),
+      do: {:error, :runner_id_with_sandbox},
+      else: attach_conversation(sandbox_id, attrs, opts)
   end
 
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
@@ -123,7 +130,12 @@ defmodule Fountain.Conversations.Launch do
          :new <- home_or_new(mode, user_id, agent, env_id || agent.environment_id, vault_id),
          {:ok, provider} <- Conversations.resolve_sandbox_provider(agent),
          {:ok, machine_name} <-
-           Conversations.mint_machine_name(provider, user_id, attrs["sprite_name"]),
+           Conversations.mint_machine_name(
+             provider,
+             user_id,
+             attrs["sprite_name"],
+             blank_to_nil(attrs["runner_id"])
+           ),
          {:ok, {sandbox, conv, allowance}} <-
            reserve_initial_conversation(
              %{
@@ -255,8 +267,12 @@ defmodule Fountain.Conversations.Launch do
         {:error, :not_found}
 
       # The identity already has a home: this launch is a conversation on it.
+      # A home is already placed, so a `runner_id` has nothing left to choose
+      # (arugula fork); say so rather than land the launch somewhere else.
       {:home, %Sandbox{} = home} ->
-        attach_conversation(home.id, attrs, opts)
+        if present?(attrs["runner_id"]),
+          do: {:error, :runner_id_with_sandbox},
+          else: attach_conversation(home.id, attrs, opts)
 
       # Two persistent launches of one identity raced to create its home and
       # this one lost at the unique index. The winner's row is the home now;
@@ -289,6 +305,10 @@ defmodule Fountain.Conversations.Launch do
         err
     end
   end
+
+  defp present?(value), do: is_binary(value) and value != ""
+
+  defp blank_to_nil(value), do: if(present?(value), do: value)
 
   defp resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
     do: {:ok, "owner"}

@@ -985,6 +985,21 @@ defmodule FountainWeb.Schemas do
               "sandbox_api_access none, which requires a machine no other conversation " <>
               "can reach."
         },
+        runner_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Place the conversation's sandbox on this self-hosted runner (a runner id " <>
+              "from GET /api/runners) instead of the account's most recently connected " <>
+              "one. Only for an agent that runs on the runner provider: 422 " <>
+              "runner_id_not_applicable otherwise. 404 runner_not_found when the id is " <>
+              "not one of this account's runners, whether or not it exists elsewhere; " <>
+              "409 no_runner_online when it is but is not connected. 422 " <>
+              "runner_id_with_sandbox with sandbox_id, or when the agent's persistent " <>
+              "home already exists: a machine already has its placement. Omitted, the " <>
+              "server picks as before."
+        },
         sandbox_mode: %Schema{
           type: :string,
           enum: ~w(ephemeral persistent),

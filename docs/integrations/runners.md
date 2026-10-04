@@ -75,7 +75,9 @@ or send `sandbox_provider: "runner"` to `POST /api/agents`.
 
 Fountain places a new conversation for that agent on your **most recently
 connected online runner**. Start one while no runner is online and it fails
-plainly, with `no_runner_online` and HTTP 409. It does not queue.
+plainly, with `no_runner_online` and HTTP 409. It does not queue. A start can
+choose the runner instead with `runner_id`; see
+[Place a conversation on a runner](../api.md#place-a-conversation-on-a-runner).
 
 Account, then Runners, or `GET /api/runners`, lists each machine that has
 connected, with live online status. `DELETE /api/runners/:id` forgets one. A

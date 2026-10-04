@@ -650,6 +650,30 @@ must pass the credit gate and the inference gate again.
 A teammate schedule uses the queue without the flag. No person is present
 when its cron fires, so Fountain must not lose the run.
 
+### Place a conversation on a runner
+
+A new conversation for an agent on the `runner` provider goes to your most
+recently connected online runner. To choose one, send its id from
+`GET /api/runners` as `runner_id` on `POST /api/conversations`:
+
+```json
+{ "agent_id": "…", "runner_id": "6f1c0d52-6a58-4f3c-9d6e-0a8f2f0c9a11", "prompt": "…" }
+```
+
+The conversation's sandbox is created on that runner even when another of your
+runners connected more recently. Without `runner_id` nothing changes. The
+refusals:
+
+| Status | `error` | When |
+|---|---|---|
+| 404 | `runner_not_found` | The id is not one of your runners. A runner that belongs to another account answers the same as one that does not exist. |
+| 409 | `no_runner_online` | The runner is yours but is not connected. The start does not wait. |
+| 422 | `runner_id_not_applicable` | The agent does not run on the `runner` provider. |
+| 422 | `runner_id_with_sandbox` | The request also sets `sandbox_id`, or a persistent agent's home already exists. A machine already has its runner. |
+
+An agent pinned to one runner for every conversation (`agents.runner_id`) is not
+built.
+
 ### Labels
 
 A label is a `key=value` pair of strings on a conversation. A program stamps

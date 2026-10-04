@@ -714,7 +714,7 @@ defmodule FountainWeb.ConversationController do
   # `attrs` until the request expired.
   @queued_attr_keys ~w(prompt title vault_id environment_id inference_credential_id
                        permission_policy model session_config sandbox_mode sandbox_api_access
-                       sprite_name
+                       sprite_name runner_id
                        channel_id fresh parent_conversation_id labels
                        execution_limits client_request_id)
 

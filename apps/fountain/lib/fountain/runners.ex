@@ -247,6 +247,30 @@ defmodule Fountain.Runners do
     end
   end
 
+  @doc """
+  Mint a sandbox name on the runner the caller pinned (arugula fork). The
+  runner is fetched under `user_id`, so another account's runner and one that
+  does not exist are the same `:runner_not_found`: the name is the placement
+  (ADR 0022), and a name minted from a raw id would route the launch to
+  somebody else's machine. A malformed id is not found either.
+  """
+  @spec mint_sandbox_name(binary(), term()) ::
+          {:ok, String.t()} | {:error, :runner_not_found | :no_runner_online}
+  def mint_sandbox_name(user_id, runner_id) when is_binary(runner_id) do
+    with {:ok, runner_id} <- cast_runner_id(runner_id),
+         %Runner{} = runner <- get_runner(runner_id, user_id) || {:error, :runner_not_found},
+         true <- online?(runner) || {:error, :no_runner_online} do
+      {:ok, sandbox_name_for(runner.id)}
+    end
+  end
+
+  defp cast_runner_id(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> {:ok, id}
+      :error -> {:error, :runner_not_found}
+    end
+  end
+
   @doc "The sandbox name shape for a runner id: `runner-<32 hex>-<8 hex>`."
   @spec sandbox_name_for(binary()) :: String.t()
   def sandbox_name_for(runner_id), do: Names.for_runner(runner_id)

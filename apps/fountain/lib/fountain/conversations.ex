@@ -3736,7 +3736,26 @@ defmodule Fountain.Conversations do
   # `Fountain.Conversations.Launch`, #2217):
   # `create_fresh_sandbox_and_start/4` moved there and calls this remotely;
   # `start_conversation/2` below still calls it locally.
+  #
+  # `runner_id` (arugula fork) is the caller's choice of runner, a distinct
+  # argument rather than a name override: it is resolved under `user_id`
+  # (`Runners.mint_sandbox_name/2`) and never reaches the name unchecked. It
+  # means nothing off the runner provider, which has no runners to pin to.
   @doc false
+  def mint_machine_name(provider, user_id, name, runner_id)
+
+  def mint_machine_name(provider, user_id, name, nil),
+    do: mint_machine_name(provider, user_id, name)
+
+  def mint_machine_name(:runner, _user_id, name, _runner_id) when is_binary(name) and name != "",
+    do: {:error, :sprite_name_not_supported}
+
+  def mint_machine_name(:runner, user_id, _name, runner_id) when is_binary(runner_id),
+    do: Fountain.Runners.mint_sandbox_name(user_id, runner_id)
+
+  def mint_machine_name(_provider, _user_id, _name, runner_id) when is_binary(runner_id),
+    do: {:error, :runner_id_not_applicable}
+
   def mint_machine_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
 
   def mint_machine_name(_provider, user_id, nil),

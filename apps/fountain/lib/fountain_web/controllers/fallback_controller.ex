@@ -507,7 +507,8 @@ defmodule FountainWeb.FallbackController do
   end
 
   # The agent runs on the self-hosted runner provider (ADR 0022) and none of
-  # the user's runners is connected right now. 409: nothing is misconfigured,
+  # the user's runners is connected right now, or the one a launch pinned with
+  # `runner_id` is not. 409: nothing is misconfigured,
   # a machine just is not online — start `fountain runner` and retry.
   def call(conn, {:error, :no_runner_online}) do
     conn
@@ -515,7 +516,8 @@ defmodule FountainWeb.FallbackController do
     |> json(%{
       error: "no_runner_online",
       message:
-        "this agent runs on a self-hosted runner and none of yours is connected — " <>
+        "this agent runs on a self-hosted runner and none of yours is connected " <>
+          "(or the one named by runner_id is not) — " <>
           "start `fountain runner` on the machine and try again"
     })
   end
@@ -899,6 +901,35 @@ defmodule FountainWeb.FallbackController do
         "this agent runs on a self-hosted runner, where the sandbox name carries the " <>
           "runner it is placed on; omit sprite_name and let the server mint it"
     })
+  end
+
+  def call(conn, {:error, :runner_id_not_applicable}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "runner_id_not_applicable",
+      message:
+        "runner_id places a sandbox on a self-hosted runner; this agent does not run on one"
+    })
+  end
+
+  def call(conn, {:error, :runner_id_with_sandbox}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "runner_id_with_sandbox",
+      message:
+        "runner_id cannot be combined with sandbox_id or an existing home: " <>
+          "that machine is already placed on a runner"
+    })
+  end
+
+  # Another account's runner and one that does not exist answer alike, so a
+  # runner id cannot be probed across tenants (arugula fork).
+  def call(conn, {:error, :runner_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "runner_not_found", message: "no runner with that id on this account"})
   end
 
   def call(conn, {:error, :invalid_sandbox_mode}) do

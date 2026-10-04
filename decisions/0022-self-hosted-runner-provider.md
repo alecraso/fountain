@@ -78,9 +78,13 @@ so the routing key has to be in the name. Runner sandboxes are minted as
 `runner-<runner_id>-<short>` (`runner_id` is the row's UUID without dashes)
 at the two mint sites in `Fountain.Conversations`, which pick the user's
 runner at that moment. Per-agent pinning (`agents.runner_id`) is **not built**;
-today the selection rule is *the user's most recently connected online
+the default selection rule is *the user's most recently connected online
 runner*, and minting fails with `{:error, :no_runner_online}` when there is
-none. A
+none. Per-conversation pinning **is built** (arugula fork): `POST
+/api/conversations` takes an optional `runner_id`, and the name is minted for
+that runner (`Runners.mint_sandbox_name/2`), fetched under the caller's
+`user_id` so another account's runner id cannot route a launch to their machine
+(404 `runner_not_found`, the same answer as for an id that does not exist). A
 handle for a runner that is currently offline yields `{:unavailable,
 :runner_offline}` from every operation — transient in the taxonomy, so the
 wake path retries and never mistakes it for `:not_found` (a parked directory
@@ -157,7 +161,8 @@ server rejects a `hello` for a runner name that already has a live connection
   host, which is not built.
 - `apt` packages in an environment fail on a Mac runner (there is no apt);
   `npm` packages install into the host's global prefix. Neither is translated.
-- Per-agent runner pinning (`agents.runner_id`), a runner picker in the agent
+- Per-agent runner pinning (`agents.runner_id`; per-conversation pinning by
+  `runner_id` on create is built), a runner picker in the agent
   form, runner-side resource limits and a systemd/launchd install helper are
   follow-ups; the shape (a runner row per machine, the id in the name) does
   not need to change for any of them.
