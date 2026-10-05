@@ -86,6 +86,9 @@ func (p *Process) Create(req Request) (map[string]any, func(), error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, unavailable(err.Error())
 	}
+	if err := writeGNUProfile(dir); err != nil {
+		return nil, nil, unavailable(err.Error())
+	}
 	return map[string]any{}, nil, nil
 }
 
@@ -280,6 +283,35 @@ var gnuBins = []string{
 	"/usr/local/opt/findutils/libexec/gnubin",
 }
 
+// presentGNUBins is gnuBins that exist on this machine.
+func presentGNUBins() []string {
+	found := []string{}
+	for _, gnu := range gnuBins {
+		if st, err := os.Stat(gnu); err == nil && st.IsDir() {
+			found = append(found, gnu)
+		}
+	}
+	return found
+}
+
+// writeGNUProfile keeps the GNU tools first in a login shell. Provisioning
+// runs `bash -lc`, and macOS's /etc/profile (path_helper) moves the system's
+// BSD tools back in front of PATH; the sandbox's own ~/.bash_profile is read
+// after it. A profile already there is left alone.
+func writeGNUProfile(dir string) error {
+	gnu := presentGNUBins()
+	profile := filepath.Join(dir, ".bash_profile")
+	if len(gnu) == 0 {
+		return nil
+	}
+	if _, err := os.Stat(profile); err == nil {
+		return nil
+	}
+	line := "# fountain runner: GNU tools first, after /etc/profile's path_helper\nexport PATH=\"" +
+		strings.Join(gnu, string(os.PathListSeparator)) + string(os.PathListSeparator) + "$PATH\"\n"
+	return os.WriteFile(profile, []byte(line), 0o600)
+}
+
 func (p *Process) env(dir string, pairs [][]string) []string {
 	base := map[string]string{}
 	order := []string{}
@@ -308,10 +340,8 @@ func (p *Process) env(dir string, pairs [][]string) []string {
 	// Provisioning scripts are written for Linux: `mv -T`, `xargs -d`,
 	// `base64 -w0`, `date +%N`. On a Mac, Homebrew's GNU coreutils and
 	// findutils keep their plain names in gnubin; put those first.
-	for _, gnu := range gnuBins {
-		if st, err := os.Stat(gnu); err == nil && st.IsDir() {
-			sandboxBins += string(os.PathListSeparator) + gnu
-		}
+	for _, gnu := range presentGNUBins() {
+		sandboxBins += string(os.PathListSeparator) + gnu
 	}
 	path := sandboxBins + string(os.PathListSeparator) + base["PATH"]
 	if len(extra) > 0 {

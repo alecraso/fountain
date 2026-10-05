@@ -154,6 +154,27 @@ func TestGNUToolsComeFirstOnPATH(t *testing.T) {
 	}
 }
 
+// A login shell (`bash -lc`, as provisioning runs) still finds the GNU tools
+// first: macOS's /etc/profile reorders PATH, and the sandbox profile undoes it.
+func TestLoginShellFindsGNUToolsFirst(t *testing.T) {
+	gnu := t.TempDir()
+	if err := os.WriteFile(filepath.Join(gnu, "xargs"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := gnuBins
+	gnuBins = []string{gnu}
+	t.Cleanup(func() { gnuBins = saved })
+
+	d := newDaemon(t)
+	rec := newRecorder()
+	do(t, d, Request{Op: "create", Name: "sb"}, rec)
+	got := do(t, d, Request{Op: "exec", Name: "sb", Cmd: "bash", Args: []string{"-lc", "command -v xargs"}}, rec)
+	out, _ := base64.StdEncoding.DecodeString(got["output"].(string))
+	if strings.TrimSpace(string(out)) != filepath.Join(gnu, "xargs") {
+		t.Fatalf("login shell found %q", out)
+	}
+}
+
 func TestSuspendResume(t *testing.T) {
 	d := newDaemon(t)
 	rec := newRecorder()
