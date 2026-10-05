@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -354,6 +355,14 @@ func (p *Process) env(dir string, pairs [][]string) []string {
 		set("npm_config_cache", filepath.Join(p.RealHome, ".npm"))
 	}
 	set("FOUNTAIN_SANDBOX_DIR", dir)
+	// The ACP adapter's manifest install fetches Linux packages only, so on a
+	// Mac the Claude SDK has no native binary for darwin. Point it at the
+	// machine's own `claude`, unless the environment already names one.
+	if runtime.GOOS == "darwin" && base["CLAUDE_CODE_EXECUTABLE"] == "" {
+		if claude, err := exec.LookPath("claude"); err == nil {
+			set("CLAUDE_CODE_EXECUTABLE", claude)
+		}
+	}
 	for _, kv := range pairs {
 		if len(kv) == 2 {
 			set(kv[0], kv[1])

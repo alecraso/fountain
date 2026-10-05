@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -172,6 +173,36 @@ func TestLoginShellFindsGNUToolsFirst(t *testing.T) {
 	out, _ := base64.StdEncoding.DecodeString(got["output"].(string))
 	if strings.TrimSpace(string(out)) != filepath.Join(gnu, "xargs") {
 		t.Fatalf("login shell found %q", out)
+	}
+}
+
+// On a Mac the Claude SDK uses the machine's own claude; the request's env wins.
+func TestMacUsesTheMachinesClaude(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	bin := t.TempDir()
+	claude := filepath.Join(bin, "claude")
+	if err := os.WriteFile(claude, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLAUDE_CODE_EXECUTABLE", "")
+
+	p := &Process{Root: t.TempDir()}
+	lookup := func(env []string) string {
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "CLAUDE_CODE_EXECUTABLE=") {
+				return strings.TrimPrefix(kv, "CLAUDE_CODE_EXECUTABLE=")
+			}
+		}
+		return ""
+	}
+	if got := lookup(p.env(filepath.Join(p.Root, "sb"), nil)); got != claude {
+		t.Fatalf("CLAUDE_CODE_EXECUTABLE = %q, want %q", got, claude)
+	}
+	if got := lookup(p.env(filepath.Join(p.Root, "sb"), [][]string{{"CLAUDE_CODE_EXECUTABLE", "/x/claude"}})); got != "/x/claude" {
+		t.Fatalf("request env lost: %q", got)
 	}
 }
 
