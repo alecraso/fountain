@@ -124,6 +124,36 @@ func TestCreateGetDestroy(t *testing.T) {
 	}
 }
 
+// Provisioning scripts use GNU flags; a Mac's GNU tools come first on PATH.
+func TestGNUToolsComeFirstOnPATH(t *testing.T) {
+	gnu := t.TempDir()
+	saved := gnuBins
+	gnuBins = []string{gnu, filepath.Join(gnu, "absent")}
+	t.Cleanup(func() { gnuBins = saved })
+
+	p := &Process{Root: t.TempDir()}
+	var path string
+	for _, kv := range p.env(filepath.Join(p.Root, "sb"), nil) {
+		if strings.HasPrefix(kv, "PATH=") {
+			path = strings.TrimPrefix(kv, "PATH=")
+		}
+	}
+	parts := filepath.SplitList(path)
+	at := -1
+	for i, part := range parts {
+		if part == gnu {
+			at = i
+		}
+		if strings.Contains(part, "absent") {
+			t.Fatalf("a missing directory is on PATH: %s", path)
+		}
+	}
+	// After the sandbox's own bins, before the inherited PATH.
+	if at != 3 {
+		t.Fatalf("GNU bin at %d in %s", at, path)
+	}
+}
+
 func TestSuspendResume(t *testing.T) {
 	d := newDaemon(t)
 	rec := newRecorder()

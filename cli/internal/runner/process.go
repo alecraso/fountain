@@ -271,6 +271,15 @@ func lookPath(name string, env []string) string {
 	return name
 }
 
+// gnuBins are Homebrew's GNU tools under their plain names (Apple silicon,
+// then Intel). Absent elsewhere, so a Linux runner is unchanged.
+var gnuBins = []string{
+	"/opt/homebrew/opt/coreutils/libexec/gnubin",
+	"/opt/homebrew/opt/findutils/libexec/gnubin",
+	"/usr/local/opt/coreutils/libexec/gnubin",
+	"/usr/local/opt/findutils/libexec/gnubin",
+}
+
 func (p *Process) env(dir string, pairs [][]string) []string {
 	base := map[string]string{}
 	order := []string{}
@@ -294,6 +303,14 @@ func (p *Process) env(dir string, pairs [][]string) []string {
 	for _, path := range []string{"/opt/homebrew/bin", "/usr/local/bin", filepath.Join(p.RealHome, ".local", "bin"), filepath.Join(p.RealHome, ".bun", "bin")} {
 		if st, err := os.Stat(path); err == nil && st.IsDir() && !strings.Contains(base["PATH"], path) {
 			extra = append(extra, path)
+		}
+	}
+	// Provisioning scripts are written for Linux: `mv -T`, `xargs -d`,
+	// `base64 -w0`, `date +%N`. On a Mac, Homebrew's GNU coreutils and
+	// findutils keep their plain names in gnubin; put those first.
+	for _, gnu := range gnuBins {
+		if st, err := os.Stat(gnu); err == nil && st.IsDir() {
+			sandboxBins += string(os.PathListSeparator) + gnu
 		}
 	}
 	path := sandboxBins + string(os.PathListSeparator) + base["PATH"]
