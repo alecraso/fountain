@@ -164,6 +164,16 @@ straight to this one with a rolling deploy: its replicas would fail every
 request that loads an account until they are replaced. A deploy that stops
 every old replica before migrating can skip it.
 
+## Webhook and connection tables dropped
+
+The release that removed outbound webhooks and Connections stopped reading
+`webhook_endpoints`, `webhook_deliveries`, `connections` and
+`connection_providers` but left them in place, because its predecessor reads
+them on every turn. Migration `20261012200000` drops all four. Take it only
+after that release is fully rolled out; a rolling upgrade straight from an
+older release fails the old replicas' turns until they are replaced. The
+stored webhook secrets and connection tokens go with the tables.
+
 ## Conversation message compatibility
 
 The server uses the `managoat_acp` peer from its own release. The audited peer
