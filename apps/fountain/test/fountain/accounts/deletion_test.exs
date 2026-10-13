@@ -25,15 +25,6 @@ defmodule Fountain.Accounts.DeletionTest do
     :ok
   end
 
-  defp billing_user(attrs) do
-    user = insert_verified_user()
-
-    {:ok, user} =
-      user |> User.billing_changeset(attrs) |> Repo.update()
-
-    user
-  end
-
   describe "deletion confirmation email (#450)" do
     test "a verified account's deletion enqueues the confirmation, carrying the address" do
       user = insert_verified_user()
@@ -101,11 +92,11 @@ defmodule Fountain.Accounts.DeletionTest do
       # Nilify rather than cascade, so historical usage totals do not silently
       # change every time somebody closes an account.
       user = insert_verified_user()
-      {:ok, event} = Fountain.Billing.record_usage(user.id, "turn_started", nil, nil)
+      {:ok, event} = Fountain.Usage.record_usage(user.id, "turn_started", nil, nil)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
-      assert reloaded = Repo.get(Fountain.Billing.UsageEvent, event.id)
+      assert reloaded = Repo.get(Fountain.Usage.Event, event.id)
       assert reloaded.user_id == nil
     end
   end
@@ -175,14 +166,6 @@ defmodule Fountain.Accounts.DeletionTest do
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
       assert Repo.get(Sandbox, sandbox.id).status == "terminated"
-    end
-  end
-
-  describe "billing" do
-    test "nothing is cancelled upstream: there is no subscription (ADR 0031)" do
-      user = billing_user(%{stripe_customer_id: "cus_123"})
-      assert {:ok, _} = Deletion.delete_user(user, actor: "self")
-      refute Repo.get(User, user.id)
     end
   end
 

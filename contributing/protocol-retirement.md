@@ -130,7 +130,7 @@ Keep the native assertions in `saved_allowance_channel_test.exs`,
 feature-flag tests that happen to use `openai_compat` with a test flag; preserve
 remote-cache, failure and analytics behavior.
 
-Search the whole repository again after editing, including `ee/`, extension
+Search the whole repository again after editing, including extension
 apps, tests and scripts. Update stale comments in `PromptInput`, `Agents` and
 `llms_controller`, and test timing manifests for files actually deleted.
 Do not remove provider-side `/v1/models` calls or model-catalog commentary just
@@ -140,7 +140,7 @@ Published surfaces to reconcile:
 
 - Integration pages: `openai-compatible.md`, `openbot.md`, `langchain.md`,
   `gateways.md`, `clients.md`, plus `docs/nav.yml`.
-- Build guides, docs index, glossary, webhook catalog, feature-status and
+- Build guides, docs index, glossary, feature-status and
   configuration pages.
 - `.env.example`, `.env.compose.example`, and the Compose flag comments.
 - The three example directories above and links to them.

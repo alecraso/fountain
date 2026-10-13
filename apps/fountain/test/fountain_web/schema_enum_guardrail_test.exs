@@ -32,7 +32,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   alias Fountain.Agents.Agent
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
   alias Fountain.Environments.Environment
-  alias Fountain.Exports.Export
   alias Fountain.InferenceCredentials.Credential
   alias Fountain.{Images, Manifest}
   alias OpenApiSpex.Schema
@@ -49,7 +48,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       {Conversation, :sandbox_api_access_modes},
     {FountainWeb.Schemas.CatalogResponse, "data.sandbox_api_access.[]"} =>
       {Conversation, :sandbox_api_access_modes},
-    {FountainWeb.Schemas.Connection, "status"} => {Fountain.Connections.Connection, :statuses},
     # Which source served a turn (ADR 0060 decision 6), from the stored source.
     {FountainWeb.Schemas.Turn, "inference.scope"} =>
       {Fountain.InferenceCredentials.Source, :scopes},
@@ -68,14 +66,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       {Fountain.ChatGPTAccounts.LinkAttempt, :failure_reasons},
     {FountainWeb.Schemas.ChatGPTLinkAttempt, "kind"} =>
       {Fountain.ChatGPTAccounts.AttemptView, :kinds},
-    # Claimable principals (ADR 0044). Three schemas restate the same list,
-    # which is exactly the drift this test exists for.
-    {FountainWeb.Schemas.ClaimableUser, "status"} =>
-      {Fountain.Principals.ClaimableUser, :statuses},
-    {FountainWeb.Schemas.ClaimableUserCreated, "status"} =>
-      {Fountain.Principals.ClaimableUser, :statuses},
-    {FountainWeb.Schemas.ClaimedPrincipal, "status"} =>
-      {Fountain.Principals.ClaimableUser, :statuses},
     # Sandbox files (ADR 0039): what the listing script classifies an entry
     # as, and how a file's bytes travel.
     {FountainWeb.Schemas.SandboxEntry, "type"} => {Fountain.SandboxFiles, :entry_types},
@@ -85,38 +75,25 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.SandboxChange, "index"} => {Fountain.SandboxFiles, :change_states},
     {FountainWeb.Schemas.SandboxChange, "worktree"} => {Fountain.SandboxFiles, :change_states},
     {FountainWeb.Schemas.SandboxStatus, "untracked"} => {Fountain.SandboxFiles, :untracked_modes},
-    # Connection providers (#1186): the kinds, the client-auth methods and
-    # where a client came from are the provider schema's own lists.
-    {FountainWeb.Schemas.ConnectionProvider, "kind"} => {Fountain.Connections.Provider, :kinds},
-    {FountainWeb.Schemas.ConnectionProviderRequest, "kind"} =>
-      {Fountain.Connections.Provider, :kinds},
-    {FountainWeb.Schemas.ConnectionProvider, "token_endpoint_auth"} =>
-      {Fountain.Connections.Provider, :token_endpoint_auths},
-    {FountainWeb.Schemas.ConnectionProviderRequest, "token_endpoint_auth"} =>
-      {Fountain.Connections.Provider, :token_endpoint_auths},
     {FountainWeb.Schemas.AdminRoleRequest, "role"} => {User, :roles},
     {FountainWeb.Schemas.AdminUser, "role"} => {User, :roles},
     {FountainWeb.Schemas.AuthMeResponse, "role"} => {User, :roles},
-    # The five Fountain ships, and the only ones the published contract names:
+    # The four Fountain ships, and the only ones the published contract names:
     # `fountain-fixture` is a per-deployment test harness, and a deployment that
     # names a fixture account adds it to the spec that deployment serves
     # (`FountainWeb.ApiSpec.FixtureRuntime`, #1716). Admission is narrower still
     # — `Agent.runtimes/0` — as sandbox providers distinguish known_providers/0
-    # from enabled_providers/0.
-    {FountainWeb.Schemas.Agent, "runtime"} => {Agent, :packaged_runtimes},
+    # from enabled_providers/0. Responses carry no enum for a runtime or a
+    # provider: rows from before opencode and Daytona were removed (2026-10)
+    # still name them.
     {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :packaged_runtimes},
     {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :packaged_runtimes},
     {FountainWeb.Schemas.Agent, "sandbox_provider"} =>
       {Fountain.SandboxProviders, :known_providers},
-    {FountainWeb.Schemas.Sandbox, "provider"} => {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.AgentRequest, "sandbox_provider"} =>
       {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.AgentUpdate, "sandbox_provider"} =>
       {Fountain.SandboxProviders, :known_providers},
-    # A conversation's runtime is copied from its agent at spawn, so it must
-    # speak the same vocabulary even though the column carries no inclusion
-    # validation of its own.
-    {FountainWeb.Schemas.Conversation, "runtime"} => {Agent, :packaged_runtimes},
     {FountainWeb.Schemas.Agent, "avatar_media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.AvatarRequest, "media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.ImageInput, "media_type"} => {Images, :valid_media_types},
@@ -137,7 +114,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.Environment, "networking_type"} => {Environment, :networking},
     {FountainWeb.Schemas.EnvironmentRequest, "networking_type"} => {Environment, :networking},
     {FountainWeb.Schemas.EnvironmentUpdate, "networking_type"} => {Environment, :networking},
-    {FountainWeb.Schemas.Export, "status"} => {Export, :statuses},
     {FountainWeb.Schemas.InferenceCredentialStatus, "provider"} => {Credential, :providers},
     {FountainWeb.Schemas.InferenceCredentialSet, "providers.[]"} => {Credential, :providers},
     {FountainWeb.Schemas.LogEvent, "kind"} => {LogEvent, :kinds},
@@ -160,10 +136,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.AgentUpdate, "sandbox_mode"} => {Agent, :sandbox_modes},
     # The sandbox listing (ADR 0023 gate 3): a sandbox with its conversations.
     {FountainWeb.Schemas.SandboxDetail, "status"} => {Sandbox, :statuses},
-    {FountainWeb.Schemas.SandboxDetail, "provider"} =>
-      {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.SandboxConversation, "status"} => {Conversation, :statuses},
-    {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :packaged_runtimes},
     {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
     {FountainWeb.Schemas.Turn, "origin"} => {Turn, :origins},
     {FountainWeb.Schemas.Teammate, "presence.state"} =>
@@ -175,10 +148,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.SecretBinding, "auth_type"} =>
       {Fountain.SecretBindings.Binding, :auth_types},
     {FountainWeb.Schemas.SecretBindingRequest, "auth_type"} =>
-      {Fountain.SecretBindings.Binding, :auth_types},
-    {FountainWeb.Schemas.WebhookEndpoint, "status"} => {Fountain.Webhooks.Endpoint, :statuses},
-    {FountainWeb.Schemas.WebhookEndpointUpdateRequest, "status"} =>
-      {Fountain.Webhooks.Endpoint, :statuses}
+      {Fountain.SecretBindings.Binding, :auth_types}
   }
 
   # Enums with no domain list behind them. Each entry needs a reason: the
@@ -196,16 +166,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       "ACP selection outcomes built per report in TurnMachine",
     {FountainWeb.Schemas.Turn, "model_selection.source"} =>
       "ACP peer evidence: a runtime model field or a setter acknowledgement",
-    # `client_source` is nullable on the wire (no client yet), so the enum
-    # carries a nil the domain list does not.
-    {FountainWeb.Schemas.ConnectionProvider, "client_source"} =>
-      "Provider.client_sources/0 plus nil for a provider with no client yet",
-    # Outcomes of two admin actions. Computed in the controller from what the
+    # Outcomes of an admin action. Computed in the controller from what the
     # action did; they describe an HTTP response, not a stored value.
     {FountainWeb.Schemas.AdminReapResponse, "data.outcome"} =>
       "admin reap result — response vocabulary, not persisted state",
-    {FountainWeb.Schemas.AdminResyncResponse, "data.outcome"} =>
-      "admin resync result — response vocabulary, not persisted state",
     # Per-resource results from `fountain apply`. Manifest reports these as
     # atoms built inline per branch; there is no list to compare against.
     {FountainWeb.Schemas.ApplyResult, "action"} =>

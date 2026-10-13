@@ -463,14 +463,10 @@ defmodule Fountain.Machines.RegisterServerTest do
     end
 
     defp source_files(root) do
-      top_level =
-        ["apps/fountain/lib", "ee/lib"]
-        |> Enum.map(&Path.join(root, &1))
-        |> Enum.filter(&File.dir?/1)
-
-      buzz = root |> Path.join("apps/fountain_*/lib") |> Path.wildcard()
-
-      (top_level ++ buzz)
+      root
+      |> Path.join("apps/fountain/lib")
+      |> List.wrap()
+      |> Enum.filter(&File.dir?/1)
       |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.ex")))
       |> Enum.sort()
     end
@@ -490,8 +486,7 @@ defmodule Fountain.Machines.RegisterServerTest do
   defp committed_tenant do
     user =
       Repo.insert!(%Fountain.Accounts.User{
-        email: "register-server-#{Ecto.UUID.generate()}@example.test",
-        credit_balance_cents: 0
+        email: "register-server-#{Ecto.UUID.generate()}@example.test"
       })
 
     sandbox =

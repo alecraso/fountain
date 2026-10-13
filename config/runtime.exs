@@ -146,18 +146,6 @@ e2b_base_url =
     url -> url
   end
 
-daytona_api_key =
-  case System.get_env("DAYTONA_API_KEY") do
-    blank when blank in [nil, ""] -> nil
-    key -> key
-  end
-
-daytona_api_url =
-  case System.get_env("DAYTONA_API_URL") do
-    blank when blank in [nil, ""] -> "https://app.daytona.io/api"
-    url -> url
-  end
-
 e2b_template =
   case System.get_env("E2B_TEMPLATE") do
     blank when blank in [nil, ""] -> "base"
@@ -175,17 +163,6 @@ config :managoat_sandbox, Managoat.Sandbox.E2B,
   base_url: e2b_base_url,
   template: e2b_template,
   user: e2b_user
-
-daytona_snapshot =
-  case System.get_env("DAYTONA_SNAPSHOT") do
-    blank when blank in [nil, ""] -> nil
-    snapshot -> snapshot
-  end
-
-config :managoat_sandbox, Managoat.Sandbox.Daytona,
-  api_key: daytona_api_key,
-  api_url: daytona_api_url,
-  snapshot: daytona_snapshot
 
 # Egress credential brokerage (ADR 0019). Blank means off: no broker call is
 # made, nothing listens, and every conversation provisions exactly as it did
@@ -234,9 +211,8 @@ end
 # it keeps the one job of #1686. That guard fails the boot in the dangerous
 # direction: a deployment that means to broker and loses its listener (the
 # `envFrom` drift of #1495) does not half-broker anyone. Brokerage turns
-# itself off for everyone, each sandbox gets plaintext GitHub, inference and
-# connection credentials instead, and the console and the connections keep
-# working, so nothing downstream can tell it from a deployment that meant to
+# itself off for everyone, each sandbox gets plaintext GitHub and inference
+# credentials instead, and the console keeps working, so nothing downstream can tell it from a deployment that meant to
 # broker nobody. Removing the ratchet removes the tenant list that used to
 # carry that intent, which makes `*` the last place an operator can state it.
 # Until brokerage is unconditional, keep the assertion available.
@@ -300,7 +276,7 @@ sandbox_default_provider =
     blank when blank in [nil, ""] ->
       :sprites
 
-    value when value in ["sprites", "e2b", "daytona", "runner"] ->
+    value when value in ["sprites", "e2b", "runner"] ->
       # An *explicitly chosen* default must be usable: failing at boot with
       # the missing variable named beats every conversation failing at
       # provision time. An unset SANDBOX_PROVIDER keeps the old behavior —
@@ -310,7 +286,6 @@ sandbox_default_provider =
         case value do
           "sprites" -> {sprites_token, "SPRITES_TOKEN"}
           "e2b" -> {e2b_api_key, "E2B_API_KEY"}
-          "daytona" -> {daytona_api_key, "DAYTONA_API_KEY"}
           # No credential to check; the opt-out is the only way to lose it.
           "runner" -> {if(runners_enabled, do: :enabled), "SANDBOX_RUNNERS_ENABLED"}
         end
@@ -325,7 +300,7 @@ sandbox_default_provider =
       end
 
     other ->
-      raise "SANDBOX_PROVIDER must be one of sprites|e2b|daytona|runner, got: #{inspect(other)}"
+      raise "SANDBOX_PROVIDER must be one of sprites|e2b|runner, got: #{inspect(other)}"
   end
 
 config :fountain, :sandbox_default_provider, sandbox_default_provider
@@ -456,22 +431,6 @@ config :sentry,
   # (cookies, user IPs, request bodies) should ride along by default.
   send_default_pii: false
 
-# ADR 0031 made the credit gate a product invariant. For a self-hosted
-# instance it is just a lock on the front door with no key, so it is config
-# rather than a source patch — and off by default (#336): an operator
-# exporting env by hand who never hears of CREDITS_ENABLED must not lock
-# themselves out of their own instance. The hosted deployment is the one that
-# opts in (its overlay sets CREDITS_ENABLED=true explicitly).
-#
-# Skipped in :test — the suite pins the gate on in config/test.exs and
-# toggles it per-test through the application env, independent of whatever
-# CREDITS_ENABLED happens to be in the developer's shell or .env.
-credits_enabled? = System.get_env("CREDITS_ENABLED", "false") != "false"
-
-if config_env() != :test do
-  config :fountain, :credits_enabled, credits_enabled?
-end
-
 # What the chrome calls this deployment (Fountain.Brand): the sidebar header,
 # the <title>, the sign-in and consent pages and every email subject. The
 # engine stays Fountain everywhere it is named as the engine — the CLI, the
@@ -518,8 +477,8 @@ end
 # terms, and the hosted instance's real entity does not belong in the repo.
 # All four or none — a partial set is a typo, and a terms page with a real
 # entity but a blank jurisdiction is broken legal copy, so refuse to boot
-# rather than render it. Unset entirely, the pages are hidden (billing off)
-# or keep #506's loud {{...}} placeholders (billing on) — see Fountain.Legal.
+# rather than render it. Unset entirely, the pages are hidden — see
+# Fountain.Legal.
 # Skipped in :test — config/test.exs pins values so the developer's shell
 # cannot leak into the suite.
 if config_env() != :test do
@@ -549,21 +508,6 @@ if config_env() != :test do
 
     {[], _unset} ->
       config :fountain, :legal, nil
-
-      # A billing-enabled instance is charging money with no published terms.
-      # Warn hard rather than refuse to boot: /terms and /privacy keep serving
-      # the loud {{COMPANY_LEGAL_NAME}} placeholders, which is the visible
-      # enforcement, and a raise here would take down a running deployment
-      # over copy rather than correctness.
-      if env == :prod and credits_enabled? do
-        IO.puts(:stderr, """
-
-        WARNING: CREDITS_ENABLED is set but no legal identity is configured.
-        /terms and /privacy are rendering {{COMPANY_LEGAL_NAME}} placeholders
-        to your paying users. Set LEGAL_ENTITY, LEGAL_CONTACT_EMAIL,
-        LEGAL_JURISDICTION, and LEGAL_EFFECTIVE_DATE.
-        """)
-      end
 
     {set, unset} ->
       raise """
@@ -669,21 +613,6 @@ if config_env() != :test do
     enabled: System.get_env("SANDBOX_SNAPSHOTS_ENABLED", "true") != "false"
 end
 
-# Webhooks (#700). On by default; a deployment with no outbound HTTP egress
-# can switch dispatch off entirely. WEBHOOK_ALLOW_HTTP relaxes the https-only
-# rule on endpoint URLs, which is for a self-hosted instance calling a
-# receiver on its own network. It does NOT relax the SSRF address checks —
-# loopback, link-local and RFC1918 targets stay refused either way.
-#
-# Skipped in :test, like the runner switch above: config/test.exs pins both
-# so the suite exercises a known state, and an unguarded override here would
-# silently replace it with whatever the developer's shell happens to say.
-if config_env() != :test do
-  config :fountain,
-    webhooks_enabled: System.get_env("WEBHOOKS_ENABLED", "true") == "true",
-    webhook_allow_http: System.get_env("WEBHOOK_ALLOW_HTTP", "false") == "true"
-end
-
 # Accounts that registered and never verified are deleted after thirty days
 # (#258; the number lives in Fountain.Workers.UnverifiedAccountPruner) — they
 # cannot log in, so they are rows, not users. UNVERIFIED_PRUNE_EXEMPT is a
@@ -766,168 +695,6 @@ if github_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID") do
     client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
 end
 
-# OAuth clients for the platform connection providers (#1178, #1299): a
-# tenant signs in to Google, Microsoft or Slack once in the console and
-# Fountain holds the refresh token. Not the sign-in provider — that is GitHub
-# above. Every one of them ships as an extension (ADR 0054 decision 6) and
-# reads its own variables into its own otp_app; core reads none of them, so a
-# core-only release has no key for a provider it does not carry. Same shape
-# for each: absent stays absent, "" counts as absent, so the console says a
-# provider is not configured rather than sending anyone to a consent screen
-# with an empty client id; configuring an extension that is not installed is
-# inert, not an error. The env var names stay literal here for the reference
-# guard.
-#
-# Google (`fountain_google`): the client, and `GOOGLE_OAUTH_SCOPES`, the lever
-# for app verification — a deployment whose Google app is not verified for a
-# scope simply does not request it, and the products that need it stay dark.
-case System.get_env("GOOGLE_OAUTH_CLIENT_ID") do
-  blank when blank in [nil, ""] ->
-    :ok
-
-  client_id ->
-    config :fountain_google,
-      google_oauth_client_id: client_id,
-      google_oauth_client_secret: System.get_env("GOOGLE_OAUTH_CLIENT_SECRET")
-end
-
-case System.get_env("GOOGLE_OAUTH_SCOPES") do
-  blank when blank in [nil, ""] -> :ok
-  scopes -> config :fountain_google, google_oauth_scopes: String.split(scopes)
-end
-
-# Microsoft (`fountain_microsoft`), likewise.
-case System.get_env("MICROSOFT_OAUTH_CLIENT_ID") do
-  blank when blank in [nil, ""] ->
-    :ok
-
-  client_id ->
-    config :fountain_microsoft,
-      microsoft_oauth_client_id: client_id,
-      microsoft_oauth_client_secret: System.get_env("MICROSOFT_OAUTH_CLIENT_SECRET")
-end
-
-case System.get_env("MICROSOFT_OAUTH_SCOPES") do
-  blank when blank in [nil, ""] -> :ok
-  scopes -> config :fountain_microsoft, microsoft_oauth_scopes: String.split(scopes)
-end
-
-# Slack, likewise (`fountain_slack`). The scopes are user scopes, sent as
-# `user_scope`, which is why the variable is not named like the other two.
-case System.get_env("SLACK_OAUTH_CLIENT_ID") do
-  blank when blank in [nil, ""] ->
-    :ok
-
-  client_id ->
-    config :fountain_slack,
-      slack_oauth_client_id: client_id,
-      slack_oauth_client_secret: System.get_env("SLACK_OAUTH_CLIENT_SECRET")
-end
-
-case System.get_env("SLACK_OAUTH_USER_SCOPES") do
-  blank when blank in [nil, ""] -> :ok
-  scopes -> config :fountain_slack, slack_oauth_user_scopes: String.split(scopes)
-end
-
-# Stripe (§5.2)
-config :stripity_stripe, api_key: System.get_env("STRIPE_SECRET_KEY")
-
-# Absent stays absent, and "" counts as absent (#390). An unconditional write
-# would clobber the secret config/test.exs pins with nil, and a blank value
-# must never reach signature verification — Stripe.Webhook.construct_event
-# happily HMACs with an empty key, so the webhook controller fails closed
-# when this is unset. A billing-enabled prod instance without the secret
-# cannot process a purchase or a clawback, so refuse to boot rather than let
-# every webhook 400 quietly.
-case System.get_env("STRIPE_WEBHOOK_SECRET") do
-  blank when blank in [nil, ""] ->
-    if config_env() == :prod and credits_enabled? do
-      raise """
-      CREDITS_ENABLED is set but STRIPE_WEBHOOK_SECRET is empty or unset.
-      Set it to the signing secret of your Stripe webhook endpoint
-      (Stripe dashboard → Developers → Webhooks).
-      """
-    end
-
-  secret ->
-    config :stripity_stripe, webhook_secret: secret
-end
-
-# Cents, whole or fractional.
-parse_cents = fn var, raw ->
-  trimmed = String.trim(raw)
-
-  case Float.parse(trimmed) do
-    {cents, ""} when cents >= 0 -> cents
-    _ -> raise "#{var} must be a number of cents, 0 or more, got #{inspect(raw)}"
-  end
-end
-
-provider_hourly_cents =
-  case System.get_env("PROVIDER_HOURLY_CENTS") do
-    value when value in [nil, ""] ->
-      %{}
-
-    value ->
-      value
-      |> String.split(",", trim: true)
-      |> Map.new(fn pair ->
-        case String.split(pair, "=", parts: 2) do
-          [provider, cents] ->
-            {String.trim(provider), parse_cents.("PROVIDER_HOURLY_CENTS", cents)}
-
-          _ ->
-            raise "PROVIDER_HOURLY_CENTS: #{inspect(pair)} is not provider=cents"
-        end
-      end)
-  end
-
-config :fountain, :provider_hourly_cents, provider_hourly_cents
-
-# Which hours that rate multiplies. `active` (the default) is every hour a
-# sandbox was awake, idle included. `turn` is only the hours with a prompt in
-# flight, which is the closer match where a provider scales to near-zero
-# between prompts. /admin/finance can switch between the two per view; this
-# sets what it opens on. Anything unrecognised reads as `active`, because a
-# typo must not quietly halve the reported bill.
-config :fountain,
-       :cost_basis,
-       if(System.get_env("PROVIDER_COST_BASIS") == "turn", do: :turn, else: :active)
-
-# Prepaid credits (ADR 0030): what the *customer* pays, in whole cents, as
-# distinct from the provider costs above. CREDIT_TURN_HOUR_CENTS is one hour
-# of turn time (default 25, a placeholder until #1038 gives a cost number).
-# CREDIT_PACKS_CENTS lists the packs a tenant can buy, e.g. "1000,2500,10000".
-credit_cents = fn var ->
-  case System.get_env(var) do
-    value when value in [nil, ""] ->
-      nil
-
-    value ->
-      case Integer.parse(String.trim(value)) do
-        {cents, ""} when cents >= 0 -> cents
-        _ -> raise "#{var} must be a whole number of cents, 0 or more, got #{inspect(value)}"
-      end
-  end
-end
-
-credit_packs =
-  case System.get_env("CREDIT_PACKS_CENTS") do
-    value when value in [nil, ""] ->
-      [1_000, 2_500, 10_000]
-
-    value ->
-      value
-      |> String.split(",", trim: true)
-      |> Enum.map(fn cents ->
-        case Integer.parse(String.trim(cents)) do
-          {n, ""} when n > 0 -> n
-          _ -> raise "CREDIT_PACKS_CENTS: #{inspect(cents)} is not a positive number of cents"
-        end
-      end)
-      |> Enum.sort()
-  end
-
 # Per-turn host ceiling. Empty until runtime enforcement and later-turn/recovery
 # ceiling checks are integrated. Never inherit an operator's shell policy in tests.
 execution_limit_ceiling =
@@ -969,10 +736,9 @@ config :fountain,
        :execution_deadline_interval_ms,
        String.to_integer(System.get_env("FOUNTAIN_EXECUTION_DEADLINE_INTERVAL_MS") || "5000")
 
-# Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
-# the per-account floor and ceiling the balance rule is clamped to, and the
-# fleet ceiling — the most live sandboxes the deployment will run in total,
-# which is the provider plan's number (Sprites' $20 plan allows about 20).
+# Concurrency (ADR 0005, 0042): the per-account ceiling, and the fleet
+# ceiling — the most live sandboxes the deployment will run in total, which is
+# the provider plan's number (Sprites' $20 plan allows about 20).
 whole_number = fn var, default ->
   case System.get_env(var) do
     value when value in [nil, ""] ->
@@ -986,37 +752,31 @@ whole_number = fn var, default ->
   end
 end
 
-config :fountain, :sandboxes,
-  reserve_cents: whole_number.("SANDBOX_RESERVE_CENTS", 200),
-  cap_floor: whole_number.("SANDBOX_CAP_FLOOR", 2),
-  cap_ceiling: whole_number.("SANDBOX_CAP_CEILING", 20),
-  fleet_ceiling: whole_number.("SANDBOX_FLEET_CEILING", 20)
+#
+# Skipped in :test — config/test.exs pins a per-account ceiling below the
+# fleet's, so the suite's cap tests meet the account's refusal first.
+if config_env() != :test do
+  config :fountain, :sandboxes,
+    cap_ceiling: whole_number.("SANDBOX_CAP_CEILING", 20),
+    fleet_ceiling: whole_number.("SANDBOX_FLEET_CEILING", 20)
+end
 
 # The bounded sandbox-capacity queue (ADR 0042).
 config :fountain,
   sandbox_queue_max_depth: whole_number.("SANDBOX_QUEUE_MAX_DEPTH", 10),
   sandbox_queue_max_wait_seconds: whole_number.("SANDBOX_QUEUE_MAX_WAIT_SECONDS", 3600)
 
-# Hosted Buzz agents one account may run at once — an abuse ceiling (#1017).
-config :fountain_buzz, :buzz_identity_ceiling, whole_number.("BUZZ_IDENTITY_CEILING", 10)
-
 # ChatGPT subscriptions one account may link (ADR 0060 decision 1). It stops a
 # runaway client and prices nothing; a disconnected subscription holds its
 # place until it is removed. Lowering it refuses new links only.
 config :fountain, :chatgpt_grant_ceiling, whole_number.("CHATGPT_GRANT_CEILING", 5)
 
-config :fountain, :credits,
-  # The opening grant a new account gets, and how many days it lasts.
-  opening_cents: credit_cents.("CREDIT_OPENING_CENTS") || 500,
-  opening_days: credit_cents.("CREDIT_OPENING_DAYS") || 14,
-  turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
-  packs_cents: credit_packs
-
 # Platform inference keys (#1388, ADR 0038 decision 3, amending ADR 0008).
 #
 # Fountain runs a tenant's agent on one of these when the tenant has no
-# credential of their own for the model's provider, and meters the tokens
-# against their credit balance. The tenant's own credential always wins.
+# credential of their own for the model's provider. The tenant's own
+# credential always wins. Nothing caps or meters what these keys spend: every
+# account's usage on them is billed to this deployment's provider account.
 #
 # **Blank means off, per provider.** A deployment that sets none of these
 # behaves exactly as it did before the feature existed: bring-your-own only.
@@ -1030,74 +790,6 @@ config :fountain,
   platform_anthropic_api_key: System.get_env("PLATFORM_ANTHROPIC_API_KEY"),
   platform_openai_api_key: System.get_env("PLATFORM_OPENAI_API_KEY"),
   platform_gemini_api_key: System.get_env("PLATFORM_GEMINI_API_KEY")
-
-# The circuit breaker: the most this deployment's platform keys may cost in a
-# UTC day, across every tenant together. A log line and a 503 when it is hit
-# (`FountainWeb.FallbackController`), so one bad day cannot cost more than the
-# number written here. It is measured from the `burn_inference` ledger rows,
-# so it needs CREDITS_ENABLED=true and it lags the pricer's tick: it bounds
-# the day, not the minute.
-config :fountain,
-       :platform_inference_daily_cents,
-       whole_number.("PLATFORM_INFERENCE_DAILY_CENTS", 5_000)
-
-# Per-model inference rates, overriding the compiled card in
-# `Fountain.Credits.InferenceRates`. One entry per comma:
-#
-#   PLATFORM_INFERENCE_RATES="anthropic/claude-opus-5:500:2500:50:625,openai/*:500:3000:50:500"
-#
-# Five colon-separated fields: `provider/model_id` (or `provider/*` for that
-# provider's fallback), then input, output, cached-read and cached-write
-# prices **in cents per million tokens**, which is the unit every provider
-# publishes in. Decimals are allowed and are the point — OpenAI's cached
-# input for gpt-5.3-codex is 17.5 cents per million tokens.
-#
-# The compiled card is list price with **no markup, a 1.0x margin**, and that
-# is a decision (ADR 0038, noted on 0030 and 0031): Fountain's margin is
-# sandbox time (CREDIT_TURN_HOUR_CENTS), and marking inference up would make
-# the opening credit buy less of the one thing it was granted to buy. This
-# variable exists so a price change does not need a deploy, not so a
-# deployment can quietly add a margin — though a self-hoster reselling
-# inference is welcome to.
-inference_rates =
-  case System.get_env("PLATFORM_INFERENCE_RATES") do
-    value when value in [nil, ""] ->
-      %{}
-
-    value ->
-      value
-      |> String.split(",", trim: true)
-      |> Map.new(fn entry ->
-        cents_per_mtok = fn field ->
-          case Float.parse(String.trim(field)) do
-            {n, ""} when n >= 0 ->
-              # Cents per billion tokens: the unit the rate card holds, so a
-              # fraction of a cent per million tokens is still an integer.
-              round(n * 1_000)
-
-            _ ->
-              raise "PLATFORM_INFERENCE_RATES: #{inspect(field)} is not a price in cents per million tokens"
-          end
-        end
-
-        case String.split(String.trim(entry), ":") do
-          [model, input, output, cache_read, cache_write] when model != "" ->
-            {model,
-             %{
-               input: cents_per_mtok.(input),
-               output: cents_per_mtok.(output),
-               cache_read: cents_per_mtok.(cache_read),
-               cache_write: cents_per_mtok.(cache_write)
-             }}
-
-          _ ->
-            raise "PLATFORM_INFERENCE_RATES: #{inspect(entry)} is not " <>
-                    "provider/model:input:output:cache_read:cache_write"
-        end
-      end)
-  end
-
-config :fountain, :inference_rates, inference_rates
 
 # Mail delivery.
 #
@@ -1130,18 +822,6 @@ if config_env() == :prod do
   # the copy stays vague — EMAIL_FROM is usually a noreply@ address, so
   # "reply to this email" would point somewhere replies go to die.
   config :fountain, :support_email, System.get_env("SUPPORT_EMAIL")
-
-  # Optional (#843): where "Report a problem" reports are forwarded besides
-  # SUPPORT_EMAIL — a GitHub issue in this repo, created with this token
-  # (needs `issues:write`). Unset, reports stay on the row and in the mail.
-  #
-  # Under `:fountain_support` rather than `:fountain` since #1528: these two
-  # exist for the extension and nothing else, so a core-only release reads no
-  # key for a feature it does not carry. SUPPORT_EMAIL above stays the host's,
-  # because the account emails name it too.
-  # Configuring an extension that is not installed is inert, not an error.
-  config :fountain_support, :support_github_repo, System.get_env("SUPPORT_GITHUB_REPO")
-  config :fountain_support, :support_github_token, System.get_env("SUPPORT_GITHUB_TOKEN")
 
   # "" counts as unset for the adapter choice (#396): docker-compose.yml passes
   # `${RESEND_API_KEY:-}` / `${SMTP_HOST:-}` / `${SMTP_USERNAME:-}`, which
@@ -1357,9 +1037,22 @@ if config_env() == :prod and server? do
   #
   # rewrite_on is required behind a terminating proxy: without it every request
   # looks like http to the app and the redirect loops.
+  # FORCE_SSL_EXCLUDE_HOSTS: hosts the redirect and HSTS leave alone, for callers
+  # inside the deployment's own network that reach the app over plain http at
+  # its service name (a Kubernetes Service, a compose service), with no proxy
+  # in front to set X-Forwarded-Proto. Without it they are sent to https:// on
+  # a host that serves nothing there. localhost stays excluded, as Plug.SSL's
+  # default has it.
+  force_ssl_exclude =
+    (System.get_env("FORCE_SSL_EXCLUDE_HOSTS") || "")
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+
   if https? do
     config :fountain, :force_ssl,
       rewrite_on: [:x_forwarded_proto, :x_forwarded_host, :x_forwarded_port],
+      exclude: Enum.uniq(["localhost" | force_ssl_exclude]),
       hsts: true,
       # One year, including subdomains. No `preload`: that is a one-way door —
       # getting off the preload list takes months — and not this change's call.
@@ -1434,94 +1127,6 @@ if config_env() == :prod and server? do
   end
 end
 
-# The first-party extensions (ADR 0043). Naming a module here is the whole of
-# Fountain's knowledge of it: `Fountain.Extensions` reads this list and reaches
-# each one only through `Fountain.Extension` callbacks. Drop a line and the
-# release serves none of that extension's routes, runs none of its jobs and
-# applies none of its migrations — which is what a core distribution is
-# (decision 7).
-#
-# A configured module that will not load is a bad deploy and
-# `Fountain.Extensions.validate!/0` refuses to boot on it, on purpose.
-#
-# The whole extension list, for every environment, in ONE declaration —
-# `config :fountain, :extensions` replaces the key rather than appending, so two
-# declarations would silently delete one another. That is not hypothetical: it
-# happened in #1507, where a second declaration deleted every fixture extension
-# `config/test.exs` installs and the seam's own tests measured an empty list.
-#
-# Each extension is installed *where it loads*. `apps/fountain` deliberately
-# depends on no sibling app, so `mix test` run from there — which is what CI's
-# partition script does — has none of `:fountain_buzz`, `:fountain_support`,
-# `:fountain_google`, `:fountain_microsoft` or `:fountain_slack` on the code
-# path, and naming them unconditionally would make
-# `Fountain.Extensions.validate!/0` refuse to boot every partition. That check
-# working exactly as intended, on a configuration that is wrong for that run.
-#
-# `Code.ensure_loaded?/1` can only answer that after compilation, which is why
-# this lives here and not in `config/test.exs`: that file is evaluated before
-# the apps are built, where the answer is always false.
-installed_extensions =
-  Enum.filter(
-    [
-      FountainBuzz.Extension,
-      FountainSupport.Extension,
-      FountainGoogle.Extension,
-      FountainMicrosoft.Extension,
-      FountainSlack.Extension
-    ],
-    &Code.ensure_loaded?/1
-  )
-
-# Fixture extensions prove the seam without a real one (#1505). They are named
-# here rather than set per test because `:extensions` is global application
-# state and a test that wrote it would collide with every async test in the VM
-# (#1214); tests vary the fixture, not the configuration.
-#
-# The misbehaving ones each fail for a single conversation id, which is what
-# makes them safe to install beside the others and what lets the isolation tests
-# exercise the real fan-out rather than a copy of its logic.
-extension_fixtures =
-  if config_env() == :test do
-    [
-      Fountain.ExtensionFixtures.Enabled,
-      Fountain.ExtensionFixtures.Disabled,
-      Fountain.ExtensionFixtures.Silent,
-      Fountain.ExtensionFixtures.Exploding,
-      Fountain.ExtensionFixtures.WrongShape
-    ]
-  else
-    []
-  end
-
-config :fountain, :extensions, installed_extensions ++ extension_fixtures
-
-# The Buzz extension's own configuration, under its own otp_app, and only what
-# an operator overrides. Where its binaries live is `FountainBuzz.Assets`'s to
-# know (#1509) — a core release's configuration has no business naming a path
-# only the bundled image has — so these exist to be *overridden* and default to
-# nothing here.
-#
-# The harness's ACP child (`fountain acp`) talks back to THIS server, so its
-# base URL defaults to the loopback endpoint: no egress, no TLS, no dependence
-# on PUBLIC_URL resolving inside the pod.
-if config_env() == :prod do
-  config :fountain_buzz,
-         :fountain_cli_path,
-         System.get_env("FOUNTAIN_CLI_PATH", "/usr/local/bin/fountain")
-
-  config :fountain_buzz,
-         :buzz_acp_base_url,
-         System.get_env("BUZZ_ACP_BASE_URL") ||
-           "http://127.0.0.1:#{System.get_env("PORT", "4000")}"
-
-  # Only when set. An unset BUZZ_ACP_PATH means "wherever the image installed
-  # it", which FountainBuzz.Assets answers.
-  if path = System.get_env("BUZZ_ACP_PATH") do
-    config :fountain_buzz, :buzz_acp_path, path
-  end
-end
-
 # ── CORS for /api ─────────────────────────────────────────────────────────
 #
 # Browser clients on other origins (the standalone team app, #809). Empty —
@@ -1570,31 +1175,11 @@ case System.get_env("OAUTH_CLIENTS") do
     end
 end
 
-# ── PostHog: feature flags and product analytics ──────────────────────────
-#
-# One project API key serves both halves. `Fountain.FeatureFlags` reads it to
-# evaluate per-user flags; `Fountain.Analytics` reads it to send product
-# events. Neither does anything without it, so an instance that sets no key
-# evaluates no flags and sends nothing.
-#
 # ── Feature flags ─────────────────────────────────────────────────────────
 #
-# Per-user flags are evaluated by PostHog (`Fountain.FeatureFlags`) when a
-# project API key is set; the module caches answers and falls back to the
-# last one it got when PostHog is unreachable, and to "off" when it has
-# none — an outage never turns a feature on. FEATURE_FLAGS_ON is the
-# no-PostHog path: a comma-separated list of flag keys forced on for every
-# user (a self-hoster, or dev). Read in every env.
-# Set only when present, so config/test.exs keeps its own value.
-case System.get_env("POSTHOG_PROJECT_API_KEY") do
-  blank when blank in [nil, ""] -> :ok
-  key -> config :fountain, :posthog_project_api_key, key
-end
-
-config :fountain,
-       :posthog_host,
-       System.get_env("POSTHOG_HOST", "https://us.i.posthog.com")
-
+# `Fountain.FeatureFlags` is configuration only. FEATURE_FLAGS_ON is a
+# comma-separated list of flag keys turned on for every user (for example
+# `chatgpt_subscriptions`). Read in every env.
 config :fountain,
        :feature_flag_overrides,
        "FEATURE_FLAGS_ON"
@@ -1603,45 +1188,3 @@ config :fountain,
        |> Enum.map(&String.trim/1)
        |> Enum.reject(&(&1 == ""))
        |> Map.new(&{&1, true})
-
-# ── Product analytics ─────────────────────────────────────────────────────
-#
-# `Fountain.Analytics` captures product events into the same PostHog project
-# the flags come from. On whenever a key is set; POSTHOG_CAPTURE=false keeps
-# flag evaluation and turns capture off, for a deployment that wants one
-# without the other.
-#
-# POSTHOG_PERSON_PII=false drops the account email from person properties,
-# leaving the user id — which is all the audit trail stores either. The
-# events themselves never carry PII: no secret values, no prompts, no agent
-# output (`Fountain.Analytics.sanitize/1`).
-#
-# POSTHOG_INSTANCE names this deployment. Every event is associated with it
-# as a PostHog group, so a hosted instance and a self-hoster reporting into
-# one project stay separable. Defaults to PHX_HOST.
-config :fountain,
-       :analytics_enabled,
-       System.get_env("POSTHOG_CAPTURE", "true") not in ~w(false 0 no off)
-
-config :fountain,
-       :analytics_person_pii,
-       System.get_env("POSTHOG_PERSON_PII", "true") not in ~w(false 0 no off)
-
-# POSTHOG_BROWSER_CAPTURE=false stops the public pages (landing, legal, the
-# manual, the auth flow) loading posthog-js, leaving the server-side capture
-# untouched. The console never loads it either way.
-#
-# The snippet is what makes visitors countable at all: a server-side pageview
-# has no session, no referrer and no device, and `Fountain.Analytics` drops
-# events with no subject — so before it, nobody who was not signed in was
-# counted anywhere. The off-switch exists because loading a third-party script
-# into a visitor's browser is a different decision from sending product events
-# from a server, and a self-hoster is entitled to make them separately.
-config :fountain,
-       :analytics_browser_capture,
-       System.get_env("POSTHOG_BROWSER_CAPTURE", "true") not in ~w(false 0 no off)
-
-case System.get_env("POSTHOG_INSTANCE") || System.get_env("PHX_HOST") do
-  blank when blank in [nil, ""] -> :ok
-  name -> config :fountain, :analytics_instance, name
-end

@@ -271,7 +271,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceTest do
 
     assert Repo.reload!(allowance).limits == %{"max_model_turns" => 2}
     assert Conversations._unsafe_list_turns(conv.id) == []
-    refute Repo.exists?(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^conv.user_id)
+    refute Repo.exists?(from e in Fountain.Usage.Event, where: e.user_id == ^conv.user_id)
   end
 
   test "scoped creation hides foreign and missing conversations before validation", %{
@@ -371,7 +371,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceTest do
 
     assert Repo.reload!(allowance).limits == %{"max_model_turns" => 2}
     assert Conversations._unsafe_list_turns(conv.id) == []
-    refute Repo.exists?(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^conv.user_id)
+    refute Repo.exists?(from e in Fountain.Usage.Event, where: e.user_id == ^conv.user_id)
   end
 
   defp creation_events(conv),
@@ -521,8 +521,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       user =
         Repo.insert!(%Fountain.Accounts.User{
-          email: "attach-policy-race-#{Ecto.UUID.generate()}@example.test",
-          credit_balance_cents: 500
+          email: "attach-policy-race-#{Ecto.UUID.generate()}@example.test"
         })
 
       Repo.insert!(%Fountain.Accounts.UserDataKey{
@@ -638,7 +637,6 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
       user =
         Repo.insert!(%Fountain.Accounts.User{
           email: "rotation-busy-#{Ecto.UUID.generate()}@example.test",
-          credit_balance_cents: 500,
           sandbox_limit_override: 20
         })
 
@@ -747,7 +745,6 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
       user =
         Repo.insert!(%Fountain.Accounts.User{
           email: "rotation-race-#{Ecto.UUID.generate()}@example.test",
-          credit_balance_cents: 500,
           sandbox_limit_override: 20
         })
 

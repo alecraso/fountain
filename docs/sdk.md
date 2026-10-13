@@ -177,12 +177,12 @@ Here are the fields that need a word.
 
 | Field | What it decides |
 |---|---|
-| `runtime` | `claude`, `codex`, `gemini`, `opencode` or `acp`. The provider in `model` must match it, and `acp` needs no model at all. |
+| `runtime` | `claude`, `codex`, `gemini` or `acp`. The provider in `model` must match it, and `acp` needs no model at all. |
 | `runtime_command` | The command that the `acp` runtime launches. It is a shell line, and Fountain resolves it inside the sandbox. The field is required for `acp`, and a 422 on each other runtime. |
 | `model` | The canonical `provider/model_id`. Fountain checks it against no list, so a model that ships today works today. Leave it out on `acp`. |
 | `system` | The agent's system prompt. |
 | `skills` | Either `{ source, ref? }`, which installs from GitHub, or `{ name, content }`, which Fountain writes into the sandbox word for word. Each entry takes exactly one shape. |
-| `sandbox_provider` | `sprites`, `e2b`, `daytona` or `runner`. A `null` takes the instance default. |
+| `sandbox_provider` | `sprites`, `e2b` or `runner`. A `null` takes the instance default. |
 | `sandbox_mode` | `ephemeral` (default) or `persistent`. Persistent gives the agent one machine of its own, and each conversation lands on it. |
 | `allowed_vault_ids` | Which vaults a conversation can attach. A `null` permits each one, `[]` permits none, and a list is an allowlist. A vault value overrides the environment, so this is what scopes who can override a config that somebody reviewed. |
 | `allowed_environment_ids` | The same shape. It covers a launch of the agent under a different environment. |
@@ -395,7 +395,6 @@ try {
 | `ConversationBusyError` | `conversation_busy` (400) | Yes. The turn in flight must finish. |
 | `NotReadyError` | `provisioning`, `fleet_full`, `sandbox_unavailable` (503) | Yes. It carries the server's `Retry-After`. |
 | `QuotaExceededError` | `sandbox_quota_exceeded` (429) | Yes. Terminate a conversation first. |
-| `InsufficientCreditsError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
 | `ValidationError` | 422 | No. Read `fieldErrors`. |
 | `AuthError` and `NotFoundError` | 401 and 404 | No. |
 | `ConnectionError` | It never reached the server. | In a browser, the cause is usually CORS. |
@@ -403,12 +402,11 @@ try {
 Each one carries `status`, `code`, `body`, `retryAfter` and a `retryable`
 flag. So a generic retry wrapper needs no table of its own.
 
-Fountain sends four more codes that mean the same thing and are not yet mapped
+Fountain sends three more codes that mean the same thing and are not yet mapped
 to `NotReadyError` in any client: `sandbox_probe_failed` (Fountain could not
 reach the sandbox provider), `sandbox_resume_failed` (the provider would not
-wake a parked machine), `runner_offline` (a self-hosted runner is not
-connected) and `platform_inference_unavailable` (Fountain's shared model access
-is at its daily ceiling). All four are 503 with a `Retry-After`, so
+wake a parked machine) and `runner_offline` (a self-hosted runner is not
+connected). All three are 503 with a `Retry-After`, so
 **retry on the status or on `retryAfter`, not on the class**, and a wrapper
 that does will handle them today and keep handling them when they are mapped.
 
@@ -433,17 +431,11 @@ person to search their own code for an hour.
 
 The SDK wraps the verbs that are worth a wrapper. The rest of the API is one
 call away, with the same auth and the same errors. That rest is audit, API
-keys, admin, payment and exports.
+keys and admin.
 
 ```ts
 await fountain.request("GET", "/api/audit", { query: { limit: 50 } });
 ```
-
-Connections have a wrapper. `client.connections` lists, gets and deletes
-them. `client.connections.providers` has `list`, `get`, `create`, `update`,
-`delete` and `discover`, over `/api/connection-providers`. A `create` with
-`kind: "mcp"` and an `mcp_url` runs discovery. Read
-[Connections](catalog/connections/index.md).
 
 The [API reference](api.md) covers those, and so does the generated
 `GET /api/openapi.json`.
@@ -483,14 +475,15 @@ tarball. A package that a person sends by hand has no such attestation.
 
 ## Other languages
 
-Elixir, Python and Swift have their own SDKs. Read the
-[Elixir](elixir-sdk.md), [Python](python-sdk.md) and [Swift](swift-sdk.md)
-references for their full APIs. For a different language, use one of two
+TypeScript is the one SDK Fountain maintains. The Python
+(`fountain-agent-sdk` on PyPI), Elixir (`fountain_sdk` on Hex) and Swift
+(`sdk-swift-v*` tags) SDKs are retired: their published releases stay where
+they are, but they are no longer maintained or tested against new servers.
+For another language, call the [HTTP API](api.md) directly and use one of two
 worked references below. They show how to follow a turn through the log feed.
 
-- **Python.** The SDK follows SSE. The
-  [Hermes plugin](integrations/hermes.md)'s `tools.py` is a smaller reference
-  that polls `/events?blocks=true`.
+- **Python.** The [Hermes plugin](integrations/hermes.md)'s `tools.py` polls
+  `/events?blocks=true`.
 - **Go.** The [`fountain` CLI](cli.md)'s `fountain run`, which streams SSE.
 
 These references implement the rules that the TypeScript SDK implements. Keep
@@ -499,26 +492,12 @@ kind. Join ACP chunks with nothing between them.
 Start a new paragraph after a tool call. Resume from the last event id when a
 connection drops mid-turn.
 
-## Credit error migration
+## Credit error removal
 
-The credit error names start at TypeScript 2.0.0, Python 0.3.0, Elixir 0.3.0
-and Swift 0.17.0. The first three SDKs have independent version lines; Swift
-releases with the server. Replace subscription-era checks with the names below.
-
-| Client | Removed name | Credit error | Purchase URL |
-|---|---|---|---|
-| TypeScript | `SubscriptionRequiredError` | `InsufficientCreditsError` | `error.upgradeUrl` |
-| Python | `SubscriptionRequiredError` | `InsufficientCreditsError` | `error.upgrade_url` |
-| Elixir | `:subscription_required` | `:insufficient_credits` | `Fountain.Error.upgrade_url(error)` |
-| Swift `Fountain` | `.subscriptionRequired` | `.insufficientCredits` | `error.upgradeURL` |
-| Swift `FountainKit` | No case rename | `.insufficientCredits(body, upgradeURL:)` | Associated `upgradeURL` value |
-
-For billing error handling, use Fountain v0.13.0 or newer.
-[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
-release containing the credit-only server contract (`c3349343`).
-`insufficient_credits` and a generic HTTP 402 identify the credit gate.
-`subscription_required` has no special mapping; it follows the HTTP status.
-The response still exposes its original code and purchase URL.
-
-Swift v0.17.0 includes these source API changes. Earlier tags keep their
-original error names.
+Fountain no longer has credits, and the server never sends
+`insufficient_credits` or a 402. The TypeScript SDK removed
+`InsufficientCreditsError` and `error.upgradeUrl` in 7.0.0. Delete the branch
+that handled them. A 402 from something in front of the server, such as a
+proxy, is now the client's generic error and carries its status. A retired
+SDK that still handles `insufficient_credits` keeps a branch the server never
+takes.

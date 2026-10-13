@@ -24,6 +24,7 @@ message.
 | `SECRET_KEY_BASE` | — | prod, to serve | Signs and encrypts the session cookies and the tokens. Generate one with `openssl rand -base64 48`. |
 | `MASTER_SECRETS_KEY` | — | prod | Wraps each tenant's data-encryption key. Read [the secrets model](architecture.md#the-secrets-model). It is 32 bytes, url-safe base64, with no pad character: `openssl rand 32 \| base64 \| tr '+/' '-_' \| tr -d '='`. **Lose it and you lose each stored secret.** Boot refuses a malformed value. |
 | `PUBLIC_URL` | — | prod | The base URL that the outside world sees, with the scheme. A prod instance requires this variable or the platform fallback from `FLY_APP_NAME`. The old `http://localhost:4000` fallback quietly put localhost links in each verification email. This variable builds each link that leaves the app, which is the verification and reset emails and `llms.txt`. Fountain passes it to each sandbox as `FOUNTAIN_BASE_URL`. An `https://` value also starts the HTTPS redirect, HSTS and the secure cookie flag, and Fountain derives all three from the scheme. |
+| `FORCE_SSL_EXCLUDE_HOSTS` | — | — | Comma-separated hosts that the HTTPS redirect and HSTS leave alone, for callers inside the deployment's own network that reach the app over plain HTTP at its service name, such as a Kubernetes Service (`fountain.fountain.svc.cluster.local`). Without it they get a 301 to `https://` on a host that serves nothing there. `localhost` is always excluded. |
 | `PHX_HOST` | The host of `PUBLIC_URL`. | — | The bare host for the endpoint URL and for the LiveView origin check. Set it only when it differs from the host in `PUBLIC_URL`. |
 | `FLY_APP_NAME` | — | — | Fly sets this on each machine. Fountain builds `https://<app>.fly.dev` from it, and reads that as the fallback for `PUBLIC_URL`. A deploy from `fly.toml` needs it, because that file ships with an app name that `fly launch` replaces. An explicit `PUBLIC_URL` has precedence. Set `PUBLIC_URL` when you add a custom domain. |
 | `PHX_SERVER` | `true` in the shipped image. | — | A `1`, `true` or `yes` starts the web listener. A release task runs with `PHX_SERVER=false … eval '…'`. That boots the app, and binds no port. |
@@ -47,7 +48,7 @@ message.
 | `SPRITES_TOKEN` | — | For conversations. | The platform token for [sprites.dev](https://sprites.dev). The app boots without it, and each conversation then fails. Never show it to a tenant, because it pays for each sandbox. |
 | `SPRITES_BASE_URL` | `https://api.sprites.dev` | — | Repoints the sandbox API. Whatever you point it at must implement the same contract, and Fountain bundles no alternative. |
 | `SPRITES_TIMEOUT_MS` | `30000` | — | Bounds each HTTP call to the Sprites API. A long command, such as a package install or a clone, sets its own timeout for that call. Boot refuses a value that is not positive. |
-| `SANDBOX_PROVIDER` | `sprites` | — | Which backend a new sandbox runs on. One of `sprites`, `e2b`, `daytona` and `runner`. A hosted provider turns on when its credential is there. Boot refuses an explicit default whose credential is absent. A sandbox that already exists stays on the provider Fountain made it on. |
+| `SANDBOX_PROVIDER` | `sprites` | — | Which backend a new sandbox runs on. One of `sprites`, `e2b` and `runner`. A hosted provider turns on when its credential is there. Boot refuses an explicit default whose credential is absent. A sandbox that already exists stays on the provider Fountain made it on. |
 | `SANDBOX_RUNNERS_ENABLED` | `true` | — | A [self-hosted runner](integrations/runners.md) needs no credential. A `false` hides the `runner` provider, and refuses a `fountain runner` connection. |
 | `BROKER_LISTEN_PORT` | — | — | A port number, for example `14322`. This turns on credential brokerage (ADR 0019): Fountain runs the egress proxy itself, from the `managoat_broker` library, on this port on every replica. Each conversation's proxy session goes in the `broker_sessions` table, so any replica can serve a sandbox. Set it, and boot also requires `BROKER_PROXY_URL`. Point your ingress at this port. The proxy speaks plain HTTP, and TLS towards the sandbox is the job of the ingress. Blank leaves brokerage off, and each conversation provisions as before. Set it, and Fountain brokers every account on the deployment. |
 | `BROKER_PROXY_URL` | — | With `BROKER_LISTEN_PORT`. | The proxy address a sandbox dials, for example `https://broker.example.com:443`. It is not the same as the listen port when the sandboxes are on a different network from Fountain. Its host is the one host a brokered sandbox may reach. |
@@ -58,9 +59,6 @@ message.
 | `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane. |
 | `E2B_TEMPLATE` | `base` | — | The template that Fountain creates a new E2B sandbox from. The stock `base` template has no agent CLI, so build one from `images/e2b/` for real use. |
 | `E2B_USER` | `sprite` | — | The in-guest user that envd runs a command as. An `images/e2b/` template creates `sprite`. Set it to `user` when you point at the stock `base` template. |
-| `DAYTONA_API_KEY` | — | For the `daytona` provider. | The [Daytona](https://daytona.io) API key. Its presence turns the provider on. |
-| `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API, for a Daytona you host yourself. |
-| `DAYTONA_SNAPSHOT` | The org default. | — | The snapshot, which is an image, that Fountain creates a new Daytona sandbox from. The organization must hold it. The default image has no agent CLI, so build one from `images/daytona/` for real use. |
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long, and Fountain parks the sandbox. A provider without `:suspend` destroys it instead. The conversation stays [resumable](guides/operate/sandbox-lifetime.md) either way. A `0` turns the bound off, and boot refuses whatever is not a non-negative integer. |
 | `SANDBOX_MAX_LIFETIME_HOURS` | `0` (off) | — | A ceiling on one continuous run, whatever the activity. Off by default: nothing stops a sandbox that stays busy. Set it to park a persistent home, or destroy an ephemeral sandbox, after this many hours. The same boot refusal applies. |
 | `CHECKPOINT_CREATION_ENABLED` | `false` | — | Set to `true`, and Fountain takes a checkpoint of each persistent home when it parks, on a provider that has checkpoints (Sprites). The checkpoint belongs to that one machine. It can roll the machine back, and it cannot rebuild a machine that the provider lost. Each park adds one checkpoint, and Fountain does not delete old ones. The same flag also makes Fountain checkpoint each environment after it provisions a sandbox, which Sprites cannot restore into a new sandbox. |
@@ -76,13 +74,6 @@ custom harnesses. See [Test the deployed ACP path](integrations/acp.md#test-the-
 |---|---|---|---|
 | `DEPLOYED_ACP_FIXTURE_ENABLED` | `false` | — | Set exactly `true` to offer the fixed `fountain-fixture` runtime on a test deployment. The account UUID below is also required. |
 | `DEPLOYED_ACP_FIXTURE_USER_ID` | — | With the fixture enabled | UUID of the dedicated verified test account allowed to create and launch fixture agents. Other accounts are refused. Naming it is also what puts `fountain-fixture` into the runtime enums of the OpenAPI document this deployment serves, so keep it set while any fixture agent or fixture conversation still exists. Both outlive the flag: agents so their owner can edit and delete them, and conversations because deleting an agent keeps its conversation history, which the conversation and sandbox responses still report with the `fountain-fixture` runtime. |
-
-## Webhooks
-
-| Variable | Default | Required | Effect |
-|---|---|---|---|
-| `WEBHOOKS_ENABLED` | `true` | — | A `false` stops every outbound [webhook](reference/webhooks.md). An endpoint stays saved and gets nothing. Use it on a deployment with no outbound egress. |
-| `WEBHOOK_ALLOW_HTTP` | `false` | — | A `true` lets an endpoint URL use plain `http://`, for a receiver on your own network. It relaxes the scheme rule alone. Fountain refuses a loopback, link local or RFC1918 target either way, at every request. |
 
 ## Registration and accounts
 
@@ -110,9 +101,7 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SMTP_TLS` | `always` | — | STARTTLS by default. Use `never` for a relay on a trusted network that does not offer it. |
 | `EMAIL_DELIVERY` | — | One of three. | A `none` turns email off, on purpose. An account then self-verifies at registration (ADR 0011). Nothing can deliver a password-reset email. So in this mode, a password that somebody forgets stays forgotten. |
 | `EMAIL_FROM` | — | When mail is on. | The From address. A real delivery provider needs it. A prod instance refuses to boot without it, because a receiver rejects mail from a domain nobody verified anyway. `EMAIL_DELIVERY=none` uses it for nothing. |
-| `SUPPORT_EMAIL` | — | — | Where "contact support" in an account email points. Those are the suspension and deletion emails. Fountain also mails a `POST /api/support/reports` report there. Unset, the copy names no address, and Fountain mails no report. |
-| `SUPPORT_GITHUB_REPO` | — | — | An `owner/repo`. Each support report also becomes a GitHub issue there, with the labels `support` and the category. It needs `SUPPORT_GITHUB_TOKEN`. |
-| `SUPPORT_GITHUB_TOKEN` | — | — | A token with `issues:write` on `SUPPORT_GITHUB_REPO`. |
+| `SUPPORT_EMAIL` | — | — | Where "contact support" in an account email points. Those are the suspension and deletion emails. Unset, the copy names no address. |
 
 ## Authentication
 
@@ -120,63 +109,30 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 |---|---|---|---|
 | `GITHUB_OAUTH_CLIENT_ID` | — | — | Turns the GitHub sign-in button on. Unset, Fountain hides the button, and email and password auth still works. |
 | `GITHUB_OAUTH_CLIENT_SECRET` | — | — | |
-| `GOOGLE_OAUTH_CLIENT_ID` | — | — | Turns the Google connection on, where the deployment runs the egress broker and installs the `fountain_google` extension (the standard image does). A tenant connects Gmail and Google Calendar once on the Connections page, and Fountain keeps the refresh token. Register a Web client in Google Cloud with the redirect URI `<PUBLIC_URL>/connections/google/callback`, and enable the Gmail and Calendar APIs. Unset, the page says the feature is not configured. |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | — | — | |
-| `GOOGLE_OAUTH_SCOPES` | the defaults in the catalog | — | The scopes the Google provider asks for, space-separated. Use it when your app verification does not cover a default scope. A scope you do not request is a product that does not light up, not an error. |
-| `MICROSOFT_OAUTH_CLIENT_ID` | — | — | Turns the Microsoft connection on: Outlook mail, calendar and Teams chat through one sign-in, brokered to `graph.microsoft.com`. Register a web app in Microsoft Entra on the `common` endpoint, with the redirect URI `<PUBLIC_URL>/connections/microsoft/callback`. Unset, the page says the provider is not configured. |
-| `MICROSOFT_OAUTH_CLIENT_SECRET` | — | — | |
-| `MICROSOFT_OAUTH_SCOPES` | the defaults in the catalog | — | The scopes the Microsoft provider asks for, space-separated. Keep `offline_access` in the list: without it, Microsoft issues no refresh token. |
-| `SLACK_OAUTH_CLIENT_ID` | — | — | Turns the Slack connection on: a user token per workspace, brokered to `slack.com`. Create a Slack app with the redirect URL `<PUBLIC_URL>/connections/slack/callback`. Unset, the page says the provider is not configured. |
-| `SLACK_OAUTH_CLIENT_SECRET` | — | — | |
-| `SLACK_OAUTH_USER_SCOPES` | the defaults in the catalog | — | The user scopes the Slack provider asks for, space-separated. These are `user_scope` values, not bot scopes. |
 
-## Payment
-
-<!-- "billing" is a Technical Name here: CREDITS_ENABLED is the flag, and the
-     Elixir context carries the word. STE exempts a Technical Name from Rule
-     3.4, and the linter has no vocabulary hook for that rule. -->
+## Sandbox capacity
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `CREDITS_ENABLED` | `false` | — | Credits on. Off by default: on a self-hosted instance there is nothing to sell. On, every account holds a credit balance, turns burn it, and a zero balance refuses new work. |
-| `STRIPE_SECRET_KEY` | — | For billing. | The Stripe API key. |
-| `STRIPE_WEBHOOK_SECRET` | — | For billing. | Verifies the signature on a `POST /api/stripe/webhook`. |
-| `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per sandbox hour, as `sprites=10.76,e2b=5.45`. Rates can be fractional. A provider you leave out stays unpriced. |
-| `PROVIDER_COST_BASIS` | `active` | No. | Which hours the provider rate multiplies. An `active` counts every hour a sandbox was awake. A `turn` counts only the hours with a prompt in flight. Use `turn` where the provider drops to near-zero between prompts. |
-| `SANDBOX_RESERVE_CENTS` | `200` | No. | The credit one live sandbox needs in the balance. A tenant may run `balance / reserve` sandboxes at once, between the floor and the ceiling. |
-| `SANDBOX_CAP_FLOOR` | `2` | No. | The fewest sandboxes a tenant with a positive balance may run at once. |
-| `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once, unless an admin override raises it. |
+| `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once. An admin override for one account replaces it for that account. |
 | `SANDBOX_FLEET_CEILING` | `20` | No. | The most live sandboxes across every tenant. Set it to what your sandbox provider plan allows. A start beyond it gets `503 fleet_full`. |
 | `SANDBOX_QUEUE_MAX_DEPTH` | `10` | No. | The most sandbox requests one tenant holds at once. A request beyond it keeps the immediate capacity error. |
 | `SANDBOX_QUEUE_MAX_WAIT_SECONDS` | `3600` | No. | How long a sandbox request waits for capacity before Fountain expires it. |
 | `FOUNTAIN_EXECUTION_LIMITS` | `{}` | No. | JSON per-turn host ceiling: `wall_time_seconds`, `max_model_turns`, `max_estimated_cost_usd`. Each configured value must be positive; time and turns must be integers. Read at boot; invalid input refuses startup. Requests inherit the stricter host/account ceiling. Keep unset until runtime enforcement and later-turn/recovery checks are integrated: nonempty effective limits currently refuse launch with `422 execution_limits_unsupported`. This is not an aggregate spend cap. |
 | `FOUNTAIN_EXECUTION_DEADLINE_WORKER` | on when `FOUNTAIN_EXECUTION_LIMITS` gives a ceiling | No. | If this node runs the deadline coordinator. The coordinator polls `turn_executions`, so it stays off where no host ceiling applies. Set `true` if you give an account a ceiling but no host ceiling. Set `false` to stop the poll on any node. A change needs a restart. |
 | `FOUNTAIN_EXECUTION_DEADLINE_INTERVAL_MS` | `5000` | No. | The interval at which the coordinator looks for due deadlines. Each deadline is absolute and durable, so a larger value costs precision and not safety. |
-| `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
-| `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
-| `BUZZ_IDENTITY_CEILING` | `10` | No. | The most hosted Buzz agents one account may run at once. Each one is a permanent process on the Fountain pods. |
 | `CHATGPT_GRANT_CEILING` | `5` | No. | The most ChatGPT subscriptions one account may link. A disconnected subscription keeps its place until the account removes it. A link beyond it gets `409 chatgpt_grant_limit_reached`. A lower value refuses new links only, and `0` refuses each new link. |
-| `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
-| `CREDIT_PACKS_CENTS` | `1000,2500,10000` | No. | The credit packs a tenant can buy, in cents, as a list. |
-
-
-The rate variables are different from every other price here. They are what
-**you pay**, not what a tenant pays, and no other part of Fountain knows them.
-The admin finance panel at `/admin/finance` holds them next to your revenue,
-per tenant. The panel switches between the two hour bases per view. Compare
-both totals against a real invoice, then keep the basis that matches.
-
-Each rate can be fractional.
-
-Set none of them and the panel still works. It shows hours, and it shows `—`
-in each money column. A rate you do not set stays `—` and never becomes `$0`,
-because a cost of zero and a cost nobody told us about are different facts.
 
 ## Platform inference
 
 Fountain can hold its own inference keys. A tenant with no credential of their
-own then runs on a Fountain key, and the tokens burn their credit balance. The
-tenant's own credential always wins. There is no per-agent switch.
+own then runs on a Fountain key. The tenant's own credential always wins.
+There is no per-agent switch.
+
+**Usage on a platform key has no limit.** You pay the provider for the tokens
+of every account that runs on your key. Fountain does not charge the tenant,
+and no daily ceiling stops the spend. Set a platform key only if you accept
+that bill, for example on a deployment where you trust each account.
 
 Every variable here is blank by default. A deployment with no platform key
 behaves as it always did, and each tenant supplies a credential of their own.
@@ -201,15 +157,12 @@ page.
 
 Use the variable to seed a new deployment. Use the panel to rotate a key on a
 deployment that already runs.
-| `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. It works only with `CREDITS_ENABLED=true`. |
-| `PLATFORM_INFERENCE_RATES` | — | No. | Per-model prices, in cents per million tokens. See below. |
 
 ### The ChatGPT account for the codex runtime
 
 Fountain can also hold one ChatGPT account for the `codex` runtime. A codex
 agent whose tenant has no OpenAI key then runs on that account, before the
-`PLATFORM_OPENAI_API_KEY` key. Opencode on an `openai/` model still needs a
-key. The tenant's own key always wins.
+`PLATFORM_OPENAI_API_KEY` key. The tenant's own key always wins.
 
 Connect the account at `/admin/inference`. There are three ways in.
 
@@ -291,7 +244,7 @@ If ChatGPT confirms the limit, Fountain records the reset time that ChatGPT
 gives and shows it at `/admin/inference`. It also records an
 `admin.platform_chatgpt.exhausted` event. Until the reset time, new codex
 conversations use `PLATFORM_OPENAI_API_KEY` instead of the account. Those
-turns are billed per token, and the daily ceiling applies. If no OpenAI
+turns use the API key, which has no limit. If no OpenAI
 platform key is set, codex conversations continue to use the account.
 After the reset time, the account is used again. If ChatGPT does not confirm
 the limit, or the check fails, Fountain records nothing.
@@ -334,63 +287,10 @@ A personal subscription is one account for every tenant on the deployment.
 That pattern is behind reported account bans, and it is an operator's own
 risk. The page says so.
 
-### What a tenant pays
-
-Fountain prices these tokens at the provider's list price. There is no markup.
-The margin on a conversation is the turn time (`CREDIT_TURN_HOUR_CENTS`), not
-the tokens. A closed platform turn posts a `burn_inference` debit beside its
-`burn_turn` debit. The account credits page names both, and the
-finance panel at `/admin/finance` shows the two totals.
-
-The gate stays the balance. An account at zero cannot start the next
-conversation, and the answer is `402 insufficient_credits`. A comped account
-pays nothing, here as everywhere.
-
-### The daily ceiling
-
-`PLATFORM_INFERENCE_DAILY_CENTS` is a circuit breaker for the whole
-deployment. One bad day cannot cost more than this number. A refusal is a 503
-and not a 402, because the limit belongs to you and not to the tenant. A
-tenant with their own credential never meets this ceiling.
-
-The ceiling trails the real spend, because Fountain writes the ledger rows on
-a timer. The ceiling bounds a day. It does not bound a minute.
-
-#### With credits off there is no ceiling
-
-Fountain counts the day from the credit ledger. `CREDITS_ENABLED=false` prices
-nothing and writes no ledger rows, so it also counts nothing.
-
-**A deployment with credits off and a platform key set has no ceiling at all.**
-Every tenant with no credential of their own runs on your key, and no limit
-stops the spend. For a self-hoster that is the correct behaviour, because the
-key is yours and the provider bill is yours. Do not set a platform key with
-credits off unless you accept an unbounded bill.
-
-### Rate overrides
-
-Fountain ships a rate card for the models in the catalog. Each rate carries
-the date somebody read it from the provider. A provider that moves a price
-makes the card stale, and `PLATFORM_INFERENCE_RATES` corrects it without a new
-release.
-
-Give one entry per model, and separate the entries with a comma. Each entry
-has five fields with a colon between them. The fields are the model, the input
-price, the output price, the cached-read price and the cached-write price.
-Prices are cents per million tokens, and a fraction is valid.
-
-```bash
-PLATFORM_INFERENCE_RATES="anthropic/claude-opus-5:500:2500:50:625,openai/*:500:3000:50:500"
-```
-
-A `provider/*` entry is the price for every model of that provider with no
-entry of its own.
-
-
 ## Public pages
 
 The `/` page is not the same page on every deployment. The Fountain project's
-own site shows the product page, with the prices and the opening credit. Every other
+own site shows the product page. Every other
 deployment shows a plain front door: the name, a way in, and a link to this
 manual.
 
@@ -409,10 +309,6 @@ That is the operator's identity, and not the Fountain project's.
 
 Set all four, or set none. A partial set refuses to boot. With none set, the
 two pages return 404, and their links disappear from signup and the footer.
-
-There is one exception. With payment turned on, the pages stay up and carry
-loud `{{...}}` placeholders until you configure them. An instance that charges
-money must publish terms.
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
@@ -464,167 +360,22 @@ The OTel SDK also honours its own standard variables, and those win. Set
 `OTEL_TRACES_EXPORTER=otlp` or `=none` to force the export on or off, whatever
 the table above says.
 
-## Hosted Buzz agents
-
-Fountain can host the `buzz-acp` harness for a
-[Buzz](https://github.com/block/buzz) agent (ADR 0020). A Buzz agent then
-keeps a body on its relay, with no desktop up.
-
-The image bakes the harness binary in, for both amd64 and arm64. These two
-variables tune where it runs, and how its ACP child reaches back. An operator
-rarely sets either one, because the defaults are correct for the packaged
-image.
-
-| Variable | Default | Required | Effect |
-|---|---|---|---|
-| `BUZZ_ACP_BASE_URL` | The loopback endpoint, `http://127.0.0.1:$PORT`. | — | The base URL that the harness's ACP child, `fountain acp`, uses to reach this instance. It defaults to the loopback, so harness traffic never leaves the pod. Override it only to point the child at a different Fountain endpoint. |
-| `FOUNTAIN_CLI_PATH` | `/usr/local/bin/fountain` | — | The path to the `fountain` CLI that the harness runs as its ACP child. The image bakes it at the default, so override it only for a layout that is not standard. |
-| `BUZZ_ACP_PATH` | Wherever the bundled image installs it, `/usr/local/lib/fountain-buzz/buzz-acp`. | — | The path to the `buzz-acp` harness binary. Set it only for an installation that is not standard. The extension finds the bundled one by itself, and a core image has none, so an unset value is correct on both. The binary must report the version in `apps/fountain_buzz/buzz-acp.version`, or no harness starts. |
-
-Upstream publishes `buzz-acp` for amd64 alone. So Fountain builds it for both
-architectures from source, and bakes it in. Read
-`.github/workflows/buzz-acp-publish.yml`.
-
 ## Feature flags
 
-PostHog evaluates a per-user flag, `Fountain.FeatureFlags`, when you set a
-project key. Fountain caches an answer for one minute for each user.
+`Fountain.FeatureFlags` reads configuration and nothing else. A flag is on or
+off for the whole deployment, and the same answer applies to each account.
 
-When PostHog is unreachable, Fountain reuses the last answer it gave. With no
-answer at all, each flag reads off, so an outage never turns a feature on.
-Without PostHog you can force a flag on for each user.
-
-A flag over a feature that shipped is the exception. The `connections` flag
-reads on where you set no `POSTHOG_PROJECT_API_KEY`. A deployment with no flag
-service keeps the feature, and an upgrade does not take it away. Where you
-configure PostHog, the answer from PostHog decides.
-
-The `chatgpt_subscriptions` flag is the other kind. It holds the door that
-links a new ChatGPT subscription to an account, and that feature is in
-development. The flag reads off everywhere that nobody turned it on, and a
-deployment with no PostHog is one such place. It needs the credential broker
-too. To have the feature on your own instance, add `chatgpt_subscriptions` to
-`FEATURE_FLAGS_ON`. The hosted platform turned the flag on for every account
-on 2026-09-21, before the feature was tested with a user's subscription on
-the real service, and its first use there is the only use it has had. Read
-[feature status](reference/feature-status.md) first, and do not force the
-flag on an instance that serves people you do not trust. An account that loses the flag keeps each subscription it linked. The API
-still lists, renames, reconnects, disconnects and removes them.
+The one flag is `chatgpt_subscriptions`. It holds the door that links a new ChatGPT subscription to an account, and that feature is in
+development. The flag reads off until you add `chatgpt_subscriptions` to
+`FEATURE_FLAGS_ON`. It needs the credential broker too. Read
+[feature status](reference/feature-status.md) first, and do not turn the flag
+on for an instance that serves people you do not trust. An account that loses
+the flag keeps each subscription it linked. The API still lists, renames,
+reconnects, disconnects and removes them.
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
-| `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user. It wins over PostHog. No released feature needs a key here today: `openai_compat` did until the OpenAI-compatible API was retired, and Connections is turned on by `BROKER_LISTEN_PORT`. One feature in development does: ChatGPT subscriptions are off on your own instance unless `chatgpt_subscriptions` is here, and the feature is not proven on the real service. See [feature status](reference/feature-status.md). |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, turned on for each account. ChatGPT subscriptions are off unless `chatgpt_subscriptions` is here, and the feature is not proven on the real service. See [feature status](reference/feature-status.md). |
 
-For a hosted Connections rollout, leave the global override unset. Enable
-`connections` for the intended test accounts in PostHog, with evaluation
-runtime set to `all`. Enable the credential broker too. The broker is the
-switch that decides which accounts get the feature.
-
-The flag holds only the doors that add a credential. Those doors connect an
-account, define a provider and attach a secret to a host. An account that loses
-the flag keeps what it has. The console and the API still list it, revoke it
-and delete it.
-
-## Product analytics
-
-The same project key sends product events to PostHog. Fountain captures most
-of them on the server.
-
-Set no key and Fountain sends nothing. Set a key and the events go to your own
-PostHog project.
-
-Fountain captures an event at three points in the code. Each point is a
-function that the operation must call, so Fountain captures a new action
-without a new call site.
-
-- Every audited change, under the name of its audit action. `agent.created`
-  and `vault.secret.write` are examples.
-- Every usage event that the meter records, with a `usage.` prefix.
-  `usage.turn_started` is an example.
-- The end of a conversation turn, as `conversation.turn.done`,
-  `conversation.turn.failed` or `conversation.turn.interrupted`.
-
-Each API write leaves a second audit row named after the request line. Fountain
-sends these rows as one event, `api.request`. The route is a property, not part
-of the name. A name per route makes an event type per route, and each event
-type fills the list that every person on the project reads. A property keeps
-the count of names at one, and PostHog can break down a property.
-
-The `api.request` event carries `method`, `route`, `status` and `status_class`.
-Together they answer which endpoints your callers use, and which of them fail.
-A request that Fountain refuses before it knows the account has no person, so
-Fountain sends no event for it. The audit trail keeps that row.
-
-One kind of audited change stays out of PostHog. The audit trail keeps it. It
-is an API key that Fountain issued to itself. A sandbox and a Buzz harness each
-get a key, and an OAuth token is a key. These were 70 percent of the trail in
-one day. Fountain keeps a key that a person makes in the console, or through
-the API.
-
-Fountain also captures `$pageview` for each console page, `$identify` when the
-shape of an account changes, and `$feature_flag_called` when it reads a flag.
-Each event carries the flags that Fountain already knows for that person, as
-`$feature/<key>`.
-
-## Web analytics
-
-The public pages load the PostHog browser library. These pages are the home
-page, the legal pages, the manual and the sign-in flow. The console loads no
-browser library, and Fountain captures console pageviews on the server.
-
-The split has a reason. A pageview from the server has no session, no referrer
-and no device. Fountain also drops an event with no account, so a visitor with
-no account is invisible to it. Only a browser knows these facts, and only the
-public pages have visitors who are not yet accounts.
-
-The browser library sends anonymous events. It makes no person profile for a
-reader. A person profile appears when an account appears.
-
-### PostHog records the public pages
-
-PostHog session replay makes a record of each visit to a public page. The
-record covers the home page, the legal pages, the manual and the sign-in flow.
-
-PostHog does not record the console. This includes the dashboard, the agent and
-vault pages, and the admin pages. The console loads no browser library, so
-there is no recorder on those pages.
-
-Fountain masks every input in the record. This matters on the sign-in and
-sign-up pages, where the mask hides the email address. PostHog masks a password
-field in all conditions.
-
-The switch for replay is a PostHog project setting, not a Fountain setting. To
-stop the records, turn replay off in your PostHog project. To stop the browser
-library and the records together, set `POSTHOG_BROWSER_CAPTURE` to `false`.
-
-Fountain joins the two halves at sign-in. It reads the anonymous id from the
-PostHog cookie, and it tells PostHog to merge that visitor into the account.
-The pages a person read before the account then belong to the account. Fountain
-reads this cookie and writes nothing to it. A reader with no cookie signs in as
-normal, and Fountain sends no merge.
-
-Each browser event carries `surface: "public"`. Each console pageview carries
-`surface: "console"`. Use this property to hold the two apart.
-
-Fountain adds the PostHog origins to the Content Security Policy of the public
-pages. The console keeps its own policy, which names no PostHog origin.
-Fountain reads `POSTHOG_HOST` for both origins. PostHog Cloud serves the
-library from a second origin, and Fountain derives that origin from the first.
-
-Fountain sends no secret value, no environment variable value, no prompt and
-no agent output. An event holds the name of the action, the type of the
-resource, and counts or sizes.
-
-Delivery is best-effort. Events go to a queue and leave in batches. Fountain
-drops them if the queue is full or if PostHog answers with an error, and it
-counts each drop on the `fountain.analytics.dropped` telemetry event. An
-analytics failure cannot fail the operation it measures.
-
-| Variable | Default | Required | Effect |
-|---|---|---|---|
-| `POSTHOG_CAPTURE` | `true` | — | Set it to `false` to stop product events. Flag evaluation continues. |
-| `POSTHOG_BROWSER_CAPTURE` | `true` | — | Set it to `false` to keep the PostHog browser library off the public pages. This also stops the session recordings. Server capture continues. |
-| `POSTHOG_PERSON_PII` | `true` | — | Set it to `false` to keep the account email out of PostHog. The person is then known by user id alone. |
-| `POSTHOG_INSTANCE` | `PHX_HOST` | — | The name of this deployment. Each event is a member of this PostHog group, so two deployments that report to one project stay apart. |
+A flag that gates a shipped feature would read on by default, so that an
+upgrade adding it does not take the feature away. None does today.

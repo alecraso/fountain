@@ -5,7 +5,7 @@ defmodule Fountain.Team do
 
   A teammate is not a new kind of thing. It is a conversation — one per
   agent — bound to the reserved channel `"fountain:team"`, exactly the way
-  a Buzz channel binds a conversation through `channel_id` (#774). Adding an
+  any client binds a conversation through `channel_id` (#774). Adding an
   agent to the team opens that conversation, which provisions the agent its
   own sandbox: its computer. Messaging the teammate is `send_prompt` on that
   conversation, and `ConversationServer.send_prompt/4` already wakes a
@@ -212,8 +212,7 @@ defmodule Fountain.Team do
   Idempotent — an agent already on the team gets its existing live
   conversation back, `attrs` ignored, and nothing is recorded, since nothing
   changed. Returns `{:ok, conv}` or the `start_conversation/2` error
-  (`:not_found`, `:insufficient_credits`, `{:sandbox_quota_exceeded, _}`,
-  ...). `opts` is audit attribution, plus an optional `:source` (`"ui"` or
+  (`:not_found`, `{:sandbox_quota_exceeded, _}`, ...). `opts` is audit attribution, plus an optional `:source` (`"ui"` or
   `"api"`, default `"ui"`) recorded on the conversation.
   """
   def add_teammate(user_id, agent_id, attrs \\ %{}, opts \\ [])
@@ -335,7 +334,7 @@ defmodule Fountain.Team do
 
   Returns `{:ok, conv}` with the conversation the message went to, or the
   `send_prompt`/`start_conversation` error unchanged (`:busy`,
-  `:provisioning`, `:insufficient_credits`, ...).
+  `:provisioning`, ...).
   """
   def send_message(user_id, agent_id, text, images \\ [], opts \\ [])
       when is_binary(user_id) and is_binary(agent_id) and is_binary(text) do

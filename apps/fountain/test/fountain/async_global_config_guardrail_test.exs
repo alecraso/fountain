@@ -35,11 +35,7 @@ defmodule Fountain.AsyncGlobalConfigGuardrailTest do
   # shown to read, which is weaker than "safe": the two that were moved out
   # were only caught because a reader happened to assert on the key. The keys
   # to fear are the ones production reads on a hot path — `:public_url` on
-  # every render, `:sandboxes` on every reservation, `:credits_enabled` on
-  # every gate. `:credits_enabled` is on this list three times; a seed sweep
-  # did not reproduce a failure from it, so it stays here rather than being
-  # moved on a hunch. It is the first place to look when a `:fleet_full` or a
-  # balance assertion fails somewhere unrelated.
+  # every render, `:sandboxes` on every reservation.
   #
   # The list only shrinks. Moving a file into a sibling `async: false` module
   # is always correct.
@@ -48,24 +44,12 @@ defmodule Fountain.AsyncGlobalConfigGuardrailTest do
     "apps/fountain/test/fountain/audit_guardrail_test.exs",
     # :broker_allow_unenforced — read while provisioning a brokered sandbox.
     "apps/fountain/test/fountain/conversations/provisioning_test.exs",
-    # :webhook_allow_http — read when a webhook URL is validated.
-    "apps/fountain/test/fountain/webhooks/url_test.exs",
-    # :webhooks_enabled — read on every webhook dispatch.
-    "apps/fountain/test/fountain/webhooks_test.exs",
     # :retention_days — read only by the pruner under test.
     "apps/fountain/test/fountain/workers/retention_pruner_test.exs",
     # :callback_key_ttl_seconds — read when a callback key is minted.
     "apps/fountain/test/fountain_web/api_key_scope_test.exs",
-    # :buzz_cli_bin — read only by the buzz paths under test.
-    "apps/fountain/test/fountain_web/controllers/buzz_mcp_controller_test.exs",
     # :runners_enabled — read by the agent surfaces.
-    "apps/fountain/test/fountain_web/live/agents_live_test.exs",
-    # :credits_enabled — read by every spend gate and by Quotas.sandbox_limit.
-    "ee/test/fountain/credits_test.exs",
-    # :credits_enabled — as above, for the whole module.
-    "ee/test/fountain/workers/credit_expirer_test.exs",
-    # :credits_enabled and :credits — as above, for the whole module.
-    "ee/test/fountain/workers/credit_pricer_test.exs"
+    "apps/fountain/test/fountain_web/live/agents_live_test.exs"
   ]
 
   # The module's own `use` line, not the words anywhere in the file: these
@@ -77,8 +61,7 @@ defmodule Fountain.AsyncGlobalConfigGuardrailTest do
     root = Path.expand("../../../..", __DIR__)
 
     files =
-      ["apps/fountain/test", "ee/test"]
-      |> Enum.flat_map(&Path.wildcard(Path.join([root, &1, "**/*_test.exs"])))
+      Path.wildcard(Path.join([root, "apps/fountain/test", "**/*_test.exs"]))
 
     assert files != [], "the guardrail found no test files — it would pass over anything"
 

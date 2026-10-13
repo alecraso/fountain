@@ -207,7 +207,7 @@ defmodule Fountain.Conversations do
 
     :ok
   rescue
-    # Best-effort for the same reason `Billing.record_usage/5` rescues at this
+    # Best-effort for the same reason `Fountain.Usage.record_usage/5` rescues at this
     # choke point: the row is already committed, nearly every call site matches
     # `{:ok, _}` (ConversationServer's terminate path, `Accounts.Deletion`,
     # `SandboxReaper`), and a failed poke must not take down a caller that only
@@ -226,7 +226,7 @@ defmodule Fountain.Conversations do
   @doc false
   def record_sandbox_usage(was, %Sandbox{status: "ready"} = sandbox)
       when was in ["pending", "starting"] do
-    Fountain.Billing.record_usage(
+    Fountain.Usage.record_usage(
       sandbox.user_id,
       "sandbox_provisioned",
       sandbox.id,
@@ -241,7 +241,7 @@ defmodule Fountain.Conversations do
   # end of its own so the duration roll-up can subtract it from
   # sandbox_terminated's duration_ms instead of billing parked time (#665).
   def record_sandbox_usage("suspended", %Sandbox{status: "ready"} = sandbox) do
-    Fountain.Billing.record_usage(
+    Fountain.Usage.record_usage(
       sandbox.user_id,
       "sandbox_resumed",
       sandbox.id,
@@ -256,7 +256,7 @@ defmodule Fountain.Conversations do
   # roll-up can tell parked time apart from run time (#665).
   def record_sandbox_usage(was, %Sandbox{status: "suspended"} = sandbox)
       when was not in @billable_terminal do
-    Fountain.Billing.record_usage(
+    Fountain.Usage.record_usage(
       sandbox.user_id,
       "sandbox_suspended",
       sandbox.id,
@@ -275,7 +275,7 @@ defmodule Fountain.Conversations do
     # sides can be reconciled. `suspended` had to pass through `ready` to get
     # parked, so it is a completed provision, not a failed one.
     if was in ["pending", "starting"] do
-      Fountain.Billing.record_usage(
+      Fountain.Usage.record_usage(
         sandbox.user_id,
         "sandbox_provision_failed",
         sandbox.id,
@@ -291,7 +291,7 @@ defmodule Fountain.Conversations do
     # `failed` counts too: a sprite that died mid-provision still ran, and was
     # still billed by Sprites. Recording only clean terminations would
     # understate cost precisely when something is going wrong.
-    Fountain.Billing.record_usage(
+    Fountain.Usage.record_usage(
       sandbox.user_id,
       "sandbox_terminated",
       sandbox.id,
@@ -760,10 +760,7 @@ defmodule Fountain.Conversations do
   def unread?(_), do: false
 
   def create_conversation(attrs) do
-    with {:ok, conv} <- insert_conversation_row(attrs) do
-      after_conversation_created(conv)
-      {:ok, conv}
-    end
+    insert_conversation_row(attrs)
   end
 
   # The one place a conversation row is written. Admission writes it inside a
@@ -775,23 +772,6 @@ defmodule Fountain.Conversations do
   @doc false
   def insert_conversation_row(attrs) do
     %Conversation{} |> Conversation.changeset(attrs) |> Repo.insert()
-  end
-
-  # The account's first conversation is the request the verified landing handed
-  # over (ADR 0038), and this is the funnel's third step. It is deliberately
-  # *not* inside `insert_conversation_row/1`: a caller in a transaction must
-  # fire it after that transaction commits, so a rolled-back write reports no
-  # request. Every door that inserts a conversation calls it exactly once —
-  # `create_conversation/1`, `Fountain.Machines.Binding.attach/3` (the attach
-  # door since ADR 0058 stage 8b, `Launch.create_attached_conversation/3`
-  # before it), `reserve_initial_conversation/3` — and
-  # `conversation_creation_seam_test.exs` drives each of them and fails if one
-  # stops firing.
-  # A door for `Fountain.Conversations.Launch` (#2217); not part of the
-  # context's public surface.
-  @doc false
-  def after_conversation_created(%Conversation{} = conv) do
-    Fountain.Activation.conversation_created(conv)
   end
 
   @doc """
@@ -1113,7 +1093,7 @@ defmodule Fountain.Conversations do
     #
     # The word is `:sandbox_unavailable` and not a new one: "this machine
     # cannot be reached right now" is exactly what it means, it is already 503
-    # with a `Retry-After` and `NotReadyError` in all four SDKs, and stage 6's
+    # with a `Retry-After` and `NotReadyError` in the SDK, and stage 6's
     # decision was to reuse it rather than teach five clients a second word
     # (#2304, closed unmerged). Out of `Machines.Lease.claim/4` it can mean
     # nothing else — that function's own refusals are `{:held, _, _}`,
@@ -1506,6 +1486,19 @@ defmodule Fountain.Conversations do
     end)
   end
 
+  @doc """
+  A turn's stored images, in the shape `_unsafe_insert_turn_images/2` took
+  them, for launching the turn again (`Reattachment`'s unsent-prompt relaunch).
+  """
+  def _unsafe_list_turn_images(turn_id) do
+    Repo.all(
+      from i in TurnImage,
+        where: i.turn_id == ^turn_id,
+        order_by: i.position,
+        select: %{media_type: i.media_type, data: i.data}
+    )
+  end
+
   def _unsafe_get_turn_image(turn_id, position) do
     Repo.get_by(TurnImage, turn_id: turn_id, position: position)
   end
@@ -1571,7 +1564,7 @@ defmodule Fountain.Conversations do
   Capacity is `Fountain.RuntimeDispatch.concurrency/1` of the conversation's
   runtime **as read under the lock**, not a number the caller brought, and it
   is counted against the running turns of the other conversations **on that
-  runtime** — a `claude` turn does not consume the one `opencode` slot on a
+  runtime** — a `claude` turn does not consume the one `gemini` slot on a
   shared home (#1089 blocker 4). `:unbounded` skips only that check. Saved
   execution allowances are checked under row locks; no runtime control is
   supported yet, so any nonempty allowance refuses the turn. Refusal writes no
@@ -1623,10 +1616,8 @@ defmodule Fountain.Conversations do
         end
 
         if source = Source.load(conv.inference_source) do
-          with :ok <- InferenceCredentials.validate_source(user_id, source),
-               :ok <- Fountain.PlatformInference.gate_source(source) do
-            :ok
-          else
+          case InferenceCredentials.validate_source(user_id, source) do
+            :ok -> :ok
             {:error, reason} -> Repo.rollback(reason)
           end
         end
@@ -2071,7 +2062,7 @@ defmodule Fountain.Conversations do
         :ok
 
       user_id ->
-        Fountain.Billing.record_usage(user_id, "turn_started", turn.id, "turn", %{
+        Fountain.Usage.record_usage(user_id, "turn_started", turn.id, "turn", %{
           "conversation_id" => turn.conversation_id,
           "turn_number" => turn.turn_number
         })
@@ -2085,8 +2076,8 @@ defmodule Fountain.Conversations do
   completion and orphan reconciliation also materialize the reply in their
   transactions. A turn that already carries a `reply_text` keeps it.
 
-  The same write is where activation is decided (ADR 0038): a turn that ends
-  carrying a reply is handed to `Fountain.Activation.turn_replied/1`, which
+  The same write is where onboarding completes (ADR 0038): a turn that ends
+  carrying a reply is handed to `Fountain.Onboarding.turn_replied/1`, which
   does nothing unless it is the account's *first*. Same choke-point argument,
   same best-effort contract — it cannot fail this update.
   """
@@ -2105,7 +2096,7 @@ defmodule Fountain.Conversations do
     case result do
       {:ok, {updated, changeset}} ->
         if is_binary(Ecto.Changeset.get_change(changeset, :reply_text)) do
-          Fountain.Activation.turn_replied(updated)
+          Fountain.Onboarding.turn_replied(updated)
         end
 
         {:ok, updated}
@@ -2123,7 +2114,7 @@ defmodule Fountain.Conversations do
   terminal conversation is a no-op. An already-ended current turn can release
   its parent without announcing another terminal event. Reply materialization
   shares that transaction;
-  activation and sidebar publication run after it commits. The optional
+  the onboarding stamp and sidebar publication run after it commits. The optional
   `:exit_code` is persisted atomically with the result.
 
   Only the latest generation can idle a running parent, and a journal must
@@ -2176,7 +2167,7 @@ defmodule Fountain.Conversations do
         :noop
 
       {:ok, {updated, conv, reply_materialized?, announce?}} ->
-        if reply_materialized?, do: Fountain.Activation.turn_replied(updated)
+        if reply_materialized?, do: Fountain.Onboarding.turn_replied(updated)
         if idle?, do: broadcast_sidebar_update(conv.user_id)
         if announce?, do: {:ok, updated}, else: :noop
 
@@ -2318,7 +2309,7 @@ defmodule Fountain.Conversations do
 
       {:ok, {updated_turn, conv, conversation_changed?, bounded?}} ->
         if is_nil(turn.reply_text) and is_binary(updated_turn.reply_text) do
-          Fountain.Activation.turn_replied(updated_turn)
+          Fountain.Onboarding.turn_replied(updated_turn)
         end
 
         if conversation_changed?, do: broadcast_sidebar_update(conv.user_id)
@@ -2666,24 +2657,15 @@ defmodule Fountain.Conversations do
         event
 
       {:new, event} ->
-        notify_stage(event, meta)
-        Fountain.Webhooks.dispatch_stage(event)
+        notify_stage(event)
         event
     end
   end
 
   @doc "Notify subscribers of an existing stage; deadline jobs may repeat its id."
-  def _unsafe_notify_stage(%LogEvent{kind: "stage"} = event) do
-    meta =
-      case Jason.decode(event.data) do
-        {:ok, meta} when is_map(meta) -> meta
-        _ -> %{}
-      end
+  def _unsafe_notify_stage(%LogEvent{kind: "stage"} = event), do: notify_stage(event)
 
-    notify_stage(event, meta)
-  end
-
-  defp notify_stage(event, meta) do
+  defp notify_stage(event) do
     conv_id = event.conversation_id
     stage = event.stage
     status = event.state
@@ -2696,58 +2678,7 @@ defmodule Fountain.Conversations do
 
     Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, event})
 
-    mirror_stage_to_analytics(event, meta)
-
     event
-  end
-
-  # Which stage outcomes are product events, and why only these.
-  #
-  # Provisioning already reaches PostHog through `Billing.record_usage/5`
-  # (`usage.sandbox_provisioned` and friends), which carries the user id for
-  # free — mirroring it here as well would double-count the same fact. What
-  # metering does *not* have is how a turn ended, and "how many turns finished,
-  # and how many of those failed" is the single most useful thing this system
-  # can report about itself. The two failure stages join it because they are
-  # the ones that end an activation attempt.
-  @analytics_stages %{
-    {"turn", "done"} => true,
-    {"turn", "failed"} => true,
-    {"turn", "interrupted"} => true,
-    {"setup", "failed"} => true,
-    {"model", "failed"} => true
-  }
-
-  defp mirror_stage_to_analytics(event, meta) do
-    # `enabled?/0` first, before anything touches the database. This runs on
-    # the conversation hot path, and an instance with no PostHog key must not
-    # pay a query for a feature it has not turned on.
-    with true <- Fountain.Analytics.enabled?(),
-         true <- Map.has_key?(@analytics_stages, {event.stage, event.state}),
-         user_id when is_binary(user_id) <- conversation_user_id(event.conversation_id) do
-      Fountain.Analytics.capture(
-        "conversation.#{event.stage}.#{event.state}",
-        user_id,
-        meta
-        |> Fountain.Analytics.sanitize()
-        |> Map.merge(%{
-          "conversation_id" => event.conversation_id,
-          "source" => "conversation"
-        })
-      )
-    else
-      _ -> :ok
-    end
-  rescue
-    # Same contract as the webhook dispatch above it: a stage transition that
-    # raises is a stuck agent, and analytics is never worth that.
-    _ -> :ok
-  end
-
-  defp conversation_user_id(nil), do: nil
-
-  defp conversation_user_id(conversation_id) do
-    Repo.one(from c in Conversation, where: c.id == ^conversation_id, select: c.user_id)
   end
 
   @doc """
@@ -3836,8 +3767,7 @@ defmodule Fountain.Conversations do
            InferenceResolution.revalidate(conv, agent,
              environment_id: conv.environment_id || agent.environment_id,
              vault_id: conv.vault_id
-           ),
-         :ok <- Fountain.PlatformInference.gate_source(source) do
+           ) do
       {:ok, source}
     end
   end
@@ -3993,7 +3923,7 @@ defmodule Fountain.Conversations do
   * `{:error, :gone}` — the conversation is over, so no turn will ever carry
     the answer.
 
-  Anything else is the account's own refusal (suspended, out of credit), and
+  Anything else is the account's own refusal (suspended), and
   is retryable once the account is not.
 
   WARNING: not scoped by owner. The answer door establishes ownership first;
@@ -4016,9 +3946,7 @@ defmodule Fountain.Conversations do
         {:error, :busy}
 
       true ->
-        with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id) do
-          Fountain.Billing.check_spend(conv.user_id)
-        end
+        Fountain.Accounts.check_not_suspended(conv.user_id)
     end
   end
 
@@ -4286,7 +4214,6 @@ defmodule Fountain.Conversations do
     verdicts = PermissionPolicy.verdicts(policy)
 
     with :ok <- validate_policy_shape(policy),
-         :ok <- check_runtime_asks(verdicts, agent),
          :ok <-
            Managoat.ACP.Permissions.check_narrows(
              PermissionPolicy.verdicts(agent.permission_policy),
@@ -4303,17 +4230,6 @@ defmodule Fountain.Conversations do
   end
 
   def resolve_permission_policy(_policy, _agent), do: {:error, :permission_policy_invalid}
-
-  # A launch cannot be protected by a policy the runtime never consults. Refused
-  # rather than accepted-and-ignored — see `ACP.asks_permission?/1`, measured.
-  defp check_runtime_asks(policy, agent) do
-    if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
-         Fountain.RuntimeDispatch.asks_permission?(agent.runtime) do
-      :ok
-    else
-      {:error, {:permission_policy_unenforceable, agent.runtime}}
-    end
-  end
 
   defp validate_policy_shape(policy) do
     with :ok <- validate_reserved_keys(policy) do
@@ -4344,8 +4260,15 @@ defmodule Fountain.Conversations do
     end
   end
 
-  def sandbox_provider_atom(%{provider: provider}) when is_binary(provider),
-    do: String.to_existing_atom(provider)
+  # A provider this release no longer knows (`daytona`, removed in 2026-10, on
+  # terminal rows kept as history) reads as `:removed`: no adapter serves it and
+  # `SandboxProviders.enabled?/1` says no, so the sweeps that walk terminal
+  # rows skip it rather than raise on an atom nothing loaded.
+  def sandbox_provider_atom(%{provider: provider}) when is_binary(provider) do
+    if provider in Fountain.SandboxProviders.known_providers(),
+      do: String.to_existing_atom(provider),
+      else: :removed
+  end
 
   def sandbox_provider_atom(_sandbox), do: :sprites
 

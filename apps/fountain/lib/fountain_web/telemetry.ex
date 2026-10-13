@@ -163,13 +163,14 @@ defmodule FountainWeb.Telemetry do
         description:
           "Times this node paused the ChatGPT keepalive after two owners were throttled"
       ),
-      # Any non-zero value here means billing data is being lost (#503) —
-      # record_usage/5 swallows failures by contract, so this counter is the
-      # only signal that distinguishes "no usage" from "metering broken".
+      # Any non-zero value here means usage data is being lost (#503) —
+      # `Fountain.Usage.record_usage/5` swallows failures by contract, so this
+      # counter is the only signal that distinguishes "no usage" from
+      # "metering broken".
       counter("fountain.usage.dropped.count",
         event_name: [:fountain, :usage, :dropped],
         tags: [:event_type, :kind],
-        description: "Usage events dropped at write time (lost billing data)"
+        description: "Usage events dropped at write time (lost usage data)"
       ),
       distribution("fountain.fresh_provision.stop.duration",
         event_name: [:fountain, :fresh_provision, :stop],
@@ -240,7 +241,7 @@ defmodule FountainWeb.Telemetry do
       # below that is where the signal is.
       #
       # Runtime-agnostic — ConversationServer measures the first stdout
-      # bytes, not parsed tokens, so claude/codex/gemini/opencode are all
+      # bytes, not parsed tokens, so claude/codex/gemini are all
       # comparable here.
       distribution("fountain.turn.first_output.elapsed_ms",
         event_name: [:fountain, :turn, :first_output],
@@ -354,48 +355,10 @@ defmodule FountainWeb.Telemetry do
         ],
         description: "How long a sandbox request waited before its terminal outcome"
       ),
-      # ── Credits and billing (#1169) ────────────────────────────────────
-      #
-      # ADR 0031 makes the balance the gate, so these workers are load-bearing
-      # and none of them was watched: `FountainObanJobsRaising` needs a job to
-      # *raise*, and a pricer that runs and prices nothing never does. Two
-      # separate questions, deliberately — see Fountain.Credits.Telemetry.
-      #
-      # "Did it run?" A wall-clock stamp, so a rule can alert on staleness and
-      # on a worker that never fires at all. PER-REPLICA: the stamp exists only
-      # on the pod that ran the Oban job, so every rule over it needs `max`.
-      last_value("fountain.credits.worker.run.last_run_unix",
-        event_name: [:fountain, :credits, :worker, :run],
-        measurement: :last_run_unix,
-        tags: [:worker],
-        description: "Unix time of the last completed pass, per credit worker"
-      ),
-      sum("fountain.credits.worker.run.total",
-        event_name: [:fountain, :credits, :worker, :run],
-        measurement: :total,
-        tags: [:worker],
-        description: "Ledger rows written per credit worker pass"
-      ),
-      # "Did money move?" From the ledger write itself, so it cannot drift
-      # from the ledger. `reason` is a closed vocabulary, so this is the whole
-      # answer for turns, inference, messages, rent, expiry and purchases —
-      # and a burn_turn total of zero over a day while turns complete is the
-      # signal that the pricer is broken rather than idle.
-      sum("fountain.credits.posted.cents",
-        event_name: [:fountain, :credits, :posted],
-        measurement: :cents,
-        tags: [:reason, :direction],
-        description: "Cents moved through the credit ledger, by reason"
-      ),
-      counter("fountain.stripe_webhook.failure.count",
-        event_name: [:fountain, :stripe_webhook, :failure],
-        tags: [:kind],
-        description: "Stripe webhooks rejected or failed, by coarse kind"
-      ),
       # Swoosh already spans every delivery, so this needs no call-site change
-      # across the fourteen `Mailer.deliver/1` sites. A failed credit or
-      # verification email is a customer who never learns their balance ran
-      # out, which until now was visible in a log line and nowhere else.
+      # across the `Mailer.deliver/1` sites. A failed verification email is a
+      # person who never gets into their account, which until now was visible
+      # in a log line and nowhere else.
       counter("fountain.email.delivery.count",
         event_name: [:swoosh, :deliver, :stop],
         measurement: :duration,
@@ -501,40 +464,6 @@ defmodule FountainWeb.Telemetry do
       counter("fountain.log_output.capped.count",
         event_name: [:fountain, :log_output, :capped],
         description: "Conversations whose durable output hit the byte budget and was dropped"
-      ),
-
-      # ── Lifecycle funnel (#282) ───────────────────────────────────────────
-      # Gauges polled from Fountain.Funnel.emit_telemetry/0 so Grafana can
-      # trend stage counts and conversion over time.
-      last_value("fountain.funnel.registered",
-        event_name: [:fountain, :funnel],
-        measurement: :registered,
-        description: "Users registered (all time)"
-      ),
-      last_value("fountain.funnel.verified",
-        event_name: [:fountain, :funnel],
-        measurement: :verified,
-        description: "Users with a verified email"
-      ),
-      last_value("fountain.funnel.onboarded",
-        event_name: [:fountain, :funnel],
-        measurement: :onboarded,
-        description: "Users who completed onboarding"
-      ),
-      last_value("fountain.funnel.activated",
-        event_name: [:fountain, :funnel],
-        measurement: :activated,
-        description: "Users with at least one conversation"
-      ),
-      last_value("fountain.funnel.funded",
-        event_name: [:fountain, :funnel],
-        measurement: :funded,
-        description: "Users with a positive credit balance"
-      ),
-      last_value("fountain.funnel.stalled_verified",
-        event_name: [:fountain, :funnel],
-        measurement: :stalled_verified,
-        description: "Verified users who never started a conversation"
       ),
 
       # ── Ops gauges (#321) ─────────────────────────────────────────────────
@@ -811,7 +740,7 @@ defmodule FountainWeb.Telemetry do
     ]
   end
 
-  # Funnel stage gauges (#282) and ops gauges (#321). Full-table passes
+  # Ops gauges (#321). Full-table passes
   # every tick — cheap at current scale. Off in test: the poller's Repo
   # calls would race the SQL Sandbox's connection ownership (the modules
   # are exercised directly by tests instead).
@@ -821,12 +750,11 @@ defmodule FountainWeb.Telemetry do
   # boot in the only environment where the list is non-empty — production.
   @doc false
   def periodic_measurements(
-        enabled? \\ Application.get_env(:fountain, :funnel_poller_enabled, true)
+        enabled? \\ Application.get_env(:fountain, :gauge_poller_enabled, true)
       )
 
   def periodic_measurements(true) do
     [
-      {Fountain.Funnel, :emit_telemetry, []},
       {Fountain.OpsGauges, :emit_telemetry, []},
       {Fountain.Broker.Native, :emit_telemetry, []}
     ]

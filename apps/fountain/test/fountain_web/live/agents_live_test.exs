@@ -163,16 +163,6 @@ defmodule FountainWeb.AgentsLive.IndexTest do
         })
 
       refute html =~ "credential on this account yet"
-
-      # a model from a provider Fountain doesn't know needs nothing
-      html =
-        view
-        |> element("form[phx-change=validate]")
-        |> render_change(%{
-          "agent" => %{"name" => "x", "runtime" => "opencode", "model" => "ollama/llama3"}
-        })
-
-      refute html =~ "credential on this account yet"
     end
 
     # #554: the model field was a bare text input, so nothing in the UI said
@@ -229,7 +219,7 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       # let the changeset speak on submit.
       bad_provider =
         render_change(view, "validate", %{
-          "agent" => %{"runtime" => "opencode", "model" => "anthopic/claude-opus-5"}
+          "agent" => %{"runtime" => "claude", "model" => "anthopic/claude-opus-5"}
         })
 
       refute bad_provider =~ "passed to the runtime as-is"
@@ -400,22 +390,6 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
       assert Fountain.Agents.get_agent(agent.id, user.id).permission_policy == %{}
     end
-
-    test "a runtime that never asks says so instead of offering the choice", %{conn: conn} do
-      # opencode decides permission in its own server and sends no request
-      # (#959), so a policy here would display a restriction nothing enforces.
-      user = insert_verified_user()
-
-      agent =
-        insert_agent(user_id: user.id, runtime: "opencode", model: "anthropic/claude-sonnet-5")
-
-      conn = login_user(conn, user)
-
-      {:ok, _view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
-
-      assert html =~ "decides this inside its own server"
-      assert html =~ "disabled"
-    end
   end
 
   # The model input renders `value=` before `placeholder=` (form.ex), and both
@@ -474,7 +448,7 @@ defmodule FountainWeb.AgentsLive.NetworkPolicyNoteTest do
       env = insert_env(user_id: user.id, networking_type: "limited", networking_config: %{})
 
       # No pin, so the agent runs on the instance default. That is sprites,
-      # which advertises `:network_policy`, as do e2b and daytona.
+      # which advertises `:network_policy`, as does e2b.
       agent = insert_agent(user_id: user.id, environment_id: env.id)
 
       conn = login_user(conn, user)
@@ -500,12 +474,10 @@ defmodule FountainWeb.AgentsLive.NetworkPolicyNoteTest do
   end
 end
 
-defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
-  # async: false because it turns the broker on (application-wide config).
-  use FountainWeb.ConnCase, async: false
+defmodule FountainWeb.AgentsLive.RawMcpServersFormTest do
+  use FountainWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
-  import Fountain.BrokerTestHelpers
 
   defp with_credential(user) do
     {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
@@ -516,60 +488,7 @@ defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
     user
   end
 
-  describe "MCP servers that are not a command (#1178)" do
-    test "a connection can be attached as an MCP server and survives a later save", %{conn: conn} do
-      user = with_credential(insert_verified_user())
-      enable_connections()
-      connection = insert_connection(user, account_email: "me@example.com")
-      agent = insert_agent(user_id: user.id)
-      conn = login_user(conn, user)
-
-      {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
-      html = view |> element("button", "+ Add server") |> render_click()
-      assert html =~ "Connected account"
-
-      # Switching the type reveals the connection select.
-      html =
-        view
-        |> element("form[phx-change=validate]")
-        |> render_change(%{
-          "agent" => %{"mcp_servers" => %{"0" => %{"name" => "gmail", "kind" => "connection"}}}
-        })
-
-      assert html =~ "me@example.com (fixture-svc)"
-
-      view
-      |> form("#agent-form", %{
-        "agent" => %{
-          "name" => agent.name,
-          "model" => agent.model,
-          "runtime" => agent.runtime,
-          "mcp_servers" => %{
-            "0" => %{"name" => "gmail", "kind" => "connection", "connection" => connection.id}
-          }
-        }
-      })
-      |> render_submit()
-
-      assert %{"gmail" => %{"connection" => id}} =
-               Fountain.Agents.get_agent(agent.id, user.id).mcp_servers
-
-      assert id == connection.id
-
-      # Reopen and save with no change to the row: the entry is kept.
-      {:ok, view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
-      assert html =~ "me@example.com (fixture-svc)"
-
-      view
-      |> form("#agent-form", %{
-        "agent" => %{"name" => agent.name, "model" => agent.model, "runtime" => agent.runtime}
-      })
-      |> render_submit()
-
-      assert %{"gmail" => %{"connection" => ^id}} =
-               Fountain.Agents.get_agent(agent.id, user.id).mcp_servers
-    end
-
+  describe "MCP servers that are not a command" do
     test "a remote server written through the API survives a save from the form", %{conn: conn} do
       user = with_credential(insert_verified_user())
       remote = %{"type" => "http", "url" => "https://mcp.example.com/sse"}

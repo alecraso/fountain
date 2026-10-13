@@ -13,7 +13,8 @@ uses Docker Compose, and it is the shorter path.
 declares an app on the published image. The machines run the published
 image, not a build of your checkout. They form one Erlang cluster once you set
 `RELEASE_COOKIE`, so you can run one machine or several. The file gives you an instance that runs.
-It does not describe how the hosted service runs, which is Kubernetes.
+It does not describe how the maintainer's instance at `managoat.com` runs,
+which is Kubernetes.
 
 Fly gives you no database. You create one in a separate step below.
 
@@ -190,8 +191,8 @@ the database allows that many for every machine.
 start runs. To run a fork with your own changes, delete the `image` line under
 `[build]`. Fly then builds the `Dockerfile` in your checkout.
 
-The build takes 15 to 25 minutes on Fly's builders. It compiles the umbrella,
-it builds the Go CLI, and it fetches the pinned Buzz binaries.
+The build takes 15 to 25 minutes on Fly's builders. It compiles the umbrella
+and assembles the release.
 
 ## What the file does not do
 
@@ -202,9 +203,9 @@ it builds the Go CLI, and it fetches the pinned Buzz binaries.
 - **It never lets the machine park.** `auto_stop_machines` and
   `auto_start_machines` are off, and `min_machines_running` is 1. Fly's
   defaults park an idle machine and start it again on the next request, which
-  suits a web app. It does not suit this one. The sandbox reaper, the credit
-  pricer and every scheduled teammate run inside this process, so a parked
-  machine is an instance that quietly stops the reaper and stops the pricer.
+  suits a web app. It does not suit this one. The sandbox reaper, the retention
+  pruner and every scheduled teammate run inside this process, so a parked
+  machine is an instance that quietly stops the reaper and the schedules.
 - **It deploys with the `rolling` strategy.** Fly replaces one machine at a
   time and waits for its health check before the next. On a cluster the other
   machines keep serving, and the replaced machine rejoins under the same name.

@@ -5,13 +5,12 @@ request bodies, response schemas, and error statuses. Fountain builds that
 reference from the same OpenAPI descriptions that define its SDK contract.
 The [OpenAPI document](/api/openapi.json) is public and needs no credential.
 
-The reference describes the instance that serves it, with its installed
-extensions. On a self-hosted instance, open `/api/docs` on that instance.
+The reference describes the instance that serves it. On a self-hosted instance, open `/api/docs` on that instance.
 This guide explains workflows; it does not maintain a second endpoint catalog.
 
-For a script, start with the [TypeScript](sdk.md), [Python](python-sdk.md),
-[Elixir](elixir-sdk.md), or [Swift](swift-sdk.md) SDK. Use HTTP directly when
-your language or workflow needs a surface the SDK does not expose.
+For a script, start with the [TypeScript SDK](sdk.md). Use HTTP directly from
+another language, or when your workflow needs a surface the SDK does not
+expose.
 
 ## Authentication
 
@@ -84,28 +83,17 @@ setup without following the console checklist.
 
 See the account and Auth operations in the [generated reference](/api/docs).
 
-### Billing
+### Account deletion
 
-Hosted work spends a credit balance. An idle machine does not burn turn
-credits. Check the account's available balance before you offer a workflow
-that starts paid work, and handle a refusal when admission occurs.
-
-See [Billing](guides/operate/billing.md) for operation and
-[Sandbox spend](guides/operate/sandbox-spend.md) for the distinction between
-turn usage and provider usage. The [generated reference](/api/docs) describes
-account balances, purchases, and payment errors.
-
-### Data export and deletion
-
-Export account data before you delete an account if you need an archive.
-Treat deletion as a separate, explicit user action. See the account operations
-in the [generated reference](/api/docs) for the export and deletion contracts.
+Treat deletion as a separate, explicit user action. Deletion is immediate and
+cannot be undone. See the account operations in the
+[generated reference](/api/docs) for the deletion contract.
 
 ## Inference credentials
 
-Inference credentials pay the model provider. Fountain credits pay for
-Fountain's hosted work. Configure both when the selected runtime needs them.
-A configured credential does not imply that a provider will accept it.
+Inference credentials pay the model provider. Configure one when the selected
+runtime needs it. A configured credential does not imply that a provider will
+accept it.
 
 Store provider keys in named [credential sets](concepts/secrets.md#credential-sets).
 The first set an account creates is its default. An account with no sets gets
@@ -236,33 +224,6 @@ broker. Each other
 route stays open, so an account that loses the flag can still list, rename,
 reconnect, disconnect and remove its subscriptions.
 
-## Claimable principals
-
-A claimable principal lets an application start a computer before its visitor
-has a Fountain account. A claim attaches an owner; resource IDs and the
-tenant stay the same.
-
-Follow [Start before sign-in](build/anonymous-visitors.md). Use the documented
-idempotency key to reconcile a lost create or claim response. A repeated
-request can return a fresh credential, so keep the latest successful result.
-The [generated reference](/api/docs) defines required scopes and refusals.
-
-### Set a principal's provider credential
-
-Use `PUT /api/claimable-users/:id/inference-credentials/:provider` with
-`{"value": "..."}` to write a provider credential to the principal's default
-set. Use `DELETE` on the same path to clear it. Here `:id` is the claim grant
-ID returned by `POST /api/claimable-users`, not the principal's tenant ID.
-Both operations return `204` on success, and encrypt under the principal's
-own tenant key. They do not validate the value with the provider.
-
-These writes require the current owner's full-scope key. Before claim, that
-is the application account that opened the principal. After claim, it is the
-account that claimed it; the original application loses credential-write
-access. A `principal`-scoped key gains no account-write permission. Use
-[principals](build/anonymous-visitors.md) for customer isolation; multiple
-sets on one account do not create separate tenants.
-
 ## Rate limiting
 
 The resource API uses fixed one-minute windows, independently on each server
@@ -332,25 +293,8 @@ broker supplies its value to an approved destination. The credential value stays
 See [Secrets](concepts/secrets.md) for the security model and the binding
 operations in the [generated reference](/api/docs) for configuration.
 
-## Connections
-
-A connection authorizes access to an external service through its OAuth flow.
-It is distinct from an API key for Fountain. See
-[Connections](catalog/connections/index.md) for supported services and setup.
-The [generated reference](/api/docs) describes discovery and connection state.
-
-Use `GET /api/auth/me` to decide which controls to show:
-`connections_enabled` allows adding connections, providers, and credential
-bindings; `connections_manageable` allows listing and removing existing ones.
-Keep removal controls visible when `connections_manageable` is true, even if
-`connections_enabled` is false.
-
-### Connection providers
-
-An instance must configure a provider before an account can connect it.
-For an external service, follow [Register your own OAuth app](guides/connect/own-oauth-app.md).
-Use provider discovery from the [generated reference](/api/docs) to decide
-which connection choices the UI can offer.
+Use `GET /api/auth/me` and its `brokered` field to decide whether to show
+binding controls: bindings exist only on a deployment that runs the broker.
 
 ## Bulk apply
 
@@ -359,8 +303,8 @@ resources. The CLI compiles the manifest and submits the resource graph.
 Inspect every resource result. One failed resource does not mean that all
 other writes failed.
 
-A manifest holds six kinds. Fountain reconciles them in a fixed order, which
-is `Environment`, `Vault`, `Agent`, `Teammate`, `Schedule` and `Webhook`. A
+A manifest holds five kinds. Fountain reconciles them in a fixed order, which
+is `Environment`, `Vault`, `Agent`, `Teammate` and `Schedule`. A
 document can name another document whatever its position in the file. An `Agent` names an
 `environment`. A `Teammate` names an `agent`, an `environment` and a `vault`.
 A `Schedule` names a `teammate`. A teammate's name is not unique, so a name
@@ -369,14 +313,11 @@ them. Each name resolves against the manifest first, then against the records
 the account already holds. A name that matches neither fails that document
 alone.
 
-The document name is the key for five of the kinds. `Webhook` is the
-exception, and is keyed by `spec.url`. Change that URL and the apply creates
-a second endpoint. The first one stays, and keeps delivering, until you
-delete it through the webhook routes.
+The document name is the key for every kind.
 
 A `Teammate` document is the whole teammate. Drop `environment` or `vault`
 from it and the apply clears that binding, which puts the teammate back on
-the agent's own environment and on no vault. The other five kinds behave the
+the agent's own environment and on no vault. The other four kinds behave the
 other way around, where an absent `spec` key leaves that field alone.
 
 Rebinding a teammate moves its computer. Fountain retires the machine the old
@@ -396,17 +337,8 @@ record in place. There is no prune.
 
 The audit trail names each applied row. Teammate rows record
 `team.member.added` and `team.updated`, and schedule rows record
-`team.schedule.created` and `team.schedule.updated`, and webhook rows record
-`webhook_endpoint.created` and `webhook_endpoint.updated`. The webhook actions
-carry the `webhook_endpoint` prefix that the webhook routes have always
-written, not a shorter `webhook` one. Each row carries the actor and the IP
+`team.schedule.created` and `team.schedule.updated`. Each row carries the actor and the IP
 address of the request that applied it.
-
-A `Webhook` that an apply creates carries its signing secret in that result
-row. Fountain shows the secret one time. An update of the same endpoint
-carries no secret. A manifest that holds a `Webhook` needs a full-scope
-credential, which is what `POST /api/webhooks` needs. A sandbox-scoped
-credential is refused before any resource in that manifest is written.
 
 Each result row reports `created`, `updated`, `unchanged` or `error`. A
 second apply of an unchanged manifest reports `unchanged` for every row, and
@@ -450,9 +382,7 @@ for the deployment's. `scope` is one of `credential`, `tenant_secret`, `grant`,
 `scope` is `grant`, and null otherwise. Fountain writes the object when the
 turn starts and does not change it. A later change to the credential set, a
 reconnect of the subscription or a restart changes later turns only. The
-object is null on a turn from before Fountain recorded it. A turn on a
-subscription of the account uses no credits. The data export shows the same
-object on each turn.
+object is null on a turn from before Fountain recorded it.
 
 ```bash
 curl --fail-with-body \
@@ -471,7 +401,7 @@ text, and the error is `422 invalid_prompt`. An unsupported `media_type`,
 empty bytes, or more than 10MB give `422 invalid_images`. Both checks run
 before the launch reserves a sandbox, so bad input costs no machine.
 
-This starts real work and can consume credits and provider usage.
+This starts real work and can consume sandbox time and provider usage.
 [Conversation states](reference/conversation-states.md) explains lifecycle
 transitions. The Conversations operations in the
 [generated reference](/api/docs) define prompt admission, permission answers,
@@ -529,7 +459,7 @@ prompt instead.
 
 The wake runs after the response, and so does the wait for a sandbox that is
 still being set up or reattached. The request still refuses what needs no
-sandbox to decide: no credit, a suspended account, a missing agent, a sandbox
+sandbox to decide: a suspended account, a missing agent, a sandbox
 being reset, or no room for one more sandbox. A wake that fails later is a
 `wake` stage event with the `failed` state. Its `reason` says why, and
 `retryable` says whether sending the prompt again can succeed. No turn opens
@@ -598,14 +528,11 @@ for some minutes. In that time, Fountain can deliver a prompt without its
 value. The turn then has a null `client_request_id`.
 
 A turn that Fountain opened by itself has the `autonomous` origin and a null
-`client_request_id`. A webhook delivery carries `turn_id` and does not carry
-this value. Read the turn to get it.
+`client_request_id`.
 
-Each SDK sends the value for you. The TypeScript, Python, Elixir and Swift
-clients take it on a run and on a follow-up prompt:
-`run(prompt, { clientRequestId })` and `send(prompt, { clientRequestId })` in
-TypeScript, `client_request_id=` in Python and Elixir, `clientRequestID:` in
-Swift. A client that resumes a conversation with `channel_id` sends the value
+The TypeScript SDK sends the value for you. It takes it on a run and on a
+follow-up prompt: `run(prompt, { clientRequestId })` and
+`send(prompt, { clientRequestId })`. A client that resumes a conversation with `channel_id` sends the value
 again on the prompts route, because that request opens the turn. A client that
 gets no value sends no field.
 
@@ -647,7 +574,7 @@ the prompt was cancelled or that it did not run.
 Each tenant holds ten requests at once. A request waits one hour at most. A
 full queue keeps the immediate `429` or `503` answer. A start with images does
 not wait. A start with an explicit `sandbox_id` does not wait. A queued start
-must pass the credit gate and the inference gate again.
+must pass the inference gate again.
 
 A teammate schedule uses the queue without the flag. No person is present
 when its cron fires, so Fountain must not lose the run.
@@ -717,9 +644,6 @@ callback token can label only the conversation it was minted for. Another
 conversation returns 403 `sprite_may_not_label_another_conversation`. This
 applies to all three doors that write labels, which are the labels route, a
 team message, and a `channel_id` resume.
-
-`conversation.*` webhook payloads carry `labels` under `data`. See
-[Webhooks](reference/webhooks.md).
 
 ### An agent that labels its own run
 
@@ -827,9 +751,8 @@ runtime does not drive returns `422 model_invalid`. So does any model on the
 against a list, so a model released today works today.
 
 The conversation keeps its credential. A model that the same credential serves
-applies in place. A model that needs another credential, for example an
-`opencode` conversation that moves from an `anthropic/` model to an `openai/`
-one, returns `409 inference_source_changed`, and nothing changes.
+applies in place. A model that needs another credential
+returns `409 inference_source_changed`, and nothing changes.
 
 A conversation without a `model` follows its agent. After you edit the agent's
 model, its next turn returns `409 inference_source_changed` until you reapply
@@ -898,10 +821,6 @@ Each option also emits a `config` stage event on the conversation's stream:
 A create request that resumes a conversation through `channel_id` and names a
 different `session_config` returns `409 conversation_session_config_differs`.
 Reapply the options, send them on the prompt, or set `fresh: true`.
-
-Credits don't yet price fast mode separately. A turn that runs on the platform
-inference key with fast mode on is charged at the model's standard rate
-([#2538](https://github.com/managoat/fountain/issues/2538)).
 
 ### Workers without Fountain API access
 
@@ -984,15 +903,6 @@ A browser client on another origin needs a registered OAuth client or an
 `API_CORS_ORIGINS` entry. Read [configuration](configuration.md). A bearer
 key is the one credential that crosses an origin.
 
-## Support
-
-Use the console's support action to report a problem or request access to a
-feature. Include the conversation ID and the time of the failure. Review any
-attached transcript for sensitive content before you submit it.
-
-Support is an optional extension. Its operations appear in the
-[generated reference](/api/docs) only when the instance installs it.
-
 ## Admin
 
 Administrative workflows require an operator account and an appropriate key.
@@ -1000,14 +910,7 @@ Use tenant-scoped resource reads for ordinary application work. An operator's
 metadata access does not grant access to another tenant's prompt or output.
 
 See Admin in the [generated reference](/api/docs) for account controls,
-credit grants, sandbox maintenance, and privilege-trail events.
-
-## Webhooks
-
-Use webhooks when another server must react to Fountain events. Verify the
-signature before you process an event. Make the delivery handler idempotent.
-Follow [Webhooks](reference/webhooks.md) for delivery and retry behavior.
-The [generated reference](/api/docs) describes endpoint registration and replay.
+sandbox maintenance, and privilege-trail events.
 
 ## Audit
 
@@ -1021,10 +924,10 @@ pagination, and returned metadata.
 Every JSON error status declares one schema, `Error`. Its `error` field is
 the machine-readable code to branch on. The other fields accompany particular
 codes and are absent otherwise: `message` is a sentence for a human, `errors`
-holds field validation messages beside `validation_failed`, `upgrade_url`
-comes with `insufficient_credits`, and `active_sandboxes` and `limit` come
-with `sandbox_quota_exceeded`. On the key-authentication and scope refusals
-`error` is a sentence and `reason` carries the code. A 406 is the one
+holds field validation messages beside `validation_failed`, and
+`active_sandboxes` and `limit` come with `sandbox_quota_exceeded`. On the
+key-authentication and scope refusals `error` is a sentence and `reason`
+carries the code. A 406 is the one
 exception: content negotiation fails before any operation runs and renders
 `{"errors": {"detail": "Not Acceptable"}}`.
 

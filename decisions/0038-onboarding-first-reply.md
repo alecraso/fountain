@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Onboarding is the path from verified to first reply, carried by the API"
-description: "The primary audience is the developer integrating the API; activation is the first conversation with a reply, from any door; the path is a key and one request handed over on the verified landing against a default agent that runs on platform inference metered against credits (amending 0008); the CLI is the second door with `auth register`. Decided 2026-09-02; nothing is built yet."
+description: "The primary audience is the developer integrating the API; activation is the first conversation with a reply, from any door; the path is a key and one request handed over on the verified landing against a default agent that runs on platform inference metered against credits (amending 0008); the CLI is the second door with `auth register`. Decided 2026-09-02; nothing is built yet. Amended 2026-10-12: platform inference is no longer metered and has no daily ceiling."
 tags: [onboarding, product, billing, inference, cli, analytics]
 status: draft
 adr: "0038"
@@ -255,3 +255,39 @@ developer takes because they want to, not because nothing works without it.
   different origin to click a button.
 - **Do nothing until strangers arrive.** The number would still be
   unmeasured when they did.
+
+## Addendum — 2026-10-12: the measurement is removed
+
+Fountain is no longer sold as a hosted service, and the growth measurement
+this ADR asked for went with PostHog ([ADR 0025](0025-product-analytics-in-posthog.md)).
+The onboarding path itself stays.
+
+- `Fountain.Funnel`, its `fountain.funnel.*` gauges, the admin funnel tile at
+  `/admin` and the funnel panels on the Grafana product dashboard are removed.
+- `Fountain.Activation` is removed. What the product still needs from it moved
+  to `Fountain.Onboarding`: `first_reply/1` and `first_reply_at/1`, which the
+  verified landing and the dashboard read, and `turn_replied/1`, which still
+  stamps `users.onboarding_completed_at` at the account's first reply
+  (decision 7). The `onboarding.*` and `activation.first_reply` events are no
+  longer sent.
+- Decision 2's definition (the first conversation with a reply) still decides
+  when onboarding is complete. Nothing counts it across accounts any more.
+
+## Addendum — 2026-10-12: platform inference is unmetered and unbounded
+
+Credits are removed ([ADR 0031](0031-credits-are-the-product.md), retired), so
+decision 3's metering goes with them. The platform keys
+(`PLATFORM_ANTHROPIC_API_KEY`, `PLATFORM_OPENAI_API_KEY`,
+`PLATFORM_GEMINI_API_KEY`, and the `/admin/inference` keys) stay, and the
+selection rule is unchanged: the tenant's own credential wins.
+
+- No `burn_inference` debit is posted. `Fountain.Credits.InferenceRates` and
+  `PLATFORM_INFERENCE_RATES` are removed.
+- **There is no daily ceiling.** `PLATFORM_INFERENCE_DAILY_CENTS`, the
+  ledger-measured circuit breaker and its `503 platform_inference_unavailable`
+  refusal are removed, and `/admin/inference` no longer shows a ceiling.
+  Usage on a platform key is unbounded: the operator pays the provider for
+  every account that runs on it. The configuration reference says so.
+- The default agent and the verified landing are unchanged. There is no
+  opening credit, so nothing caps a stranger on a platform key; an operator
+  who opens registration and sets a platform key accepts that.

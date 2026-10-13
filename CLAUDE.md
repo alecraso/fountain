@@ -20,10 +20,10 @@ the files it points at.
 ## Product and goal
 
 What Fountain is, in one paragraph, is the top of [README.md](README.md).
-The standing goal since the May-2026 launch is **100 weekly active users by
-month 6** (November 2026). Org/team features stay out of scope until that
-traction shows; onboarding is the open product decision on the way there
-(#1039). This is the only place the goal is written down.
+Fountain is a self-hosted product. Since 2026-10-12 it is not sold as a
+hosted service: there is no billing, no growth target and no product
+analytics, and `managoat.com` is the maintainer's own instance. No org/team
+(shared people) or billing features are planned.
 
 ## Working with Review Loop
 
@@ -41,7 +41,7 @@ review upstream changes before replacing it.
 mise install                        # Erlang/OTP 28 + Elixir 1.19.2, from .tool-versions
 mix deps.get && mix setup           # dev DB: create + migrate
 MIX_ENV=test mix ecto.create && MIX_ENV=test mix ecto.migrate
-mix test                            # core, ee/test and every sibling app
+mix test                            # core and every sibling app
 mix precommit                       # server checks: static analysis, sobelow, release assemble
 mix precommit --full                # server checks plus the whole suite
 mix precommit --list                # its stages; `mix precommit credo test` runs a subset
@@ -58,19 +58,10 @@ Run every mix command through the pinned toolchain (activate mise, or
 ## Repo layout
 
 ```
-apps/fountain/             the server (AGPL-3.0): lib/fountain/ contexts, lib/fountain_web/ Phoenix
+apps/fountain/             the server (Apache-2.0): lib/fountain/ contexts, lib/fountain_web/ Phoenix
   test/support/            DataCase, ConnCase, factory.ex
-apps/fountain_buzz/        the five first-party extensions (ADR 0043, 0054): AGPL OTP apps
-apps/fountain_support/     that depend on :fountain, are named in `config :fountain,
-apps/fountain_google/      :extensions` and are reached only through the `Fountain.Extension`
-apps/fountain_microsoft/   callbacks. Core names no module of any (extension_guard_test.exs)
-apps/fountain_slack/       and builds no connection provider of its own. Their suites run
-                           from their own directories; `BUNDLE_EXTENSIONS=false` builds the
-                           core distribution. A new callback on the behaviour needs an ADR.
-ee/                        credits, Stripe and the credit emails, compiled into :fountain
-                           (Elastic 2.0; ADR 0010, 0027). Account email + Mailer are core.
-cli/, apps/fountain_buzz/cli   two Go modules (Apache-2.0); test each from its own directory
-sdk/                       four clients against one OpenAPI contract (CONTRIBUTING.md)
+cli/                       the Go CLI module (Apache-2.0); test it from its own directory
+sdk/                       the TypeScript client, against one OpenAPI contract (CONTRIBUTING.md)
 config/                    config.exs, dev.exs, test.exs, prod.exs, runtime.exs
 decisions/                 ADRs, an OKF bundle; start at decisions/index.md
 docs/                      the public manual, served at /docs and nowhere else
@@ -78,8 +69,8 @@ standards/, contributing/  unpublished contributor material
 scripts/                   the gates and the CI helpers (scripts/ci/README.md)
 ```
 
-The nine `managoat_*` libraries (substitution, mcp_auth, oauth, acp, sandbox,
-docs, broker, runner, runtimes) are hex packages pinned in
+The seven `managoat_*` libraries Fountain uses (oauth, acp, sandbox, docs,
+broker, runner, runtimes) are hex packages pinned in
 `apps/fountain/mix.exs`, not directories here. What each owns is tabled in
 [contributing/component-libraries.md](contributing/component-libraries.md).
 
@@ -104,7 +95,7 @@ docs, broker, runner, runtimes) are hex packages pinned in
 
 For server changes, read the relevant sections of
 [Server conventions](contributing/server.md): tenant ownership, encryption,
-audit, credits, UI boundaries, web plumbing and test setup. Read a procedure
+audit, UI boundaries, web plumbing and test setup. Read a procedure
 when the change touches it; the linked guides are reference material.
 
 ## How a change lands

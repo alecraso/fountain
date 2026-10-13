@@ -16,49 +16,9 @@ export interface paths {
         post?: never;
         /**
          * Delete the account and everything in it
-         * @description Irreversible. Cancels billing, destroys sandboxes, deletes every resource and the tenant encryption key. Requires `{"confirm": "<your account email>"}` in the body — the API equivalent of the UI's typed-email gate — and a `full`-scoped key.
+         * @description Irreversible. Destroys sandboxes, deletes every resource and the tenant encryption key. Requires `{"confirm": "<your account email>"}` in the body — the API equivalent of the UI's typed-email gate — and a `full`-scoped key.
          */
         delete: operations["FountainWeb.AccountDataController.delete_account"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/account/billing": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Credit balance and current-month usage
-         * @description The credit balance, what of it expires and when, and the usage numbers the billing page shows, measured over the calendar month. On an instance with billing disabled this is a 404 carrying `billing: "disabled"`, mirroring the UI, which redirects away from the billing page entirely.
-         */
-        get: operations["FountainWeb.BillingApiController.show"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/account/billing/credits/checkout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mint a Stripe Checkout URL for a credit pack
-         * @description A one-time payment for one of the packs this deployment sells (`GET /api/account/billing` lists them under `credits.packs_cents`). The balance moves when Stripe's webhook confirms payment, not when this returns. Refused for a comped account with `comped`, and for an amount that is not a pack with `unknown_pack`.
-         */
-        post: operations["FountainWeb.BillingApiController.credits_checkout"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -170,67 +130,6 @@ export interface paths {
          * @description Forgets the subscription's tokens and keeps its row. From the moment this returns no sandbox request may use it, inside a connection that was already open too. A credential set that names it keeps naming it, and its codex runs fail by name until the subscription is reconnected or the set is pointed elsewhere; nothing is substituted. Already disconnected is a 200. The token is not revoked at ChatGPT.
          */
         post: operations["FountainWeb.ChatGPTSubscriptionController.disconnect"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/account/exports": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List account data exports
-         * @description At most one export exists per account, so this is a zero- or one-element list — the shape matches the rest of the API rather than 404-ing when no export has been requested.
-         */
-        get: operations["FountainWeb.AccountDataController.index_exports"];
-        put?: never;
-        /**
-         * Request an account data export
-         * @description Builds asynchronously. At most one export exists per account and one request per hour; a request inside that window is refused with 429 and a `Retry-After` header. Poll `GET /api/account/exports` for status.
-         */
-        post: operations["FountainWeb.AccountDataController.create_export"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/account/exports/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get an export's status */
-        get: operations["FountainWeb.AccountDataController.show_export"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/account/exports/{id}/download": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Download a completed export
-         * @description The gzipped JSON payload, served with `content-encoding: gzip`. 404 covers every not-downloadable case identically — wrong tenant, missing id, still pending, failed, expired — so nothing about other tenants' artifacts is inferable.
-         */
-        get: operations["FountainWeb.AccountDataController.download_export"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -471,7 +370,11 @@ export interface paths {
         /** List accounts (admin) */
         get: operations["FountainWeb.AdminController.index_users"];
         put?: never;
-        post?: never;
+        /**
+         * Open an account and mint its API key (admin)
+         * @description For a platform built on this instance that opens one account per application (ADR 0064). The account is verified, has no password, and comes with one full-scope API key, shown once in `api_key`. Registration's gates (REGISTRATION_ENABLED, the access code, the domain list) don't apply: this is the operator's door.
+         */
+        post: operations["FountainWeb.AdminController.create_user"];
         delete?: never;
         options?: never;
         head?: never;
@@ -494,43 +397,6 @@ export interface paths {
          * @description The support path for a deletion request that cannot go through the account page — a locked-out user, or one who asked by email. Same teardown as self-serve; only the recorded actor differs.
          */
         delete: operations["FountainWeb.AdminController.delete_user"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{id}/comp": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Comp or un-comp an account */
-        post: operations["FountainWeb.AdminController.set_comp"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{id}/credits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add prepaid credit to an account
-         * @description A `grant_admin` ledger row (ADR 0030): goodwill, a won dispute, an outage. It never expires and is spent after the opening grant. There is deliberately no negative form here; a clawback is what a refund or dispute does through Stripe.
-         */
-        post: operations["FountainWeb.AdminController.grant_credits"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -584,7 +450,7 @@ export interface paths {
         put?: never;
         /**
          * Suspend or unsuspend an account
-         * @description The reversible lever between comp and delete (#287): sessions die, API keys refuse, sandboxes are reaped. Billing is deliberately untouched.
+         * @description The reversible lever short of delete (#287): sessions die, API keys refuse, sandboxes are reaped.
          */
         post: operations["FountainWeb.AdminController.set_suspended"];
         delete?: never;
@@ -716,7 +582,7 @@ export interface paths {
         put?: never;
         /**
          * Apply a compiled manifest (bulk upsert)
-         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled in a fixed order — environments, vaults, agents, teammates, schedules, webhooks — so a spec may name another document whatever the file's order: an agent's `environment`, a teammate's `agent`, `environment` and `vault`, and a schedule's `teammate`. Every kind is keyed by the document's `name`, except `Webhook`, which is keyed by `spec.url`. A `Webhook` created here returns its signing secret once, on that result row, and a manifest that holds one needs a full-scope credential. A `Teammate` is read as a whole declaration, so an absent `environment` or `vault` clears that binding, and moving either retires the computer the old binding named (refused with an error on that row while a turn is running on it). Two Teammate documents may not name the same agent. Apply is additive: a document dropped from the manifest leaves its record in place. Application is best-effort per resource: the response is 200 even when an individual resource fails validation, is refused by its context or raises, with per-resource errors in the result entries.
+         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled in a fixed order — environments, vaults, agents, teammates, schedules — so a spec may name another document whatever the file's order: an agent's `environment`, a teammate's `agent`, `environment` and `vault`, and a schedule's `teammate`. Every kind is keyed by the document's `name`. A `Teammate` is read as a whole declaration, so an absent `environment` or `vault` clears that binding, and moving either retires the computer the old binding named (refused with an error on that row while a turn is running on it). Two Teammate documents may not name the same agent. Apply is additive: a document dropped from the manifest leaves its record in place. Application is best-effort per resource: the response is 200 even when an individual resource fails validation, is refused by its context or raises, with per-resource errors in the result entries.
          */
         post: operations["FountainWeb.ApplyController.create"];
         delete?: never;
@@ -1029,46 +895,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/buzz/agents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List hosted Buzz agents */
-        get: operations["FountainWeb.BuzzAgentController.index"];
-        put?: never;
-        /**
-         * Provision (or converge on) a hosted Buzz agent
-         * @description Converges on the Nostr pubkey, so a provider may call it repeatedly. A deploy that would add a **new** hosted agent is gated by the credit balance and by `BUZZ_IDENTITY_CEILING`, both `402`; a converging deploy of an agent that already exists is not.
-         */
-        post: operations["FountainWeb.BuzzAgentController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/buzz/agents/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Change who may talk to a hosted Buzz agent */
-        put: operations["FountainWeb.BuzzAgentController.update"];
-        post?: never;
-        /** Tear down a hosted Buzz agent */
-        delete: operations["FountainWeb.BuzzAgentController.delete"];
-        options?: never;
-        head?: never;
-        /** Change who may talk to a hosted Buzz agent */
-        patch: operations["FountainWeb.BuzzAgentController.update (2)"];
-        trace?: never;
-    };
     "/api/catalog": {
         parameters: {
             query?: never;
@@ -1084,221 +910,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/claimable-users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Open a claimable principal
-         * @description Creates an anonymous tenant an application can build a computer inside before its visitor has a Fountain account, and returns a scoped API key for it plus a one-time claim token. The principal is funded out of the calling account's credit balance and expires on its own. Send an `Idempotency-Key` header: replaying it returns the same principal with a fresh key and claim token.
-         */
-        post: operations["FountainWeb.ClaimableUserController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/claimable-users/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read a claimable principal
-         * @description The grant's current status, for an application recovering from a lost response. Readable by the application that opened it and by the account that claimed it; anyone else gets 404, so an id cannot be probed.
-         */
-        get: operations["FountainWeb.ClaimableUserController.show"];
-        put?: never;
-        post?: never;
-        /**
-         * Abandon a claimable principal
-         * @description Revokes the principal's credentials, destroys its sandboxes and refunds what its introductory grant still holds. The grant stays readable so a lost response can still be reconciled; the principal itself is deleted a retention window later. A claimed principal belongs to the account that claimed it and cannot be released this way.
-         */
-        delete: operations["FountainWeb.ClaimableUserController.delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/claimable-users/{id}/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claim a principal
-         * @description Attaches the calling account as the principal's owner and returns a fresh credential for it. Nothing about the machine changes: the sandbox, agent, environment, vault, conversations and every id survive the claim. The credential the application held is revoked in the same transaction. A brand-new account and an account that already owns other principals claim the same way.
-         */
-        post: operations["FountainWeb.ClaimableUserController.claim"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/claimable-users/{id}/inference-credentials/{provider}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set a provider credential on a principal
-         * @description Stores the credential encrypted under the principal's own tenant key. A principal is a first-class tenant and a `principal`-scoped key cannot write account state. Only the current owner may write: the opening application before claim, and the claiming account afterward. Expired and released grants refuse writes. The principal's own credential gains nothing from this route.
-         */
-        put: operations["FountainWeb.ClaimableUserController.put_inference_credential"];
-        post?: never;
-        /** Clear a provider credential on a principal */
-        delete: operations["FountainWeb.ClaimableUserController.delete_inference_credential"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connection-providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List connection providers
-         * @description The platform providers (Google, Microsoft, Slack) followed by the tenant's own. Each carries the redirect URI to register at the service and the env var its tokens are brokered under. Only for accounts the egress broker is on for (ADR 0019); 404 otherwise.
-         */
-        get: operations["FountainWeb.ConnectionProviderController.index"];
-        put?: never;
-        /**
-         * Define a connection provider
-         * @description `kind: oauth2` takes the tenant's own app registration: authorize and token URLs, scopes, client id and secret. `kind: mcp` takes only `mcp_url`: Fountain fetches the server's protected-resource metadata (RFC 9728), the authorization server's metadata (RFC 8414) and registers a client there (RFC 7591) where it can; pass `client_id` and `client_secret` for a server without registration. Every URL must be https and public.
-         */
-        post: operations["FountainWeb.ConnectionProviderController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connection-providers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a connection provider */
-        get: operations["FountainWeb.ConnectionProviderController.show"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete a connection provider
-         * @description Deletes the provider and every connection on it, revoking each at the provider first (best effort). The platform provider cannot be deleted.
-         */
-        delete: operations["FountainWeb.ConnectionProviderController.delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Edit a connection provider
-         * @description Any field but `kind`. A blank or absent `client_secret` keeps the stored one. The platform provider cannot be edited.
-         */
-        patch: operations["FountainWeb.ConnectionProviderController.update"];
-        trace?: never;
-    };
-    "/api/connection-providers/{id}/discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Run MCP discovery again
-         * @description For an `mcp` provider: fetch the server's metadata chain again and update the endpoints. The registered client is kept while the server names the same authorization server.
-         */
-        post: operations["FountainWeb.ConnectionProviderController.discover"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List connections
-         * @description Every provider account the tenant has connected, active or revoked. Only on a deployment that runs the egress broker (ADR 0019); 404 otherwise.
-         */
-        get: operations["FountainWeb.ConnectionController.index"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connections/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List connectable providers
-         * @description Every provider this account can connect — the platform ones (Google, Microsoft, Slack; #1299), and the tenant's own (#1186) — with the scopes each asks for, the env var its token is brokered under, and the console URL that starts the flow (a browser signed in as the account owner). The same list as `GET /api/connection-providers`.
-         */
-        get: operations["FountainWeb.ConnectionController.providers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connections/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a connection */
-        get: operations["FountainWeb.ConnectionController.show"];
-        put?: never;
-        post?: never;
-        /**
-         * Revoke and delete a connection
-         * @description Tells the provider to forget the grant, then deletes the row. The next tool call from an agent that names it fails with `connection revoked`.
-         */
-        delete: operations["FountainWeb.ConnectionController.delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1611,9 +1222,9 @@ export interface paths {
         put?: never;
         /**
          * Wake a conversation without a prompt
-         * @description Brings the conversation's sandbox and server up without opening a turn, so the next prompt does not wait for them. A suspended sandbox is resumed; one that is gone is replaced with a fresh one, as a prompt would do. Answers once the server has started; its reattach or provision continues and reports on the event stream. A woken conversation is parked again after the usual idle period.
+         * @description Brings the conversation's sandbox and server up without opening a turn, so the next prompt does not wait for them. A suspended sandbox is resumed; one that is gone is replaced with a fresh one, as a prompt would do. Answers `waking` once the checks that need no sandbox pass, and wakes behind the response: the reattach or provision reports on the event stream, and a wake that fails is a `wake` `failed` stage there. A woken conversation is parked again after the usual idle period.
          *
-         *     `awake` means the server was already running and nothing was done. Refused as a prompt's wake is: 402 without credits, 410 once the conversation has ended, 409 `sandbox_reset_pending` while its machine is being reset, and 503 while the machine or fleet is unavailable.
+         *     `awake` means the server was already running and nothing was done. Refused as a prompt's wake is: 410 once the conversation has ended, 409 `sandbox_reset_pending` while its machine is being reset, and 503 while the fleet is full. Anything the sandbox itself refuses arrives on the event stream.
          */
         post: operations["FountainWeb.ConversationController.wake"];
         delete?: never;
@@ -2138,47 +1749,6 @@ export interface paths {
         patch: operations["FountainWeb.SecretBindingController.update"];
         trace?: never;
     };
-    "/api/support/reports": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the caller's reports
-         * @description Newest first, with forwarding status and the issue URL when one was created.
-         */
-        get: operations["FountainWeb.SupportReportController.index"];
-        put?: never;
-        /**
-         * File a problem report
-         * @description Stores the report with whatever `context` the client attaches (conversation, agent, sandbox, presence, recent events, app version — the facts triage needs; never secrets) and forwards it to the operator: a GitHub issue when the instance configures `SUPPORT_GITHUB_REPO`, and/or mail to `SUPPORT_EMAIL`. Forwarding is asynchronous; `status` is `new` until it lands. Audited as `support.report.created` (category, sizes and context keys — not the message).
-         */
-        post: operations["FountainWeb.SupportReportController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/support/reports/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Show one report */
-        get: operations["FountainWeb.SupportReportController.show"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/team": {
         parameters: {
             query?: never;
@@ -2483,135 +2053,6 @@ export interface paths {
         patch: operations["FountainWeb.VaultSecretController.update"];
         trace?: never;
     };
-    "/api/webhooks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List webhook endpoints
-         * @description Metadata only. The signing secret is returned once, at creation and at each rotation, and is not recoverable.
-         */
-        get: operations["FountainWeb.WebhookEndpointController.index"];
-        put?: never;
-        /**
-         * Create a webhook endpoint
-         * @description The response is the only time the signing secret is available. A URL pointing at loopback, link-local (the cloud metadata address included) or RFC1918 space is refused here and again at every delivery.
-         */
-        post: operations["FountainWeb.WebhookEndpointController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/webhooks/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get one webhook endpoint */
-        get: operations["FountainWeb.WebhookEndpointController.show"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete a webhook endpoint
-         * @description Its delivery log goes with it. Queued deliveries are dropped.
-         */
-        delete: operations["FountainWeb.WebhookEndpointController.delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update a webhook endpoint
-         * @description Any subset of url, description, event_types and status. Setting `status` to `active` on an endpoint that was auto-disabled also clears its failure count.
-         */
-        patch: operations["FountainWeb.WebhookEndpointController.update"];
-        trace?: never;
-    };
-    "/api/webhooks/{id}/deliveries": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Recent delivery attempts
-         * @description Newest first, one row per HTTP attempt. Pruned on the `webhook_deliveries` retention window (30 days by default).
-         */
-        get: operations["FountainWeb.WebhookEndpointController.deliveries"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/webhooks/{id}/deliveries/{delivery_id}/redeliver": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send one recorded event again
-         * @description A fresh job with a fresh attempt counter, against the endpoint's current URL and current secret. The payload is the one that was recorded.
-         */
-        post: operations["FountainWeb.WebhookEndpointController.redeliver"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/webhooks/{id}/rotate-secret": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Rotate the signing secret
-         * @description Returns a new secret and invalidates the old one immediately. A receiver that verifies signatures has to be updated in the same breath.
-         */
-        post: operations["FountainWeb.WebhookEndpointController.rotate"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/webhooks/{id}/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send a test event
-         * @description Queues one `webhook.test` delivery, signed like any other. Delivered whatever the endpoint's filter says, and deliberately outside the `conversation.*` namespace so a receiver switching on type cannot mistake it for a real transition.
-         */
-        post: operations["FountainWeb.WebhookEndpointController.test"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/health": {
         parameters: {
             query?: never;
@@ -2675,22 +2116,23 @@ export interface components {
         AdminAuditListResponse: {
             data: components["schemas"]["AuditEvent"][];
         };
-        /** AdminCompRequest */
-        AdminCompRequest: {
-            comped: boolean;
-        };
         /**
-         * AdminCreditsRequest
+         * AdminCreateUserRequest
          * @example {
-         *       "cents": 1000,
-         *       "note": "won dispute dp_123"
+         *       "email": "helpdesk@apps.example.com"
          *     }
          */
-        AdminCreditsRequest: {
-            /** @description Credit to add, in cents. Never expires and is spent last. */
-            cents: number;
-            /** @description Why, for the audit trail. A won dispute, a goodwill credit, an outage. */
-            note?: string | null;
+        AdminCreateUserRequest: {
+            /** @description The new account's address. Verified at creation; no mail is sent. */
+            email: string;
+            /** @description Name of the API key minted with the account. Default `platform`. */
+            key_name?: string | null;
+        };
+        /** AdminCreatedUserResponse */
+        AdminCreatedUserResponse: {
+            /** @description The new account's full-scope API key. Shown once; only its hash is kept. */
+            api_key: string;
+            data: components["schemas"]["AdminUser"];
         };
         /**
          * AdminEventListResponse
@@ -2748,7 +2190,7 @@ export interface components {
         };
         /** AdminSandboxLimitRequest */
         AdminSandboxLimitRequest: {
-            /** @description Override of the balance-funded concurrent-sandbox cap. Null clears it, handing the cap back to the balance rule. */
+            /** @description Override of the concurrent-sandbox cap. Null clears it, handing the cap back to the configured ceiling. */
             limit: number | null;
         };
         /** AdminSandboxListResponse */
@@ -2765,28 +2207,23 @@ export interface components {
          */
         AdminUser: {
             active_sandboxes?: number;
-            /** @description A free account: the balance is never checked (ADR 0031). */
-            comped?: boolean;
-            /** @description Prepaid balance in cents (ADR 0030). May be negative. Zero while credits are not active on this deployment. */
-            credit_balance_cents?: number;
             email: string;
             email_verified?: boolean;
             /** Format: date-time */
             email_verified_at?: string | null;
-            has_stripe_customer?: boolean;
             /** Format: uuid */
             id: string;
             /** Format: date-time */
             inserted_at?: string;
             /** Format: date-time */
             last_activity_at?: string | null;
-            /** @description The concurrency cap actually enforced: the override, or the balance rule's. */
+            /** @description The concurrency cap actually enforced: the override, or the configured ceiling. */
             max_concurrent_sandboxes?: number | null;
             /** Format: date-time */
             onboarding_completed_at?: string | null;
             /** @enum {string} */
             role: "admin" | "user";
-            /** @description Admin override of the cap. Null means the balance rule applies. */
+            /** @description Admin override of the cap. Null means the configured ceiling applies. */
             sandbox_limit_override?: number | null;
             suspended?: boolean;
             /** Format: date-time */
@@ -2843,13 +2280,13 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            /** @description Canonical provider/model_id (e.g. anthropic/claude-sonnet-5). The provider must match the runtime — anthropic for claude, openai for codex, google for gemini; opencode accepts any of the three. Other providers are rejected: Fountain has no credentials to export for them. The model id is not checked against a list, so a newly released model works without a Fountain release. Null on the acp runtime, which resolves no inference credential and reads no model. */
+            /** @description Canonical provider/model_id (e.g. anthropic/claude-sonnet-5). The provider must match the runtime — anthropic for claude, openai for codex, google for gemini. Other providers are rejected: Fountain has no credentials to export for them. The model id is not checked against a list, so a newly released model works without a Fountain release. Null on the acp runtime, which resolves no inference credential and reads no model. */
             model: string | null;
             name: string;
-            /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
+            /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. */
             permission_policy?: components["schemas"]["PermissionPolicy"] | null;
-            /** @enum {string} */
-            runtime: "claude" | "codex" | "gemini" | "opencode" | "acp";
+            /** @description claude, codex, gemini or acp. A row written before the opencode runtime was removed (2026-10) still reads opencode; such an agent cannot start a conversation until its runtime is changed. */
+            runtime: string;
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
             runtime_command?: string | null;
             /**
@@ -2861,7 +2298,7 @@ export interface components {
              * @description Sandbox backend override; null inherits the instance default (SANDBOX_PROVIDER). Only providers configured on this instance are accepted
              * @enum {string|null}
              */
-            sandbox_provider?: "sprites" | "e2b" | "daytona" | "runner" | null;
+            sandbox_provider?: "sprites" | "e2b" | "runner" | null;
             /** @description ACP session config options every conversation of this agent requests (ADR 0062), such as {"effort": "high"}. A conversation's own session_config overrides these keys, and a prompt's overrides both for that turn. Null or {} requests none. */
             session_config?: components["schemas"]["SessionConfig"];
             /** @description Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, optionally pinned to a tag/branch/sha via `ref`). Exactly one of `content` or `source` must be set on each entry. */
@@ -2908,10 +2345,10 @@ export interface components {
             };
             model?: string | null;
             name: string;
-            /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
+            /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. */
             permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @enum {string} */
-            runtime: "claude" | "codex" | "gemini" | "opencode" | "acp";
+            runtime: "claude" | "codex" | "gemini" | "acp";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
             runtime_command?: string | null;
             /**
@@ -2923,7 +2360,7 @@ export interface components {
              * @description Sandbox backend override; null inherits the instance default (SANDBOX_PROVIDER). Only providers configured on this instance are accepted
              * @enum {string|null}
              */
-            sandbox_provider?: "sprites" | "e2b" | "daytona" | "runner" | null;
+            sandbox_provider?: "sprites" | "e2b" | "runner" | null;
             /** @description ACP session config options every conversation of this agent requests (ADR 0062), such as {"effort": "high"}. A conversation's own session_config overrides these keys, and a prompt's overrides both for that turn. Null or {} requests none. */
             session_config?: components["schemas"]["SessionConfig"];
             /** @description Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, optionally pinned to a tag/branch/sha via `ref`). Exactly one of `content` or `source` must be set on each entry. */
@@ -2967,10 +2404,10 @@ export interface components {
             };
             model?: string | null;
             name?: string;
-            /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
+            /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. */
             permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @enum {string} */
-            runtime?: "claude" | "codex" | "gemini" | "opencode" | "acp";
+            runtime?: "claude" | "codex" | "gemini" | "acp";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
             runtime_command?: string | null;
             /**
@@ -2982,7 +2419,7 @@ export interface components {
              * @description Sandbox backend override; null inherits the instance default (SANDBOX_PROVIDER). Only providers configured on this instance are accepted
              * @enum {string|null}
              */
-            sandbox_provider?: "sprites" | "e2b" | "daytona" | "runner" | null;
+            sandbox_provider?: "sprites" | "e2b" | "runner" | null;
             /** @description ACP session config options every conversation of this agent requests (ADR 0062), such as {"effort": "high"}. A conversation's own session_config overrides these keys, and a prompt's overrides both for that turn. Null or {} requests none. */
             session_config?: components["schemas"]["SessionConfig"];
             /** @description Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, optionally pinned to a tag/branch/sha via `ref`). Exactly one of `content` or `source` must be set on each entry. */
@@ -3086,11 +2523,6 @@ export interface components {
             } | null;
             kind: string;
             name: string;
-            /**
-             * @description A Webhook endpoint's HMAC-SHA256 signing secret, on the apply that created it. Store it; it is not shown again, and an update never returns it. Null on every other row.
-             * @example whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU
-             */
-            secret?: string | null;
             secrets?: components["schemas"]["ApplySecretResult"][];
         };
         /**
@@ -3140,16 +2572,10 @@ export interface components {
          * @description Identity of the account the bearer token belongs to.
          */
         AuthMeResponse: {
-            /** @description Whether this account's conversations run behind the egress credential broker (ADR 0019): secrets with bindings stay at the broker, a limited environment is enforced there, and /api/conversations/:id/egress has content. Connections availability is separate. Read-only; an operator sets it. */
+            /** @description Whether this account's conversations run behind the egress credential broker (ADR 0019): secrets with bindings stay at the broker, a limited environment is enforced there, and /api/conversations/:id/egress has content. Read-only; an operator sets it. */
             brokered?: boolean;
             /** @description Whether this account may link a new ChatGPT subscription. Listing, renaming, reconnecting, disconnecting and removing the ones it holds never depend on it. */
             chatgpt_subscriptions_enabled?: boolean;
-            /** @description Null when billing is off. */
-            comped?: boolean | null;
-            /** @description Whether this account may add connections, providers, or credential bindings. Use connections_manageable to show existing credentials and their removal controls. */
-            connections_enabled?: boolean;
-            /** @description Whether this account may list, revoke, and delete existing connections, providers, and credential bindings. Remains true when the connections rollout flag is off but the deployment still brokers credentials. */
-            connections_manageable?: boolean;
             /** Format: email */
             email: string;
             email_verified: boolean;
@@ -3190,51 +2616,6 @@ export interface components {
             /** @enum {string} */
             media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
         };
-        /** BillingResponse */
-        BillingResponse: {
-            data: {
-                /** @description The prepaid balance, in cents. Null when this deployment has billing off; a client must not show a zero balance then. At zero, new work is refused with 402 `insufficient_credits`. */
-                credits?: {
-                    /** @description May be negative: an in-flight turn that crosses zero finishes. */
-                    balance_cents?: number;
-                    /** Format: date-time */
-                    expires_at?: string | null;
-                    /** @description Unspent credit from the earliest live grant, which expires at expires_at. */
-                    expiring_cents?: number;
-                    /** @description The packs on sale, ascending. Pass one to the credits checkout. */
-                    packs_cents?: number[];
-                    /** @description The part of the balance that was bought. It never expires and is spent last. */
-                    purchased_cents?: number;
-                    /** @description What one hour of turn time costs. */
-                    turn_hour_cents?: number;
-                } | null;
-                has_stripe_customer?: boolean;
-                /** @description The calendar month the usage numbers cover, half-open: `end` is the first instant of the next month. */
-                period?: {
-                    /** Format: date-time */
-                    end?: string;
-                    /** Format: date-time */
-                    start?: string;
-                };
-                /** @description How many sandboxes this account may run at once: an admin override, or what the balance funds (ADR 0031). */
-                sandbox_cap?: number;
-                usage: {
-                    /** @description Conversations that ran a turn in the month, deleted or not. */
-                    conversations?: number;
-                    /** @description Cents the ledger took this month: turns and platform inference. The charged number, where turn_hours is the metered one. Null with billing off. */
-                    credit_burned_cents?: number | null;
-                    /** @description Active sandbox minutes inside the period, parked time excluded. */
-                    sandbox_minutes?: number;
-                    /** @description sandbox_minutes split by sandbox provider (sprites, e2b, daytona, runner). Providers not used in the period are absent. */
-                    sandbox_minutes_by_provider?: {
-                        [key: string]: number;
-                    };
-                    /** @description Hours with a prompt in flight, on providers Fountain pays for; what burns credit. An idle sandbox spends none of these; sandbox_minutes counts it. */
-                    turn_hours?: number;
-                    turns?: number;
-                };
-            };
-        };
         /**
          * Block
          * @description One structured piece of a log event's output — the same parse the web UI renders (`Fountain.Conversations.Blocks`). `kind` decides the other fields: `text`/`thinking` carry `body`; `plan` carries the full ordered checklist in `body` (entries with `content`, `status`, and optional `priority`, `id`, `activeForm`); `tool_use` carries `id`, `name`, `summary`, `body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`; `permission_request` carries `request_id`, `name`, `summary` and `options` — the agent is blocked on it, and a client answers with POST /api/conversations/{id}/requests/{request_id}. Render only the options in `options`; never synthesise one the agent did not offer. `prompt` carries `body` — the prompt that opened the turn, which is the one kind not parsed out of a runtime's output. It appears only on a turn's `turn`/`started` stage event, and only when the events feed was asked for it with `blocks=true&prompts=true`.
@@ -3267,102 +2648,6 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /**
-         * BuzzAccessUpdateRequest
-         * @description Change who may @-mention a hosted Buzz agent. Sets buzz-acp's inbound author gate on the identity and restarts its harness. At least one field is required. A later provider deploy from the desktop resends the desktop's record and overwrites this.
-         */
-        BuzzAccessUpdateRequest: {
-            /** @enum {string|null} */
-            respond_to?: "owner-only" | "allowlist" | "anyone" | "nobody" | null;
-            /** @description 64-hex pubkeys; required non-empty when respond_to is allowlist. */
-            respond_to_allowlist?: string[] | null;
-        };
-        /**
-         * BuzzIdentity
-         * @description A hosted Buzz agent: a Nostr identity (key held server-side in a vault) bound to a Fountain agent. Its harness runs on the gateway (ADR 0020).
-         */
-        BuzzIdentity: {
-            /** Format: uuid */
-            agent_id: string;
-            display_name?: string | null;
-            enabled: boolean;
-            /**
-             * Format: uuid
-             * @description Environment this identity's conversations are provisioned from instead of the agent's own; null means the agent's.
-             */
-            environment_id?: string | null;
-            /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            inserted_at?: string;
-            name: string;
-            /** @description Nostr public key (hex) */
-            pubkey?: string | null;
-            /** @description wss:// relay URL */
-            relay_url?: string;
-            /**
-             * @description The harness's inbound author gate (buzz-acp --respond-to).
-             * @enum {string}
-             */
-            respond_to?: "owner-only" | "allowlist" | "anyone" | "nobody";
-            /** @description 64-hex pubkeys admitted in allowlist mode. */
-            respond_to_allowlist?: string[];
-            /**
-             * @description Where this identity's conversations run (ADR 0023): a sandbox per conversation, or the agent's one persistent machine. null means the agent's own default.
-             * @enum {string|null}
-             */
-            sandbox_mode?: "ephemeral" | "persistent" | null;
-            /** Format: date-time */
-            updated_at?: string;
-            /** Format: uuid */
-            vault_id: string;
-        };
-        /** BuzzIdentityListResponse */
-        BuzzIdentityListResponse: {
-            data: components["schemas"]["BuzzIdentity"][];
-        };
-        /** BuzzIdentityResponse */
-        BuzzIdentityResponse: {
-            data: components["schemas"]["BuzzIdentity"];
-        };
-        /**
-         * BuzzProvisionRequest
-         * @description Provision (or converge on) a hosted Buzz agent. The Nostr secret key is accepted here and stored server-side in the identity's vault; it is never returned and never enters a sandbox. Idempotent on `pubkey`.
-         */
-        BuzzProvisionRequest: {
-            /**
-             * Format: uuid
-             * @description The Fountain agent to run
-             */
-            agent_id: string;
-            /** @description NIP-OA owner attestation tag (JSON array) */
-            auth_tag: string;
-            display_name?: string | null;
-            /**
-             * Format: uuid
-             * @description Optional environment to provision this identity's conversations from instead of the agent's own — one agent config, one environment per identity. Must be owned by the caller (404 otherwise) and, when the agent sets allowed_environment_ids, on that list (checked at conversation start). Omitted on a re-provision clears a previously set one.
-             */
-            environment_id?: string | null;
-            name: string;
-            /** @description Nostr secret key (nsec/hex). Stored, never returned */
-            private_key_nsec: string;
-            /** @description Nostr public key (hex) — the convergence key */
-            pubkey: string;
-            /** @description wss:// relay URL */
-            relay_url: string;
-            /**
-             * @description Who may @-mention the agent and fire a turn — buzz-acp's --respond-to mode, set as BUZZ_ACP_RESPOND_TO on the hosted harness. Omitted means owner-only. A re-provision that changes it restarts a running harness.
-             * @enum {string|null}
-             */
-            respond_to?: "owner-only" | "allowlist" | "anyone" | "nobody" | null;
-            /** @description 64-hex pubkeys admitted in allowlist mode (BUZZ_ACP_RESPOND_TO_ALLOWLIST). Required non-empty when respond_to is allowlist; ignored otherwise. */
-            respond_to_allowlist?: string[] | null;
-            /**
-             * @description Where this identity's conversations run (ADR 0023), passed to the harness as fountain acp --sandbox-mode. Omitted means the agent's own default; omitted on a re-provision clears a previously set one. A re-provision that changes it restarts a running harness.
-             * @enum {string|null}
-             */
-            sandbox_mode?: "ephemeral" | "persistent" | null;
-        };
         /** CatalogResponse */
         CatalogResponse: {
             data: {
@@ -3382,16 +2667,6 @@ export interface components {
                     /** @description The TypeScript SDK equivalent, with placeholders. */
                     typescript: string;
                 };
-                /** @description Remote MCP servers verified to complete the MCP authorization discovery chain, each with the date it was last verified. Suggestions, not an allowlist — any URL can be discovered. */
-                mcp_servers?: {
-                    /** @description Whether the authorization server offers dynamic client registration (RFC 7591). False means the tenant pastes a client id from their own app registration. */
-                    dcr: boolean;
-                    name: string;
-                    slug: string;
-                    url: string;
-                    /** Format: date */
-                    verified_on: string;
-                }[];
                 model_providers?: string[];
                 /** @description Suggested `provider/model` ids per runtime. Suggestions, not an allowlist. */
                 models: {
@@ -3535,239 +2810,6 @@ export interface components {
             name: string;
         };
         /**
-         * ClaimableUser
-         * @description A claimable principal (ADR 0044): the anonymous tenant an application opens for a visitor who has no Fountain account yet. `principal_id` is the tenant every resource it builds belongs to, and it never changes — claiming attaches an owner rather than moving anything.
-         */
-        ClaimableUser: {
-            /** @description The application's own label for itself, as given at creation. */
-            application_id: string;
-            /**
-             * Format: date-time
-             * @description When the introductory grant first refused a spend, if it has.
-             */
-            budget_exhausted_at?: string | null;
-            /** Format: date-time */
-            claimed_at?: string | null;
-            /**
-             * Format: uuid
-             * @description The account that claimed it. Only shown to that account and to the application.
-             */
-            claimed_by_user_id?: string | null;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            expires_at: string;
-            /** @description The introductory grant, in cents. Zero when credits are off. */
-            grant_cents?: number;
-            /**
-             * Format: uuid
-             * @description The grant's id.
-             */
-            id: string;
-            max_live_sandboxes?: number | null;
-            /** @description Whatever the application stored here. */
-            metadata?: Record<string, never>;
-            /**
-             * Format: uuid
-             * @description The tenant id. Baked into every sandbox name the principal creates, and identical before and after a claim.
-             */
-            principal_id: string;
-            /** @enum {string} */
-            status: "unclaimed" | "claimed" | "expired" | "released";
-        };
-        /**
-         * ClaimableUserCreated
-         * @description The grant plus its two secrets. Both are shown once and stored only as hashes. Replaying the create with the same `Idempotency-Key` returns the same principal with a fresh pair, which invalidates this one.
-         */
-        ClaimableUserCreated: {
-            /** @description A `principal`-scoped API key for the principal, expiring with it. It reaches agents, environments, vaults, conversations and sandboxes, and nothing that manages an account. */
-            api_key: string;
-            application_id?: string;
-            /** @description The one-time capability that claims this principal. */
-            claim_token: string;
-            /** Format: date-time */
-            created_at?: string;
-            /** Format: date-time */
-            expires_at: string;
-            grant_cents?: number;
-            /** Format: uuid */
-            id: string;
-            max_live_sandboxes?: number | null;
-            metadata?: Record<string, never>;
-            /** Format: uuid */
-            principal_id: string;
-            /** @enum {string} */
-            status: "unclaimed" | "claimed" | "expired" | "released";
-        };
-        /** ClaimableUserCreatedResponse */
-        ClaimableUserCreatedResponse: {
-            data: components["schemas"]["ClaimableUserCreated"];
-        };
-        /** ClaimableUserResponse */
-        ClaimableUserResponse: {
-            data: components["schemas"]["ClaimableUser"];
-        };
-        /**
-         * ClaimedPrincipal
-         * @description The result of a claim. The principal's resources are untouched: the same sandbox, agent, environment, vault and conversations, under the same ids.
-         */
-        ClaimedPrincipal: {
-            /** @description A fresh `principal`-scoped key that expires 30 days after issuance. The claim revokes the application credential. Owners can replace the key from API keys in the console, including after expiry. */
-            api_key: string;
-            /** Format: date-time */
-            claimed_at?: string;
-            /** Format: uuid */
-            principal_id: string;
-            /** @enum {string} */
-            status: "unclaimed" | "claimed" | "expired" | "released";
-            /** @description The account that now owns the principal. */
-            user: {
-                email?: string | null;
-                /** Format: uuid */
-                id?: string;
-            };
-        };
-        /** ClaimedPrincipalResponse */
-        ClaimedPrincipalResponse: {
-            data: components["schemas"]["ClaimedPrincipal"];
-        };
-        /**
-         * Connection
-         * @description A provider account the tenant signed in to once, whose credential Fountain holds (#1178). Agents get the capability, never the token: an agent's `mcp_servers` names the connection (`{"gmail": {"connection": "<id>"}}`) and Fountain serves the Gmail tools; and the access token is brokered under `env_key` for an MCP server the tenant runs. Only on a deployment that runs the egress broker.
-         */
-        Connection: {
-            /** @description The connected account: an address, or the label the provider gave. */
-            account_email: string;
-            /** Format: date-time */
-            created_at?: string;
-            /** @description The env var name the access token is brokered under (`GOOGLE_ACCESS_TOKEN`). */
-            env_key: string;
-            /**
-             * Format: date-time
-             * @description When the cached access token expires. Refreshed on use.
-             */
-            expires_at?: string | null;
-            /** Format: uuid */
-            id: string;
-            /** @description The provider's slug: `google`, or a tenant provider's. */
-            provider: string;
-            /**
-             * Format: uuid
-             * @description The tenant provider (#1186); null for the platform provider.
-             */
-            provider_id?: string | null;
-            /** Format: date-time */
-            revoked_at?: string | null;
-            scopes: string[];
-            /**
-             * @description `revoked` once the tenant cut it or the provider refused the refresh token; `expired` when the access token lapsed and the provider issued no refresh token. The row stays so the console can say why the tools stopped. Reconnect to replace it.
-             * @enum {string}
-             */
-            status: "active" | "revoked" | "expired";
-            /** Format: date-time */
-            updated_at?: string;
-        };
-        /** ConnectionListResponse */
-        ConnectionListResponse: {
-            data: components["schemas"]["Connection"][];
-        };
-        /**
-         * ConnectionProvider
-         * @description Where a connection's tokens come from (#1186, #1299): a platform provider (`platform: true`, id `google`, `microsoft` or `slack` — Fountain's own OAuth client), a tenant's own OAuth app at a service (`kind: oauth2`), or a remote MCP server whose authorization Fountain discovered (`kind: mcp`). The client secret is never returned.
-         */
-        ConnectionProvider: {
-            /** @description A dotted path into the userinfo body that names the account. */
-            account_label_path?: string | null;
-            authorize_url?: string | null;
-            client_id?: string | null;
-            /**
-             * @description `dcr` when the client came from RFC 7591 registration.
-             * @enum {string|null}
-             */
-            client_source?: "dcr" | "manual" | null;
-            /** @description True when the provider has a client Fountain can start a flow with. */
-            configured: boolean;
-            /** @description Where to send the account owner, in a browser signed in to the console, to connect an account. */
-            connect_url: string;
-            /** Format: date-time */
-            created_at?: string | null;
-            /** @description The env var a connection's access token is brokered under. */
-            env_key: string;
-            has_client_secret?: boolean;
-            /** @description A uuid, or a platform slug. */
-            id: string;
-            /** @description The authorization server discovery found (`mcp`). */
-            issuer?: string | null;
-            /** @enum {string} */
-            kind: "oauth2" | "mcp";
-            mcp_url?: string | null;
-            name: string;
-            pkce?: boolean;
-            /** @description True for a platform provider, which has no row. */
-            platform: boolean;
-            /** @description The callback to register at the service. */
-            redirect_uri: string;
-            registration_endpoint?: string | null;
-            revoke_url?: string | null;
-            scopes: string[];
-            slug: string;
-            /** @enum {string} */
-            token_endpoint_auth?: "client_secret_post" | "client_secret_basic" | "none";
-            /** @description The hosts the brokered token is attached to as a bearer. */
-            token_hosts: string[];
-            token_url?: string | null;
-            /** Format: date-time */
-            updated_at?: string | null;
-            userinfo_url?: string | null;
-        };
-        /** ConnectionProviderListResponse */
-        ConnectionProviderListResponse: {
-            data: components["schemas"]["ConnectionProvider"][];
-        };
-        /**
-         * ConnectionProviderRequest
-         * @description `kind: oauth2` needs `name`, `authorize_url`, `token_url`, `client_id` and `client_secret` (unless `token_endpoint_auth` is `none`). `kind: mcp` needs `mcp_url`; the rest comes from discovery. `slug` defaults from the name or the server host, `env_key` from the slug (`GITHUB_ACCESS_TOKEN`).
-         * @example {
-         *       "account_label_path": "login",
-         *       "authorize_url": "https://github.com/login/oauth/authorize",
-         *       "client_id": "Iv1.abc",
-         *       "client_secret": "…",
-         *       "kind": "oauth2",
-         *       "name": "GitHub",
-         *       "scopes": [
-         *         "repo",
-         *         "read:user"
-         *       ],
-         *       "slug": "github",
-         *       "token_hosts": [
-         *         "api.github.com"
-         *       ],
-         *       "token_url": "https://github.com/login/oauth/access_token",
-         *       "userinfo_url": "https://api.github.com/user"
-         *     }
-         */
-        ConnectionProviderRequest: {
-            account_label_path?: string | null;
-            authorize_url?: string;
-            client_id?: string;
-            /** @description Write-only. */
-            client_secret?: string;
-            env_key?: string;
-            /** @enum {string} */
-            kind?: "oauth2" | "mcp";
-            mcp_url?: string;
-            name?: string;
-            pkce?: boolean;
-            revoke_url?: string | null;
-            scopes?: string[];
-            slug?: string;
-            /** @enum {string} */
-            token_endpoint_auth?: "client_secret_post" | "client_secret_basic" | "none";
-            token_hosts?: string[];
-            token_url?: string;
-            userinfo_url?: string | null;
-        };
-        /**
          * Conversation
          * @description One chat with one agent inside one sandbox.
          */
@@ -3818,8 +2860,8 @@ export interface components {
             pending_requests?: components["schemas"]["PendingPermissionRequest"][];
             /** @description The per-launch permission override this conversation was started with, or null if it had none. The policy actually in force is this merged with the agent's, taking the stricter of the two per tool. */
             permission_policy?: components["schemas"]["PermissionPolicy"] | null;
-            /** @enum {string} */
-            runtime: "claude" | "codex" | "gemini" | "opencode" | "acp";
+            /** @description claude, codex, gemini or acp. A row written before the opencode runtime was removed (2026-10) still reads opencode; such an agent cannot start a conversation until its runtime is changed. */
+            runtime: string;
             runtime_session_id?: string | null;
             sandbox?: (components["schemas"]["Sandbox"] | (null)) | null;
             /**
@@ -3852,7 +2894,7 @@ export interface components {
         ConversationCreateRequest: {
             /** Format: uuid */
             agent_id: string;
-            /** @description Opaque key for the external channel this conversation is bound to (for example a Buzz channel id). When set, the latest live conversation for the same agent, vault and channel is resumed (200) instead of a new one being opened (201). */
+            /** @description Opaque key for the external channel this conversation is bound to (for example a chat thread id). When set, the latest live conversation for the same agent, vault and channel is resumed (200) instead of a new one being opened (201). */
             channel_id?: string | null;
             /** @description Your own name for the first prompt. Ignored when the request carries no `prompt`. An immediate `channel_id` resume does not deliver the prompt; send the value with it on the prompts route. If a queued start resumes a channel bound while it waited, the queue delivers the prompt and value. Fountain stores it on the turn the prompt opens and sends it on that turn's `started` stage event, beside the `turn_id`, so a client can bind its work item to the exact turn without inferring it from turn order. Use the event to find a candidate turn and the turn itself to confirm it: the event's copy has been through event redaction, and the turn's is what you sent. It is a correlation and not an idempotency key: a second prompt with the same value opens a second turn that carries it too. Make it unique within the conversation. */
             client_request_id?: string | null;
@@ -3876,7 +2918,7 @@ export interface components {
             } | null;
             /** @description Optional model to run instead of the agent's (ADR 0061), in canonical provider/model_id form, for this conversation only. Checked as the agent's own model is: a provider the runtime does not drive, or any model on the acp runtime, is 422 model_invalid. The model id itself is not checked against a catalog. Change it later with POST /api/conversations/{id}/reapply. Not part of the channel_id resume key: a request that resumes a conversation running a different model is 409 conversation_model_differs, before any prompt is sent; reapply the model, or set fresh: true. */
             model?: string | null;
-            /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped, and one the runtime never consults is refused with 422 permission_policy_unenforceable. If a queued request with a prompt and a nonempty policy resumes an existing channel, it fails with permission_policy_requires_fresh_conversation before sending the prompt. Set fresh: true to create a conversation for that policy. */
+            /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped. If a queued request with a prompt and a nonempty policy resumes an existing channel, it fails with permission_policy_requires_fresh_conversation before sending the prompt. Set fresh: true to create a conversation for that policy. */
             permission_policy?: components["schemas"]["PermissionPolicy"] | null;
             /** @description Optional first turn prompt. A launch may open with no prompt at all, but a prompt that is present must carry words: blank and whitespace-only text is refused with 422 invalid_prompt, before the launch reserves a sandbox. */
             prompt?: string;
@@ -3889,7 +2931,7 @@ export interface components {
             sandbox_api_access?: "owner" | "none";
             /**
              * Format: uuid
-             * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built from the same environment and vault as this launch (422 sandbox_identity_mismatch). It is normally the same agent's (422 sandbox_runtime_mismatch if the agent's runtime changed since). An agent other than the one the sandbox was built for may attach to that agent's persistent sandbox as a guest only to make a claude and codex pair: a codex agent on a claude agent's home, or a claude agent on a codex agent's, where no other agent of either runtime has run. Any other guest is 422 sandbox_identity_mismatch. Attaching a guest needs a full-scope API key; a sandbox's own token, or any key below full scope, is refused with 403 guest_attach_requires_full_scope (reason insufficient_scope), a channel rotation (fresh) of a guest included. The sandbox stays its own agent's, and a guest's reapply is refused with 409 rebuild_required: field shared_sandbox while another conversation is on the sandbox, field guest when the guest is alone there. A claude home created before guests were admitted refuses a codex guest with 409 codex_inference_conflict until it is reset. The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on opencode and gemini, where a second turn of the same runtime is refused with 409 sandbox_at_capacity while one runs.
+             * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built from the same environment and vault as this launch (422 sandbox_identity_mismatch). It is normally the same agent's (422 sandbox_runtime_mismatch if the agent's runtime changed since). An agent other than the one the sandbox was built for may attach to that agent's persistent sandbox as a guest only to make a claude and codex pair: a codex agent on a claude agent's home, or a claude agent on a codex agent's, where no other agent of either runtime has run. Any other guest is 422 sandbox_identity_mismatch. Attaching a guest needs a full-scope API key; a sandbox's own token, or any key below full scope, is refused with 403 guest_attach_requires_full_scope (reason insufficient_scope), a channel rotation (fresh) of a guest included. The sandbox stays its own agent's, and a guest's reapply is refused with 409 rebuild_required: field shared_sandbox while another conversation is on the sandbox, field guest when the guest is alone there. A claude home created before guests were admitted refuses a codex guest with 409 codex_inference_conflict until it is reset. The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on gemini, where a second turn of the same runtime is refused with 409 sandbox_at_capacity while one runs.
              */
             sandbox_id?: string | null;
             /**
@@ -3982,16 +3024,6 @@ export interface components {
              * @enum {string}
              */
             status: "awake" | "waking";
-        };
-        /**
-         * CreditsCheckoutRequest
-         * @example {
-         *       "cents": 2500
-         *     }
-         */
-        CreditsCheckoutRequest: {
-            /** @description The pack to buy, in cents. Must be one of credits.packs_cents. */
-            cents: number;
         };
         /**
          * DeviceAuthResponse
@@ -4185,7 +3217,7 @@ export interface components {
             /** @description How many the account has against `limit`, on `chatgpt_grant_limit_reached` and `chatgpt_link_attempts_exceeded` (409). */
             count?: number;
             /**
-             * @description The machine-readable code: `validation_failed`, `not_found`, `insufficient_credits`, `sandbox_quota_exceeded`, `expired`, `invalid_token` and the rest. On the key-authentication and scope refusals it is a sentence and `reason` carries the code.
+             * @description The machine-readable code: `validation_failed`, `not_found`, `sandbox_quota_exceeded`, `expired`, `invalid_token` and the rest. On the key-authentication and scope refusals it is a sentence and `reason` carries the code.
              * @example validation_failed
              */
             error: string;
@@ -4217,37 +3249,6 @@ export interface components {
              * @description When the subscription's Codex usage resets, on `chatgpt_grant_unusable` with `reason: "exhausted"`; null otherwise.
              */
             until?: string | null;
-            /** @description Where to buy credit, on `insufficient_credits` (402). */
-            upgrade_url?: string;
-        };
-        /**
-         * Export
-         * @description An account data export. Built asynchronously; the payload is fetched from the download endpoint, never embedded here.
-         */
-        Export: {
-            /** @description Uncompressed size. */
-            byte_size?: number | null;
-            /** @description Completed and not yet expired — the only state the download serves. */
-            downloadable?: boolean;
-            error?: string | null;
-            /** Format: date-time */
-            expires_at?: string | null;
-            /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            inserted_at?: string;
-            /** @enum {string} */
-            status: "pending" | "completed" | "failed";
-            /** Format: date-time */
-            updated_at?: string;
-        };
-        /** ExportListResponse */
-        ExportListResponse: {
-            data: components["schemas"]["Export"][];
-        };
-        /** ExportResponse */
-        ExportResponse: {
-            data: components["schemas"]["Export"];
         };
         /** HealthResponse */
         HealthResponse: {
@@ -4405,11 +3406,11 @@ export interface components {
         };
         /**
          * ManifestResource
-         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Specs reference other documents by name, and the server resolves each to an id: an Agent's `environment`, a Teammate's `agent`, `environment` and `vault`, and a Schedule's `teammate`. Teammate specs take `agent`, `environment` and `vault`, and a Teammate document is read as a whole declaration, so an absent `environment` or `vault` clears that binding. Schedule specs take `teammate` plus the TeamScheduleCreateRequest fields `cron`, `prompt`, `one_off` and `enabled`; Webhook specs take the WebhookEndpointCreateRequest fields `url`, `description` and `event_types`, and are keyed by `url` rather than by `name`.
+         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Specs reference other documents by name, and the server resolves each to an id: an Agent's `environment`, a Teammate's `agent`, `environment` and `vault`, and a Schedule's `teammate`. Teammate specs take `agent`, `environment` and `vault`, and a Teammate document is read as a whole declaration, so an absent `environment` or `vault` clears that binding. Schedule specs take `teammate` plus the TeamScheduleCreateRequest fields `cron`, `prompt`, `one_off` and `enabled`.
          */
         ManifestResource: {
             /** @enum {string} */
-            kind: "Environment" | "Vault" | "Agent" | "Teammate" | "Schedule" | "Webhook";
+            kind: "Environment" | "Vault" | "Agent" | "Teammate" | "Schedule";
             name: string;
             spec?: {
                 [key: string]: unknown;
@@ -4680,11 +3681,8 @@ export interface components {
              * @enum {string}
              */
             mode?: "ephemeral" | "persistent";
-            /**
-             * @description The sandbox backend this row lives on.
-             * @enum {string}
-             */
-            provider?: "sprites" | "e2b" | "daytona" | "runner";
+            /** @description The sandbox backend this row lives on: sprites, e2b or runner. A sandbox created before the Daytona provider was removed (2026-10) reads daytona and is terminated. */
+            provider?: string;
             /** @description For `provider: runner` — the user's own machine the sandbox lives on, and its directory there (#834). Null for hosted providers; the inner fields are null when the runner row was forgotten. */
             runner?: {
                 hostname?: string | null;
@@ -4735,8 +3733,8 @@ export interface components {
             inserted_at?: string;
             /** @description True while this conversation is running a turn on the machine. */
             mid_turn: boolean;
-            /** @enum {string} */
-            runtime?: "claude" | "codex" | "gemini" | "opencode" | "acp";
+            /** @description claude, codex, gemini or acp. A row written before the opencode runtime was removed (2026-10) still reads opencode; such an agent cannot start a conversation until its runtime is changed. */
+            runtime?: string;
             /** @enum {string} */
             status: "pending" | "running" | "idle" | "failed" | "terminated";
             title?: string | null;
@@ -4772,11 +3770,8 @@ export interface components {
              * @enum {string}
              */
             mode?: "ephemeral" | "persistent";
-            /**
-             * @description The sandbox backend this row lives on.
-             * @enum {string}
-             */
-            provider?: "sprites" | "e2b" | "daytona" | "runner";
+            /** @description The sandbox backend this row lives on: sprites, e2b or runner. A sandbox created before the Daytona provider was removed (2026-10) reads daytona and is terminated. */
+            provider?: string;
             /** @description For `provider: runner` — the user's own machine the sandbox lives on, and its directory there (#834). Null for hosted providers; the inner fields are null when the runner row was forgotten. */
             runner?: {
                 hostname?: string | null;
@@ -5167,68 +4162,6 @@ export interface components {
             /** @enum {string} */
             reason: "changed";
         };
-        /**
-         * StripeUrlResponse
-         * @description A Stripe-hosted URL to open in a browser. Single-use and short-lived.
-         */
-        StripeUrlResponse: {
-            data: {
-                /** Format: uri */
-                url: string;
-            };
-        };
-        /**
-         * SupportReport
-         * @description A problem report a client filed, with the context it had and where it was forwarded.
-         */
-        SupportReport: {
-            /** @enum {string} */
-            category: "bug" | "stuck" | "question" | "idea" | "other";
-            client?: string | null;
-            context?: {
-                [key: string]: unknown;
-            };
-            /** @description The GitHub issue, when one was created. */
-            external_url?: string | null;
-            forward_error?: string | null;
-            /** Format: date-time */
-            forwarded_at?: string | null;
-            has_screenshot?: boolean;
-            /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            inserted_at: string;
-            message: string;
-            screenshot_media_type?: string | null;
-            /** @enum {string} */
-            status: "new" | "forwarded" | "failed";
-        };
-        /** SupportReportCreateRequest */
-        SupportReportCreateRequest: {
-            /** @enum {string} */
-            category: "bug" | "stuck" | "question" | "idea" | "other";
-            /** @example fountain-team 2026-08-19 a1db945 */
-            client?: string | null;
-            /** @description What the client knew: conversation_id, agent_id/agent_name/runtime/model, sandbox, presence, recent events, url, app version. 64 KB max. Never secrets. */
-            context?: {
-                [key: string]: unknown;
-            } | null;
-            message: string;
-            screenshot?: {
-                /** @description base64 */
-                data: string;
-                /** @enum {string} */
-                media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
-            } | null;
-        };
-        /** SupportReportListResponse */
-        SupportReportListResponse: {
-            data: components["schemas"]["SupportReport"][];
-        };
-        /** SupportReportResponse */
-        SupportReportResponse: {
-            data: components["schemas"]["SupportReport"];
-        };
         /** TeamAddRequest */
         TeamAddRequest: {
             /** Format: uuid */
@@ -5592,121 +4525,6 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
-        /**
-         * WebhookDelivery
-         * @description One HTTP attempt at one event. Retained for 30 days by default, then pruned.
-         */
-        WebhookDelivery: {
-            /** @description 1 for the first try. */
-            attempt: number;
-            duration_ms?: number | null;
-            error?: string | null;
-            /** @description The log_events row id, which is also the SSE event id. */
-            event_id: string;
-            /** @example conversation.turn.done */
-            event_type: string;
-            /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            inserted_at?: string;
-            /** @description The first few KB of what the receiver said. */
-            response_body?: string | null;
-            /** @description null when the request never got a response. */
-            status_code?: number | null;
-        };
-        /** WebhookDeliveryListResponse */
-        WebhookDeliveryListResponse: {
-            data: components["schemas"]["WebhookDelivery"][];
-        };
-        /**
-         * WebhookEndpoint
-         * @description A URL of yours that Fountain POSTs lifecycle events to. The signing secret is returned only by create and rotate, and never appears here.
-         */
-        WebhookEndpoint: {
-            /** @description Events in a row that exhausted their retries. Any accepted delivery clears it. */
-            consecutive_failures?: number;
-            description?: string | null;
-            /** Format: date-time */
-            disabled_at?: string | null;
-            disabled_reason?: string | null;
-            /**
-             * @description What this endpoint is subscribed to. An exact type (`conversation.turn.done`), one stage (`conversation.turn.*`), or `*` for everything. `GET /api/catalog` is not the source for these; the docs page is.
-             * @example [
-             *       "conversation.turn.done",
-             *       "conversation.turn.failed"
-             *     ]
-             */
-            event_types: string[];
-            /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            inserted_at?: string;
-            /**
-             * @description `disabled` means Fountain stopped delivering, either because you switched it off or because deliveries failed for long enough.
-             * @enum {string}
-             */
-            status: "active" | "disabled";
-            /** Format: date-time */
-            updated_at?: string;
-            /** @example https://example.com/hooks/fountain */
-            url: string;
-        };
-        /** WebhookEndpointCreateRequest */
-        WebhookEndpointCreateRequest: {
-            description?: string | null;
-            /**
-             * @description Defaults to conversation.turn.done, conversation.turn.failed and conversation.provision.failed when absent.
-             * @example [
-             *       "conversation.turn.done"
-             *     ]
-             */
-            event_types?: string[];
-            /**
-             * @description https:// only, unless the instance permits http. Loopback, link-local (including the cloud metadata address) and RFC1918 targets are refused, at request time as well as here.
-             * @example https://example.com/hooks/fountain
-             */
-            url: string;
-        };
-        /**
-         * WebhookEndpointCreatedResponse
-         * @description The endpoint, plus the signing secret. This is the only response that carries the secret; it is not recoverable afterwards, only replaceable.
-         */
-        WebhookEndpointCreatedResponse: {
-            data: components["schemas"]["WebhookEndpoint"];
-            /**
-             * @description The HMAC-SHA256 signing secret. Store it; it is not shown again.
-             * @example whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU
-             */
-            secret: string;
-        };
-        /** WebhookEndpointListResponse */
-        WebhookEndpointListResponse: {
-            data: components["schemas"]["WebhookEndpoint"][];
-        };
-        /** WebhookEndpointResponse */
-        WebhookEndpointResponse: {
-            data: components["schemas"]["WebhookEndpoint"];
-        };
-        /**
-         * WebhookEndpointUpdateRequest
-         * @description Any subset. `status` toggles delivery; the secret is rotated separately.
-         */
-        WebhookEndpointUpdateRequest: {
-            description?: string | null;
-            event_types?: string[];
-            /** @enum {string} */
-            status?: "active" | "disabled";
-            url?: string;
-        };
-        /**
-         * WebhookTestResponse
-         * @description The test event was queued. Its delivery shows up in `GET /api/webhooks/{id}/deliveries` once the worker has run.
-         */
-        WebhookTestResponse: {
-            /** @example webhook.test */
-            event_type: string;
-            queued: boolean;
-        };
     };
     responses: never;
     parameters: never;
@@ -5777,168 +4595,6 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Billing cancellation failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BillingApiController.show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Billing */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BillingResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Billing disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BillingApiController.credits_checkout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Pack */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreditsCheckoutRequest"];
-            };
-        };
-        responses: {
-            /** @description Stripe URL */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StripeUrlResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Billing disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Refused */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Stripe unreachable */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6503,252 +5159,6 @@ export interface operations {
                 };
             };
             /** @description No such subscription */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AccountDataController.index_exports": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Exports */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportListResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AccountDataController.create_export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Pending export */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Rate limited */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AccountDataController.show_export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Export */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AccountDataController.download_export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Export payload */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string;
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -7811,8 +6221,6 @@ export interface operations {
             query?: {
                 /** @description Email substring. */
                 q?: string;
-                /** @description Only comped accounts (`true`) or only billed ones (`false`). */
-                comped?: boolean;
                 role?: "admin" | "user";
                 verified?: boolean;
                 sort?: "email" | "joined" | "last_activity";
@@ -7864,6 +6272,76 @@ export interface operations {
                 };
             };
             /** @description Invalid request parameters */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.AdminController.create_user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Account */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminCreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Account and key */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreatedUserResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No acceptable representation */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Refused */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7968,177 +6446,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountDeletedResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Refused */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Billing cancellation failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AdminController.set_comp": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Comped */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["AdminCompRequest"];
-            };
-        };
-        responses: {
-            /** @description Account */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUserResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Refused */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AdminController.grant_credits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Credit */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["AdminCreditsRequest"];
-            };
-        };
-        responses: {
-            /** @description Account */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUserResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -10165,380 +8472,6 @@ export interface operations {
             };
         };
     };
-    "FountainWeb.BuzzAgentController.index": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Buzz agents */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BuzzIdentityListResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BuzzAgentController.create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Provision attributes */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["BuzzProvisionRequest"];
-            };
-        };
-        responses: {
-            /** @description Buzz agent */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BuzzIdentityResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Balance exhausted, or the hosted-agent ceiling is reached */
-            402: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The named environment does not exist */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BuzzAgentController.update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Buzz agent id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Access attributes */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["BuzzAccessUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Buzz agent */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BuzzIdentityResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BuzzAgentController.delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Buzz agent id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BuzzAgentController.update (2)": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Buzz agent id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Access attributes */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["BuzzAccessUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Buzz agent */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BuzzIdentityResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     "FountainWeb.CatalogController.show": {
         parameters: {
             query?: never;
@@ -10568,1195 +8501,6 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ClaimableUserController.create": {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Replay-safe creation key, unique per application. */
-                "Idempotency-Key"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Grant */
-        requestBody?: {
-            content: {
-                "application/json": {
-                    /** @description The application's own label for itself, for the audit trail. */
-                    application_id: string;
-                    /** @description Seconds until the principal expires. Clamped to the deployment's maximum. */
-                    expires_in?: number;
-                    limits?: {
-                        max_cost_usd?: number;
-                        max_live_sandboxes?: number;
-                    };
-                    metadata?: Record<string, never>;
-                };
-            };
-        };
-        responses: {
-            /** @description Opened */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaimableUserCreatedResponse"];
-                };
-            };
-            /** @description Malformed grant */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The application cannot fund it */
-            402: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not a full-scope key */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too many principals, or too fast */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ClaimableUserController.show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The grant's id. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The grant */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaimableUserResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such grant */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ClaimableUserController.delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The grant's id. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Released */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such grant */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Already claimed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ClaimableUserController.claim": {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Replaying a successful claim with this key and the same account returns the same outcome with a fresh credential. */
-                "Idempotency-Key"?: string;
-            };
-            path: {
-                /** @description The grant's id. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Claim */
-        requestBody?: {
-            content: {
-                "application/json": {
-                    claim_token: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Claimed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaimedPrincipalResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Bad claim token, or an account that cannot claim */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such grant */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Already claimed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Expired or released */
-            410: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ClaimableUserController.put_inference_credential": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The grant's id. */
-                id: string;
-                provider: "anthropic_api_key" | "claude_code_oauth_token" | "openai_api_key" | "gemini_api_key";
-            };
-            cookie?: never;
-        };
-        /** @description Credential */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["InferenceCredentialRequest"];
-            };
-        };
-        responses: {
-            /** @description Stored */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not a full-scope key */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such grant */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Blank value or unknown provider */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ClaimableUserController.delete_inference_credential": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The grant's id. */
-                id: string;
-                provider: "anthropic_api_key" | "claude_code_oauth_token" | "openai_api_key" | "gemini_api_key";
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Cleared */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not a full-scope key */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such grant */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Unknown provider */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionProviderController.index": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Providers */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionProviderListResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Connections are not enabled for this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionProviderController.create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Provider */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnectionProviderRequest"];
-            };
-        };
-        responses: {
-            /** @description Provider */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionProvider"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Connections are not enabled for this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Validation or discovery failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionProviderController.show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Provider id, or `google` */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Provider */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionProvider"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionProviderController.delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Provider id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionProviderController.update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Provider id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Provider */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnectionProviderRequest"];
-            };
-        };
-        responses: {
-            /** @description Provider */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionProvider"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionProviderController.discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Provider id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Provider */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionProvider"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found, or not an mcp provider */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Discovery failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionController.index": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Connections */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionListResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Connections are not enabled for this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionController.providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Providers */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionProviderListResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Connections are not enabled for this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionController.show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Connection id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Connection */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Connection"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.ConnectionController.delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Connection id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11925,15 +8669,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient credits */
-            402: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12387,15 +9122,6 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Insufficient credits */
-            402: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
             /** @description Forbidden */
             403: {
                 headers: {
@@ -12680,15 +9406,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient credits */
-            402: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13119,15 +9836,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Insufficient credits */
-            402: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15101,7 +11809,7 @@ export interface operations {
     "FountainWeb.SandboxFilesController.diff": {
         parameters: {
             query?: {
-                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` for gemini). Confined to those directories: anything else is `422 path_outside_sandbox`. */
                 path?: string;
                 /** @description Diff the index (`--cached`). */
                 staged?: boolean;
@@ -15204,7 +11912,7 @@ export interface operations {
     "FountainWeb.SandboxFilesController.show": {
         parameters: {
             query: {
-                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` for gemini). Confined to those directories: anything else is `422 path_outside_sandbox`. */
                 path: string;
                 /** @description How many bytes to return, at most 4194304 (default 262144). `truncated` says whether the content stopped short. */
                 max_bytes?: number;
@@ -15303,7 +12011,7 @@ export interface operations {
     "FountainWeb.SandboxFilesController.index": {
         parameters: {
             query?: {
-                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` for gemini). Confined to those directories: anything else is `422 path_outside_sandbox`. */
                 path?: string;
             };
             header?: never;
@@ -15400,7 +12108,7 @@ export interface operations {
     "FountainWeb.SandboxFilesController.git_status": {
         parameters: {
             query?: {
-                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` for gemini). Confined to those directories: anything else is `422 path_outside_sandbox`. */
                 path?: string;
                 /** @description What to do about untracked paths: collapse an untracked directory to one entry (`normal`), list every file under it (`all`), or leave them out (`no`). */
                 untracked?: "normal" | "all" | "no";
@@ -15929,199 +12637,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.SupportReportController.index": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Reports */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportReportListResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.SupportReportController.create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Report */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["SupportReportCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Report */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportReportResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Validation errors */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.SupportReportController.show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Report */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupportReportResponse"];
-                };
-            };
-            /** @description Missing or invalid API key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
                 };
             };
             /** @description Too Many Requests */
@@ -18103,617 +14618,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.index": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Endpoints */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookEndpointListResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description The endpoint */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WebhookEndpointCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description The endpoint, with its secret */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookEndpointCreatedResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Invalid URL or event filter */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The endpoint */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookEndpointResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Fields to change */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WebhookEndpointUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description The endpoint */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookEndpointResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Invalid URL or event filter */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.deliveries": {
-        parameters: {
-            query?: {
-                /** @description Default 50, max 200. */
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Attempts */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookDeliveryListResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.redeliver": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                delivery_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Queued */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookTestResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint or delivery on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.rotate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The endpoint, with its new secret */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookEndpointCreatedResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.WebhookEndpointController.test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Queued */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WebhookTestResponse"];
-                };
-            };
-            /** @description Missing or invalid key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No such endpoint on this account */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No acceptable representation */
-            406: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NegotiationError"];
                 };
             };
             /** @description Too Many Requests */

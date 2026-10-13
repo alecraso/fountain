@@ -22,10 +22,10 @@ observability pack, built from a real run of the hosted instance.
   built from metrics the app exports, and from nothing else. Import it
   into Grafana, then choose your Prometheus datasource. On compose, point any
   Prometheus at the metrics port and import the same file.
-- **Three team dashboards**, in `deploy/grafana/`, one each for ops, product
-  and finance. They cover the same metrics in more depth, and the ops one adds
+- **Two team dashboards**, in `deploy/grafana/`, one each for ops and
+  product. They cover the same metrics in more depth, and the ops one adds
   trace panels. [Read the dashboards](dashboards.md) says what each number
-  means, and which questions belong in PostHog instead.
+  means.
 
 One series gets a mention here, because it is the one that maps to money.
 The gauge `fountain_sandboxes_by_provider_count` reports how many sandboxes
@@ -42,9 +42,9 @@ PrometheusRule CRD and the scrapes its expressions need. A rule file alone
 does not collect metrics.
 
 The hosted instance adds the rules [listed below](#added-by-the-hosted-overlay).
-Those rules are specific to that deployment. They do not arrive with the
-portable manifest artifact. Shared rule names can also have different
-thresholds or selectors in the overlay.
+Those rules are specific to that deployment. They are not in the portable
+manifests. Shared rule names can also have different thresholds or selectors
+in the overlay.
 
 ### Portable baseline
 
@@ -96,10 +96,7 @@ check the shipped expressions and their failure fixtures.
 | `FountainPitrWalMetricsAbsent` | CNPG WAL archive metrics are absent from Prometheus. |
 | `FountainStageFailures` | Conversation stages fail. |
 | `FountainSiteUnreachable` | An external probe cannot reach the public site. |
-| `FountainCreditPricerSilent` | The turn pricer has no successful pass. |
-| `FountainCreditWorkerSilent` | A credit worker stops. |
-| `FountainCreditPricerPricedNothing` | Paid-provider turns complete without ledger debits. |
-| `FountainStripeWebhookFailures` | Stripe webhooks fail. |
+
 | `FountainEmailDeliveryFailures` | Transactional email fails to send. |
 | `FountainBrokerListenerDown` | The broker listener refuses connections. |
 | `FountainBrokerUnreachable` | A probe cannot reach the broker through its Service. |

@@ -44,37 +44,25 @@ in its own linked issue before converting the broader record.
 
 ## Licensing of contributions
 
-Fountain is not licensed as a single unit. **The license that applies to your
-contribution is the license of the directory you are editing**, and each one
-carries its own LICENSE file:
+**You contribute under the Apache License 2.0**, and Fountain distributes
+your work under the Apache License 2.0. Every first-party directory carries an
+Apache-2.0 LICENSE file:
 
 | Directory | License |
 |---|---|
-| `apps/fountain`, `config`, `priv` | GNU AGPL v3.0 or later |
-| `ee/` | Elastic License 2.0 |
-| `cli/`, `sdk/` (every client) | Apache License 2.0 |
+| `apps/fountain`, `config`, `priv` | Apache License 2.0 |
+| `cli/`, `sdk/` | Apache License 2.0 |
 
-**You contribute under the Apache License 2.0, whichever directory you are
-editing.** Fountain then distributes your work under the license governing that
-directory, from the table above. There is no separate document to sign and no
-CLA bot. Opening a pull request is the grant.
+There is no separate document to sign and no CLA bot. Opening a pull request is
+the grant. You keep the copyright in your work. This is a license, not an
+assignment, so you keep the full right to reuse your own contribution
+anywhere else, including in proprietary code of your own.
 
-You keep the copyright in your work. This is a license, not an assignment, and
-Apache-2.0 does not restrict you, so you keep the full right to reuse your own
-contribution anywhere else, including in proprietary code of your own.
-
-The asymmetry, stated plainly so nobody is surprised later: Apache-2.0 permits
-relicensing, so Fountain's maintainer can distribute your contribution under
-the AGPL, under the Elastic License, or under a commercial license sold to a
-company whose policy forbids the AGPL. You cannot do the same with anyone
-else's contribution. That is the same asymmetry a CLA creates, with less
-ceremony, and it exists for one reason: without it, the option to sell a
-commercial exception closes permanently the first time an outside pull request
-is merged. If that trade is not one you want to make, say so on the pull
-request. It is a reasonable thing to object to.
-
-For `cli/` and `sdk/` this changes nothing at all, since inbound and outbound
-are both Apache-2.0 there.
+The server was AGPL-3.0-or-later until
+[ADR 0068](decisions/0068-relicense-the-server-under-apache.md). Inbound and
+outbound are now the same licence, so the old asymmetry, where the maintainer
+could relicense a contribution and a contributor could not, no longer has
+anything to apply to.
 
 ## Sign your commits (DCO)
 
@@ -103,8 +91,8 @@ parts you changed; mixed changes take the union of the relevant rows.
 
 | Change | Local checks |
 |---|---|
-| Server or extension Elixir code, tests, dependencies, or runtime/build configuration | `mix precommit`, plus the tests covering the changed behavior |
-| Go CLI or Buzz CLI | In each affected module: `go test -mod=readonly -count=1 ./...` and `go vet -mod=readonly ./...`; format changed Go files with `gofmt`. Shared dependency changes need [both modules](#go-dependency-updates-span-two-modules) |
+| Server Elixir code, tests, dependencies, or runtime/build configuration | `mix precommit`, plus the tests covering the changed behavior |
+| Go CLI | In `cli/`: `go test -mod=readonly -count=1 ./...` and `go vet -mod=readonly ./...`; format changed Go files with `gofmt` |
 | SDK implementation or packaging | That SDK's checks in [CI maintenance](scripts/ci/README.md#sdk-jobs); API changes also follow [Changing the API](#changing-the-api) |
 | CI decision logic or workflow wiring | `python3 -m unittest discover -s scripts/ci -p 'test_*.py'`; use `actionlint` for changed workflows and run the changed script's own checks |
 | Shell tooling | `shellcheck` and `bash -n` on changed Bash scripts, plus their focused regression tests |
@@ -140,9 +128,9 @@ such as a change to `test/support`, a factory, a migration or `config/`.
 | `format` | `mix format --check-formatted` |
 | `credo` | `mix credo --strict` |
 | `dialyzer` | `MIX_ENV=dev mix dialyzer` |
-| `sobelow` | `scripts/sobelow.sh`, core with `ee/lib` overlaid |
+| `sobelow` | `scripts/sobelow.sh` |
 | `release` | `MIX_ENV=prod mix deps.get && mix release fountain_server --overwrite` |
-| `test` | `mix test` from the umbrella root: core, `ee/test` and every sibling app. Only with `--full` or by name |
+| `test` | `mix test` from the umbrella root: core and every sibling app. Only with `--full` or by name |
 
 **The exit status is the verdict.** The run stops at the first failing stage,
 names it, and exits with that stage's status; the last line is always
@@ -163,7 +151,7 @@ needs `SECRET_KEY_BASE` and a database.
 CI additionally runs `hex.audit`, the Go modules, the release boot check,
 OpenAPI validation, the SDK jobs and the docs gates;
 [`scripts/ci/README.md`](scripts/ci/README.md) lists every job. If you
-touched `docs/` or an extension's manual, read
+touched `docs/`, read
 [`contributing/docs.md`](contributing/docs.md): the structural checks are in
 the suite, and `bash scripts/test-docs.sh` runs just those.
 
@@ -199,65 +187,11 @@ workflow keeps advisory artifacts. Findings do not block merges; an analyzer
 failure marks the report incomplete.
 
 Treat findings as candidates. The Elixir tracer misses dynamic calls (including
-MFA callbacks), extension callers, test-only seams, some protocol/callback
+MFA callbacks), test-only seams, some protocol/callback
 implementations and macro-generated functions. Search the function's bare name
-across `apps/`, `ee/` and their tests before deleting it. A test-only caller may
+across `apps/` and its tests before deleting it. A test-only caller may
 be a useful observation seam or evidence of a missing production caller;
 resolve which before removing the function and its tests.
-
-## Go dependency updates span two modules
-
-Buzz's Go module replaces `github.com/managoat/fountain/cli` with the local
-`cli/` directory. A dependency bump there can require changes to Buzz's
-`go.mod` and `go.sum` even when no Buzz source changes.
-
-Dependabot monitors both directories in one Go update job and groups version
-updates by dependency name across them. This includes major updates.
-[GitHub's grouping rules](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#groups)
-exclude security updates and can split incompatible version constraints into
-separate PRs. Whenever a shared dependency changes, tidy both modules on the
-same PR branch and commit every resulting module-file change together:
-
-```bash
-go -C cli mod tidy
-go -C apps/fountain_buzz/cli mod tidy
-go -C cli test -mod=readonly -count=1 ./...
-go -C cli vet -mod=readonly ./...
-go -C apps/fountain_buzz/cli test -mod=readonly -count=1 ./...
-go -C apps/fountain_buzz/cli vet -mod=readonly ./...
-```
-
-Run tidy again after committing those files; it should leave no diff in either
-module. CI retains separate test and vet steps for both modules. A green core
-CLI check alone does not cover Buzz.
-
-## Extension migrations share one `schema_migrations`
-
-A first-party extension (ADR 0043) contributes migration directories through
-`Fountain.Extension`'s `migrations/0`, and `Fountain.Migrations` appends them
-after the core's at every entrance: the boot migrator, `Fountain.Release`, and
-`mix ecto.migrate` / `ecto.rollback` / `ecto.setup` (aliased in both
-`mix.exs` files so the root and the app agree). Two rules come with that.
-
-**Version numbers are global.** Extension migrations are recorded in
-Fountain's own `schema_migrations` table, not one of their own, so a version an
-extension picks must not collide with the core's or another extension's. Ecto
-refuses to run a path set containing a duplicate version, which makes a
-collision a loud failed migrate rather than a quietly skipped migration. Keep
-generating timestamps; never hand-pick an integer.
-
-**Moving a migration between paths is not a re-run.** A version already in
-`schema_migrations` stays applied when its file moves from `priv/repo/migrations`
-into an extension's directory, because Ecto matches on the version and never on
-the path. That is what lets an extraction move a table without touching a live
-database, and
-`apps/fountain/test/fountain/extension_composition_test.exs` pins it.
-
-Migrating from the umbrella root goes through `apps/fountain` on purpose:
-`mix ecto.migrate` is a recursive task, and Mix invokes it inside each child
-project *without* resolving that child's aliases, so the root would otherwise
-report "Migrations already up" and leave an installed extension's tables
-missing. The root aliases shell into the app the way `ecto.reset` already did.
 
 ## Adding an umbrella library app
 
@@ -273,9 +207,10 @@ contains the graduation procedure. Routine library fixes use
 
 ## Changing the API
 
-The server's OpenAPI document is the wire contract, and four clients live in
-this repository against it. A schema change that reaches only one of them is
-the failure mode this section exists to prevent, so the checks are arranged to
+The server's OpenAPI document is the wire contract, and the TypeScript SDK and
+the `fountain` CLI live in this repository against it. A schema change that
+reaches the server but not its clients is the failure mode this section exists
+to prevent, so the checks are arranged to
 fail in the PR that makes the change rather than in somebody's application
 months later.
 
@@ -284,25 +219,22 @@ If you touched `apps/fountain/lib/fountain_web/schemas.ex`, a controller's
 
 ```bash
 mise exec -- python3 scripts/sdk-contract/generate.py
-git diff --stat sdk/contract/contract.json sdk/typescript/src/generated sdk/swift/Sources/FountainKit/Models/ConversationWire.generated.swift
+git diff --stat sdk/contract/contract.json sdk/typescript/src/generated
 ```
 
 An empty generated diff means the wire did not move; still run the checks for
 the changed server behavior. A non-empty diff lists the wire changes. Run the
-affected client checks (each command below is independent, from the root):
+SDK's contract check from the root:
 
 ```bash
 npm --prefix sdk/typescript run verify-contract
-(cd sdk/python && python3 scripts/verify_contract.py)
-(cd sdk/elixir && mise exec -- mix test test/contract_test.exs)
-swift test --filter ContractTests
 ```
 
-Each verifier reads `sdk/contract/contract.json` and its own manifest under
-`sdk/contract/manifests/`, and names itself and the exact field, operation or
-enum value that no longer lines up. Fix the client, then update its manifest
+The verifier reads `sdk/contract/contract.json` and
+`sdk/contract/manifests/typescript.json`, and names the exact field, operation
+or enum value that no longer lines up. Fix the client, then update its manifest
 to describe what it now depends on. `sdk/contract/README.md` is the reference
-for the manifest format and for what each of the five checks means.
+for the manifest format and for what each check means.
 
 Two things that are not optional:
 
@@ -310,24 +242,23 @@ Two things that are not optional:
   fails when an operation is neither claimed by a manifest nor matched in
   `sdk/contract/omissions.json`. Either wire it into a client, or add it to the
   allowlist with one line saying why no client needs it.
-- **Commit `sdk/contract/contract.json`.** It is committed so the Swift job,
-  which has no Elixir toolchain, can check against it. `dist/openapi.json` is
+- **Commit `sdk/contract/contract.json`.** It is committed so the SDK and CLI
+  jobs, which have no Elixir toolchain, can check against it. `dist/openapi.json` is
   the rebuilt input and stays ignored.
 
 ### Shape-only conversation changes
 
 Use the API-shaped launch path for new conversation fields: TypeScript
-`runRequest`, Python/Elixir `run_request`, Swift `runRequest`, and
-`fountain conv create --file request.json` (or `--file -` for stdin).
-Pass raw IDs and wire names in map clients; FountainKit uses the generated
-`ConversationCreateRequest`. Local execution options stay outside the request.
+`runRequest` and `fountain conv create --file request.json` (or `--file -` for
+stdin). Pass raw IDs and wire names. Local execution options stay outside the
+request.
 The existing convenience helpers remain supported and retain their explicit
 argument lists; add an ergonomic argument only when it merits a convenience API.
 
 An optional field with no new client behavior needs the server input/JSON-view
-change, its focused server test, and regeneration. TypeScript and FountainKit
-receive generated declarations; map clients and CLI JSON input forward it.
-Do not add the field to every SDK manifest or unrelated conformance scenario.
+change, its focused server test, and regeneration. TypeScript receives
+generated declarations; CLI JSON input forwards it. Do not add the field to
+the SDK manifest or an unrelated conformance scenario.
 Manifest claims still name dependencies of handwritten code: fields read by
 run following, error handling, resolvers, or legacy convenience builders.
 A new behavior still needs independent expectations in the relevant tests.
@@ -371,8 +302,8 @@ finishes.
 The contract above covers request and response *shape*. What a client does with
 that shape — SSE framing, reconnect and cursor resume, which error class a
 status becomes, terminal run states, the permission flow, pagination — is the
-shared conformance suite in `sdk/conformance/`, run by all four clients from
-one set of JSON scenarios.
+shared conformance suite in `sdk/conformance/`, a set of JSON scenarios the
+TypeScript SDK runs.
 
 Change one of those behaviours and the scenario is where you start, before any
 client changes:
@@ -385,13 +316,10 @@ python3 sdk/conformance/lint.py
 The lint checks the format, checks the support matrix, and checks every fixture
 body against the schema the server declares for that operation, so a scenario
 cannot go green against a response the real server would never send. Then run
-the four adapters:
+the adapter:
 
 ```bash
 cd sdk/typescript && npm run conformance
-cd sdk/python     && python3 -m unittest discover -s tests -p test_conformance.py
-cd sdk/elixir     && mix test test/conformance_test.exs
-swift test --filter ConformanceTests        # from the repository root
 ```
 
 A client that cannot pass a scenario yet gets an entry in
@@ -408,7 +336,7 @@ Label a PR `release:skip-sdk` where the distinction needs saying out loud.
 
 [SDKs.md](SDKs.md) is the checked package and support catalog.
 [SDK maintenance](contributing/sdk-maintenance.md) owns version bumps, release
-tags, credentials, Swift revision pins and the checklist for a new client.
+tags, credentials and the checklist for a new client.
 After a package version or catalog change, run `python3 scripts/sdk-catalog.py --write`.
 
 ## Pull requests

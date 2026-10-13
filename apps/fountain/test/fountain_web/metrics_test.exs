@@ -221,7 +221,7 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :chatgpt, :refresh, :rate_limited],
         [:fountain, :chatgpt, :refresh, :breaker_opened],
         [:fountain, :chatgpt, :refresh, :breaker_closed],
-        # Billing.record_usage/5 swallow path (#503) — exercised by
+        # Fountain.Usage.record_usage/5 swallow path (#503) — exercised by
         # Fountain.UsageMeteringTest's dropped-usage telemetry test
         [:fountain, :usage, :dropped],
         # ConversationServer: provision watchdog (#329) and durable-output
@@ -253,20 +253,8 @@ defmodule FountainWeb.MetricsTest do
         # Also the proxy's own (Managoat.Broker.Proxy.connect_event/4, since
         # managoat_broker 0.1.2): once per connection rather than per request
         [:managoat, :broker, :connect],
-        # Credits and billing (#1169). The two are deliberately different
-        # producers: `worker.run` is Fountain.Credits.Telemetry.emit_run/2,
-        # called from each credit worker's perform/1, and answers "did it
-        # run"; `posted` is Fountain.Credits.post/4 at the ledger write, and
-        # answers "did money move". Both are exercised by
-        # Fountain.CreditsTelemetryTest.
-        [:fountain, :credits, :worker, :run],
-        [:fountain, :credits, :posted],
-        # FountainWeb.StripeWebhookController, on every rejected or failed
-        # delivery — exercised by its controller test.
-        [:fountain, :stripe_webhook, :failure],
         # Swoosh's own span around Mailer.deliver/1, which is why the email
-        # metrics needed no call-site change across the fourteen deliver
-        # sites. A failure is an `:error` key in the stop event's metadata,
+        # metrics needed no call-site change across the deliver sites. A failure is an `:error` key in the stop event's metadata,
         # not a separate event, hence the derived `outcome` tag.
         [:swoosh, :deliver, :stop],
         [:swoosh, :deliver, :exception],
@@ -277,7 +265,6 @@ defmodule FountainWeb.MetricsTest do
         [:phoenix, :router_dispatch, :stop],
         [:phoenix, :router_dispatch, :exception],
         [:fountain, :repo, :query],
-        [:fountain, :funnel],
         [:vm, :memory],
         [:vm, :total_run_queue_lengths]
       ]
@@ -540,12 +527,13 @@ defmodule FountainWeb.MetricsTest do
       # this on every terminal turn path — is asserted in
       # conversation_server_turn_metrics_test.exs against a real server.
       # The reporter is global to the VM and the ConversationServer tests feed
-      # the same histogram with runtime="claude". "opencode" is emitted by
-      # nothing else, so the bucket counts below are this test's alone.
+      # the same histogram with real runtime names. "metrics-probe" is no
+      # runtime, so nothing else emits it and the bucket counts below are this
+      # test's alone.
       Fountain.Telemetry.event(
         [:turn, :completed],
         %{
-          runtime: "opencode",
+          runtime: "metrics-probe",
           status: "completed",
           provider: "runner",
           conv_id: Ecto.UUID.generate()
@@ -557,7 +545,7 @@ defmodule FountainWeb.MetricsTest do
       {200, body} = scrape()
 
       series =
-        ~s(fountain_turn_completed_duration_ms_bucket{provider="runner",runtime="opencode",status="completed")
+        ~s(fountain_turn_completed_duration_ms_bucket{provider="runner",runtime="metrics-probe",status="completed")
 
       # 42s lands above the 30s boundary and below 60s. A duration handed over
       # in seconds or in native units lands in a different bucket entirely.

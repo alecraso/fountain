@@ -407,10 +407,6 @@ defmodule Fountain.InferenceCredentials do
   `opts` carries `:actor` / `:request_ip`, from
   `FountainWeb.Audited.attribution/2` on a web surface.
 
-  An internal `:authorize` callback may take an ownership lock and return
-  `:ok` or `{:error, reason}`. It runs in the credential write transaction;
-  the audit event is recorded only after that transaction commits.
-
   Returns `{:ok, credential}` (the updated row) or `{:error, reason}`.
   """
   @spec put_credential(binary(), binary(), atom(), String.t() | nil, keyword()) ::
@@ -449,23 +445,11 @@ defmodule Fountain.InferenceCredentials do
         plain when is_binary(plain) -> Crypto.encrypt(plain, dek)
       end
 
-    # Principals takes its ownership row lock here, in the same transaction
-    # as the write. Audit remains outside so a failed trail insert cannot
-    # roll back the credential transaction (ADR 0013).
+    # Audit remains outside so a failed trail insert cannot roll back the
+    # credential transaction (ADR 0013).
     result =
       Repo.transaction(fn ->
         lock_source(user_id)
-
-        case Keyword.get(opts, :authorize) do
-          nil ->
-            :ok
-
-          authorize ->
-            case authorize.() do
-              :ok -> :ok
-              {:error, reason} -> Repo.rollback(reason)
-            end
-        end
 
         set =
           case selection do
@@ -477,21 +461,42 @@ defmodule Fountain.InferenceCredentials do
               get_set(id, user_id) || Repo.rollback(:not_found)
           end
 
-        attrs =
-          Map.put(
-            %{user_id: user_id, name: set.name, is_default: set.is_default},
-            ct_field,
-            ciphertext
-          )
+        if unchanged?(set, ct_field, value, dek) do
+          set
+        else
+          attrs =
+            Map.put(
+              %{user_id: user_id, name: set.name, is_default: set.is_default},
+              ct_field,
+              ciphertext
+            )
 
-        case set |> Credential.changeset(attrs) |> Repo.insert_or_update() do
-          {:ok, credential} -> credential
-          {:error, changeset} -> Repo.rollback(changeset)
+          case set |> Credential.changeset(attrs) |> Repo.insert_or_update() do
+            {:ok, credential} -> credential
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
         end
       end)
 
     audited(result, user_id, provider, ciphertext, opts)
   end
+
+  # Saving the value a set already holds changes nothing. The source-lock
+  # trigger moves the set's `revision` whenever a ciphertext column changes,
+  # and every encryption draws a fresh IV, so writing the same token again
+  # would end every conversation bound to the set with
+  # `:inference_source_changed` over a credential that did not change. A
+  # client that re-saves on reconnect ended a hundred conversations that way.
+  defp unchanged?(%Credential{} = set, ct_field, value, dek) when is_binary(value) do
+    with stored when is_binary(stored) <- Map.get(set, ct_field),
+         {:ok, plain} <- Crypto.decrypt(stored, dek) do
+      Plug.Crypto.secure_compare(plain, value)
+    else
+      _ -> false
+    end
+  end
+
+  defp unchanged?(_set, _ct_field, _value, _dek), do: false
 
   # The provider name is the whole payload. The credential must never reach a
   # second table — the same rule the secret-write events follow, and the
@@ -512,8 +517,7 @@ defmodule Fountain.InferenceCredentials do
       # not, and a trail that cannot say which key moved cannot explain the
       # turn that ran on it. Still no value, and still no ciphertext.
       # Merged over the caller's, so a surface acting for somebody else can
-      # name who asked (`Principals.put_inference_credential/5`) without this
-      # function knowing about it.
+      # name who asked without this function knowing about it.
       metadata:
         Map.merge(Keyword.get(opts, :metadata, %{}), %{
           "provider" => Atom.to_string(provider),
@@ -601,38 +605,6 @@ defmodule Fountain.InferenceCredentials do
     end)
   end
 
-  @doc """
-  Of `user_ids`, the ones holding at least one provider credential, or a set
-  that names an active ChatGPT subscription of their own (ADR 0060 stage 4b).
-
-  The set form of `has_any_credential?/1`, for the admin funnel's stalled
-  breakdown (#1421). A row whose every ciphertext is `nil` belongs to an
-  account that cleared its last key (`put_credential/5` clears to `nil`), so
-  the row existing is not the signal and this asks the same question
-  `has_any_credential?/1` asks, a named subscription included, in two queries
-  instead of one account at a time.
-
-  `_unsafe_` because it crosses tenants: it answers for whatever ids it is
-  handed. The legitimate caller is a system-level aggregate — today
-  `Fountain.Funnel`, which is admin-only and unscoped by construction.
-  """
-  @spec _unsafe_user_ids_with_credential([binary()]) :: MapSet.t(binary())
-  def _unsafe_user_ids_with_credential(user_ids) when is_list(user_ids) do
-    held =
-      @providers
-      |> Enum.map(&ciphertext_field/1)
-      |> Enum.reduce(nil, fn ct, acc ->
-        clause = dynamic([c], not is_nil(field(c, ^ct)))
-        if acc, do: dynamic(^acc or ^clause), else: clause
-      end)
-
-    from(c in Credential, where: c.user_id in ^user_ids, distinct: true, select: c.user_id)
-    |> where(^held)
-    |> Repo.all()
-    |> MapSet.new()
-    |> MapSet.union(owners_naming_active_grant(user_ids))
-  end
-
   # The environment variable each static credential is exported as. A tenant
   # secret of the same name overrides it in the sandbox (`Egress`'s gate-3
   # split, published in `docs/concepts/secrets.md`), which is what the
@@ -663,8 +635,10 @@ defmodule Fountain.InferenceCredentials do
   @doc """
   Every supported runtime name for each static credential, canonical name first.
 
-  OpenCode's Google adapter exports `GOOGLE_GENERATIVE_AI_API_KEY` for the
-  same credential Gemini exports as `GEMINI_API_KEY`. Selection and shared
+  `GOOGLE_GENERATIVE_AI_API_KEY` is the name the removed opencode runtime read
+  the credential Gemini exports as `GEMINI_API_KEY` under; an environment or
+  vault that stored the key that way still supplies it, and the shared env
+  file still treats it as that credential. Selection and shared
   env-file filtering use this inventory; `env_names/0` names broker bindings.
   Managed ChatGPT tokens are reserved configuration, not static aliases.
   """
@@ -953,8 +927,7 @@ defmodule Fountain.InferenceCredentials do
      never the platform's key. The grant is read by owner and id, metadata
      only.
   5. **Select.** An override wins over the set's value for the same kind;
-     the runtime's kind precedence picks (Claude prefers OAuth, OpenCode's
-     Anthropic path accepts only an API key). An empty selected value, or a
+     the runtime's kind precedence picks (Claude prefers OAuth). An empty selected value, or a
      tenant value for the provider that the runtime cannot use, is
      `:inference_credential_unusable`.
   6. **Platform policy**, only when no tenant source was selected:

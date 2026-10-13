@@ -179,8 +179,8 @@ defmodule FountainWeb.FallbackController do
   # rule is the one above: a bad state of something the caller owns is a 409.
   # Names the tenant chose, ids and counts; never a code, a token or an email.
 
-  # The Connections precedent (#1693): a feature this account does not have
-  # is a 404, and only the door that adds one answers it.
+  # A feature this account does not have is a 404 (#1693), and only the door
+  # that adds one answers it.
   def call(conn, {:error, {:chatgpt_subscription, :subscriptions_not_enabled}}) do
     conn
     |> put_status(:not_found)
@@ -198,7 +198,7 @@ defmodule FountainWeb.FallbackController do
     |> json(%{
       error: "chatgpt_owner_ineligible",
       message:
-        "only a verified account that is not suspended and is not a principal may link, " <>
+        "only a verified account that is not suspended may link, " <>
           "reconnect or rename a ChatGPT subscription"
     })
   end
@@ -405,20 +405,6 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
-  # The runtime never sends `session/request_permission`, so the verdicts have
-  # nothing to travel on. Refused rather than stored: an inert `auto_deny`
-  # reads like protection everywhere it is displayed.
-  def call(conn, {:error, {:permission_policy_unenforceable, runtime}}) do
-    conn
-    |> put_status(:unprocessable_entity)
-    |> json(%{
-      error: "permission_policy_unenforceable",
-      message:
-        "the #{runtime} runtime never asks before it runs a tool, so a policy " <>
-          "stricter than auto_allow cannot be enforced on it"
-    })
-  end
-
   # A conversation's model override (ADR 0061) that the runtime cannot run,
   # checked as an agent's model is. The message says which check failed.
   def call(conn, {:error, {:model_invalid, message}}) do
@@ -520,17 +506,8 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
-  # Prepaid balance exhausted (ADR 0031): the credit gate, returned from the
-  # context so every provisioning path renders the same 402 rather than each
-  # controller inventing one.
-  def call(conn, {:error, :insufficient_credits}) do
-    conn
-    |> put_status(:payment_required)
-    |> json(%{error: "insufficient_credits", upgrade_url: "/account/billing"})
-  end
-
-  # Operator suspension (#287). 403 rather than 402: there is nothing the
-  # caller can buy their way out of.
+  # Operator suspension (#287). 403: the operator decided it, and nothing the
+  # caller sends changes that.
   def call(conn, {:error, :account_suspended}) do
     conn
     |> put_status(:forbidden)
@@ -554,8 +531,7 @@ defmodule FountainWeb.FallbackController do
   end
 
   # Every provider slot the deployment has is in use, whoever holds them
-  # (ADR 0031). 503 with a retry hint: capacity, not the caller's quota and
-  # not a billing state.
+  # (ADR 0042). 503 with a retry hint: capacity, not the caller's quota.
   def call(conn, {:error, :fleet_full}) do
     conn
     |> put_resp_header("retry-after", "60")
@@ -563,24 +539,6 @@ defmodule FountainWeb.FallbackController do
     |> json(%{
       error: "fleet_full",
       message: "Every sandbox slot is in use right now. Try again in a minute."
-    })
-  end
-
-  # The deployment has spent its platform inference budget for the day
-  # (#1388). 503 rather than 402, for the same reason as `:fleet_full`: this
-  # is Fountain's own ceiling, not the caller's balance, and there is nothing
-  # they can buy to clear it. Adding an inference credential does clear it —
-  # a tenant's own key never touches this ceiling — so the message says so.
-  def call(conn, {:error, :platform_inference_unavailable}) do
-    conn
-    |> put_resp_header("retry-after", "3600")
-    |> put_status(:service_unavailable)
-    |> json(%{
-      error: "platform_inference_unavailable",
-      message:
-        "Fountain's shared inference budget for today is spent. Add your own " <>
-          "inference credential to run now, or try again tomorrow.",
-      credentials_url: "/account/inference-credentials"
     })
   end
 
@@ -713,7 +671,7 @@ defmodule FountainWeb.FallbackController do
 
   # A guest attach (a conversation of another agent onto a home by
   # `sandbox_id`) made with a credential below full scope (#2525): a sandbox's
-  # own `sprite` token, or a principal's. 403 with `RequireFullScope`'s shape,
+  # own `sprite` token. 403 with `RequireFullScope`'s shape,
   # `reason: "insufficient_scope"` and `required_scope: "full"`, because the
   # refusal is that plug's rule applied inside the attach door, and only ever
   # given for an attach that passed the pairing checks.
@@ -945,7 +903,7 @@ defmodule FountainWeb.FallbackController do
   # Until 7a this atom had no clause here at all and fell to the terminal
   # safety net's 422, which told every SDK that a transient provider refusal
   # was the caller's fault and not worth retrying. It is a 503 with a
-  # `Retry-After`, which is `NotReadyError` in all four SDKs.
+  # `Retry-After`, which is `NotReadyError` in the TypeScript SDK.
   def call(conn, {:error, :sandbox_resume_failed}) do
     conn
     |> put_resp_header("retry-after", "10")
@@ -983,64 +941,6 @@ defmodule FountainWeb.FallbackController do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "no_agent", message: "the conversation's agent has been deleted"})
-  end
-
-  # Billing is off on this instance (#524). 404 rather than 402/403: the
-  # endpoint does not exist here, and the UI likewise redirects away from the
-  # billing page entirely.
-  def call(conn, {:error, :billing_disabled}) do
-    conn
-    |> put_status(:not_found)
-    |> json(%{error: "billing_disabled", billing: "disabled"})
-  end
-
-  # ── claimable principals (ADR 0044) ───────────────────────────────────────
-  #
-  # Named rather than left to the 422 safety net below, because an application
-  # recovering from a lost response branches on exactly these: a claim it lost
-  # the response to (409) reads differently from one it was too late for (410),
-  # and both read differently from a bad token (403).
-
-  def call(conn, {:error, :already_claimed}) do
-    conn
-    |> put_status(:conflict)
-    |> json(%{error: "already_claimed", reason: "already_claimed"})
-  end
-
-  def call(conn, {:error, reason}) when reason in [:expired, :released] do
-    conn
-    |> put_status(:gone)
-    |> json(%{error: to_string(reason), reason: to_string(reason)})
-  end
-
-  def call(conn, {:error, :invalid_claim_token}) do
-    conn
-    |> put_status(:forbidden)
-    |> json(%{error: "invalid_claim_token", reason: "invalid_claim_token"})
-  end
-
-  # The claiming account, not the grant: verified, not suspended, and able to
-  # fund the work the claim moves onto its ledger.
-  def call(conn, {:error, :ineligible}) do
-    conn
-    |> put_status(:forbidden)
-    |> json(%{
-      error: "this account cannot claim a principal",
-      reason: "ineligible_claimer"
-    })
-  end
-
-  def call(conn, {:error, reason})
-      when reason in [:too_many_outstanding_principals, :principal_rate_limited] do
-    conn
-    |> put_status(:too_many_requests)
-    |> json(%{error: to_string(reason), reason: to_string(reason)})
-  end
-
-  def call(conn, {:error, {:invalid, message}}) when is_binary(message) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{error: message, reason: "invalid_request"})
   end
 
   def call(conn, {:error, reason}) when is_binary(reason) do

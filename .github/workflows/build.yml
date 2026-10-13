@@ -159,9 +159,6 @@ jobs:
           # executes should not inherit one from .git/config.
           persist-credentials: false
 
-      - name: Read buzz-acp pin
-        run: echo "BUZZ_ACP_VERSION=$(tr -d '[:space:]' < apps/fountain_buzz/buzz-acp.version)" >> "$GITHUB_ENV"
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -189,7 +186,6 @@ jobs:
           # in the manifests (decisions/0032 addendum). It reaches the console
           # footer and the Sentry release.
           build-args: |
-            BUZZ_ACP_VERSION=${{ env.BUZZ_ACP_VERSION }}
             BUILD_SHA=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -212,7 +208,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -229,7 +225,7 @@ jobs:
       packages: write
     steps:
       - name: Download digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: ${{ runner.temp }}/digests
           pattern: digest-*
@@ -263,7 +259,7 @@ jobs:
       # plain (#879 shipped exactly that). Nothing in the test suite can see
       # inside the image, so the image itself is asked, offline and read-only,
       # the way the pods run it.
-      - name: The image contains extensions and can highlight code
+      - name: The image can highlight code
         env:
           SHA: ${{ env.SRC_SHA }}
         run: |
@@ -276,14 +272,6 @@ jobs:
             -e PHX_HOST=example.test -e PUBLIC_URL="https://example.test" \
             -e RESEND_API_KEY=re_dummy -e EMAIL_FROM="fountain@example.test" \
             "${IMAGE}:sha-${SHA}" /app/bin/fountain_server eval '
-              for app <- [:fountain_buzz, :fountain_support] do
-                case :code.lib_dir(app) do
-                  path when is_list(path) ->
-                    unless File.dir?(path), do: raise("bundled image missing #{app}")
-                  {:error, _} ->
-                    raise "bundled image missing #{app}"
-                end
-              end
               {:ok, _} = Application.ensure_all_started(:lumis)
               html = Managoat.Docs.Markdown.to_trusted_html("```ts\nconst x = 1;\n```")
               IO.puts("spans=#{length(Regex.scan(~r/<span style="color/, html))}")

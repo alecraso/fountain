@@ -40,7 +40,7 @@ defmodule FountainWeb.LlmsController do
   # Slug `""` is the docs home page (`/docs`).
   #
   # This is deliberately not all of `Fountain.Docs.nav()`. The full manual is
-  # ~490 KB, over half of it operator runbooks (Kubernetes, Stripe, backups)
+  # ~490 KB, over half of it operator runbooks (Kubernetes, backups)
   # that an agent calling the API has no use for. What is inlined is the
   # "use Fountain" half, ~230 KB. The rest is linked under "More on /docs",
   # labelled as not inlined.
@@ -81,19 +81,15 @@ defmodule FountainWeb.LlmsController do
         "endpoints, the response envelope, SSE streaming, and calling back from inside a sandbox to spawn more"},
        {"sdk",
         "TypeScript: `fountain.run(prompt, {agent, vault})`, awaitable, streamable, resumable"},
-       {"python-sdk",
-        "Python: `fountain.run(prompt, agent=agent, vault=vault)`, waitable, streamable, resumable"},
-       {"reference/webhooks", "event payloads and delivery"},
        {"reference/conversation-states", "the lifecycle, and every terminal state"}
      ]},
     {"Catalog",
      [
        {"catalog", "Catalog", "everything you can name in an agent spec"},
-       {"catalog/runtimes", "the four agent CLIs side by side"},
+       {"catalog/runtimes", "the three agent CLIs side by side"},
        {"catalog/runtimes/claude",
         "Anthropic's Claude Code, headless: transport, skills root, which credential it uses"},
        {"catalog/runtimes/codex", "OpenAI's Codex CLI, headless"},
-       {"catalog/runtimes/opencode", "the only runtime that can reach more than one provider"},
        {"catalog/runtimes/gemini", "Google's Gemini CLI, headless"},
        {"catalog/skills", "how skills mount per runtime, and the injection order"},
        {"catalog/skills/fountain",
@@ -134,13 +130,6 @@ defmodule FountainWeb.LlmsController do
   # A slug that no longer exists is a dead link in a machine-readable index.
   # Fail the compile instead — same bargain `Fountain.Docs` makes with its nav
   # parser, and the same reason: a silently missing page is the bug.
-  #
-  # `Fountain.Docs` and not `Fountain.Manual` throughout this module, on
-  # purpose. llms.txt is a hand-curated index of the CORE manual, and this
-  # check is what keeps the corpus below from naming a page an extension owns
-  # — which would be a core file pointing at something a core distribution does
-  # not serve. It also has to be answerable at compile time, and the installed
-  # set is not (ADR 0043: build-time install, runtime enable).
   @known MapSet.new(Fountain.Docs.slugs())
 
   for {slug, _title, _blurb} <-
@@ -179,7 +168,7 @@ defmodule FountainWeb.LlmsController do
       """
       # Fountain
 
-      > Fountain is a multi-tenant service for running sandboxed coding agents. It provisions an isolated sandbox per conversation, mounts a preconfigured environment (packages, repos, env vars, MCP servers, skills), and runs the agent CLI — claude, codex, gemini, or opencode — inside. Use it to delegate, fan out, or parallelize coding agents from your own scripts, CI, or IDE.
+      > Fountain is a multi-tenant service for running sandboxed coding agents. It provisions an isolated sandbox per conversation, mounts a preconfigured environment (packages, repos, env vars, MCP servers, skills), and runs the agent CLI — claude, codex, or gemini — inside. Use it to delegate, fan out, or parallelize coding agents from your own scripts, CI, or IDE.
 
       The four primitives:
 
@@ -207,7 +196,6 @@ defmodule FountainWeb.LlmsController do
       - [OpenAPI 3 spec](#{base}/api/openapi.json): machine-readable, the authority on request and response shapes
       - [Swagger UI](#{base}/api/docs): interactive try-it, click "Authorize" to set your bearer token
       - [TypeScript SDK](https://www.npmjs.com/package/@managoat/fountain-sdk): `npm install @managoat/fountain-sdk`
-      - [Python SDK](#{base}/docs/python-sdk): `pip install fountain-agent-sdk`
       - [CLI (Homebrew)](https://github.com/managoat/homebrew-tap): `brew install managoat/tap/fountain`
       - [Example agent specs](https://github.com/jhgaylor/agent-specs): public manifest tree you can `fountain apply`
       """,

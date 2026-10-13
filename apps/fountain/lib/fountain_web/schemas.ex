@@ -75,8 +75,10 @@ defmodule FountainWeb.Schemas do
         },
         provider: %Schema{
           type: :string,
-          enum: ~w(sprites e2b daytona runner),
-          description: "The sandbox backend this row lives on."
+          description:
+            "The sandbox backend this row lives on: sprites, e2b or runner. A sandbox " <>
+              "created before the Daytona provider was removed (2026-10) reads daytona " <>
+              "and is terminated."
         },
         runner: %Schema{
           type: :object,
@@ -118,7 +120,13 @@ defmodule FountainWeb.Schemas do
         id: %Schema{type: :string, format: :uuid},
         status: %Schema{type: :string, enum: ~w(pending running idle failed terminated)},
         title: %Schema{type: :string, nullable: true},
-        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.packaged_runtimes()},
+        runtime: %Schema{
+          type: :string,
+          description:
+            "claude, codex, gemini or acp. A row written before the opencode runtime " <>
+              "was removed (2026-10) still reads opencode; such an agent cannot start " <>
+              "a conversation until its runtime is changed."
+        },
         mid_turn: %Schema{
           type: :boolean,
           description: "True while this conversation is running a turn on the machine."
@@ -666,7 +674,13 @@ defmodule FountainWeb.Schemas do
               "null means it runs the agent's model. Each turn's model_selection records " <>
               "the model that turn actually asked for."
         },
-        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.packaged_runtimes()},
+        runtime: %Schema{
+          type: :string,
+          description:
+            "claude, codex, gemini or acp. A row written before the opencode runtime " <>
+              "was removed (2026-10) still reads opencode; such an agent cannot start " <>
+              "a conversation until its runtime is changed."
+        },
         acp: %Schema{
           type: :boolean,
           readOnly: true,
@@ -911,8 +925,7 @@ defmodule FountainWeb.Schemas do
               "the command it is about to run, so a title matches one invocation only. " <>
               "Merged with the agent's own policy, taking the stricter of the two. It may " <>
               "only narrow: a policy that would loosen any tool is refused with 422 " <>
-              "permission_policy_widens rather than silently clamped, and one the runtime " <>
-              "never consults is refused with 422 permission_policy_unenforceable. " <>
+              "permission_policy_widens rather than silently clamped. " <>
               "If a queued request with a prompt and a nonempty policy resumes an existing " <>
               "channel, it fails with permission_policy_requires_fresh_conversation before " <>
               "sending the prompt. Set fresh: true to create a conversation for that policy."
@@ -1020,7 +1033,7 @@ defmodule FountainWeb.Schemas do
               "the guest is alone there. A claude home created before guests were admitted refuses a codex " <>
               "guest with 409 codex_inference_conflict until it is reset. The " <>
               "conversation opens idle on that machine; a prompt here wakes it. Several " <>
-              "conversations then run on one disk at once, except on opencode and gemini, " <>
+              "conversations then run on one disk at once, except on gemini, " <>
               "where a second turn of the same runtime is refused with 409 " <>
               "sandbox_at_capacity while one runs."
         },
@@ -1030,7 +1043,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           description:
             "Opaque key for the external channel this conversation is bound to (for example a " <>
-              "Buzz channel id). When set, the latest live conversation for the same agent, vault " <>
+              "chat thread id). When set, the latest live conversation for the same agent, vault " <>
               "and channel is resumed (200) instead of a new one being opened (201)."
         },
         fresh: %Schema{
@@ -1439,7 +1452,7 @@ defmodule FountainWeb.Schemas do
           description:
             "Canonical provider/model_id (e.g. anthropic/claude-sonnet-5). The " <>
               "provider must match the runtime — anthropic for claude, openai for " <>
-              "codex, google for gemini; opencode accepts any of the three. Other " <>
+              "codex, google for gemini. Other " <>
               "providers are rejected: Fountain has no credentials to export for " <>
               "them. The model id is not checked against a list, so a newly " <>
               "released model works without a Fountain release. Null on the acp " <>
@@ -1447,7 +1460,13 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.packaged_runtimes()},
+        runtime: %Schema{
+          type: :string,
+          description:
+            "claude, codex, gemini or acp. A row written before the opencode runtime " <>
+              "was removed (2026-10) still reads opencode; such an agent cannot start " <>
+              "a conversation until its runtime is changed."
+        },
         runtime_command: %Schema{
           type: :string,
           nullable: true,
@@ -1470,7 +1489,7 @@ defmodule FountainWeb.Schemas do
         },
         sandbox_provider: %Schema{
           type: :string,
-          enum: ~w(sprites e2b daytona runner),
+          enum: ~w(sprites e2b runner),
           nullable: true,
           description:
             "Sandbox backend override; null inherits the instance default " <>
@@ -1506,9 +1525,7 @@ defmodule FountainWeb.Schemas do
               "claude titles a tool call with the command it is about to run. Unset keys " <>
               "fall back to the default, and an unset default is auto_allow \u2014 today's " <>
               "behaviour. \"ask\" holds the tool until a human answers it on the " <>
-              "conversation stream, and denies if nobody does before the timeout. A " <>
-              "runtime that never asks (opencode) refuses anything stricter than " <>
-              "auto_allow with 422 permission_policy_unenforceable."
+              "conversation stream, and denies if nobody does before the timeout."
         },
         skills: %Schema{
           type: :array,
@@ -1671,7 +1688,7 @@ defmodule FountainWeb.Schemas do
         },
         sandbox_provider: %Schema{
           type: :string,
-          enum: ~w(sprites e2b daytona runner),
+          enum: ~w(sprites e2b runner),
           nullable: true,
           description:
             "Sandbox backend override; null inherits the instance default " <>
@@ -1699,8 +1716,7 @@ defmodule FountainWeb.Schemas do
               "fall back to the default, and an unset default is auto_allow. \"ask\" holds " <>
               "the tool until a human answers it on the conversation stream, and denies if " <>
               "nobody does before the timeout. A conversation may narrow this at launch, " <>
-              "never widen it. A runtime that never asks (opencode) refuses anything " <>
-              "stricter than auto_allow with 422 permission_policy_unenforceable."
+              "never widen it."
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         session_config: %Schema{
@@ -2307,7 +2323,7 @@ defmodule FountainWeb.Schemas do
           required: [:limit, :has_more]
         },
         # Beside `meta` rather than in it: `meta` is the cursor envelope the
-        # audit list shares, and the Swift SDK publishes the two as one
+        # audit list shares, and the Swift SDK published the two as one
         # `PageMeta` type (#2300), so a field here would retype that.
         page: %Schema{
           type: :object,
@@ -2360,26 +2376,16 @@ defmodule FountainWeb.Schemas do
         email_verified_at: %Schema{type: :string, format: :"date-time", nullable: true},
         suspended: %Schema{type: :boolean},
         suspended_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        comped: %Schema{
-          type: :boolean,
-          description: "A free account: the balance is never checked (ADR 0031)."
-        },
-        has_stripe_customer: %Schema{type: :boolean},
         max_concurrent_sandboxes: %Schema{
           type: :integer,
           nullable: true,
           description:
-            "The concurrency cap actually enforced: the override, or the balance rule's."
+            "The concurrency cap actually enforced: the override, or the configured ceiling."
         },
         sandbox_limit_override: %Schema{
           type: :integer,
           nullable: true,
-          description: "Admin override of the cap. Null means the balance rule applies."
-        },
-        credit_balance_cents: %Schema{
-          type: :integer,
-          description:
-            "Prepaid balance in cents (ADR 0030). May be negative. Zero while credits are not active on this deployment."
+          description: "Admin override of the cap. Null means the configured ceiling applies."
         },
         active_sandboxes: %Schema{type: :integer},
         onboarding_completed_at: %Schema{type: :string, format: :"date-time", nullable: true},
@@ -2391,6 +2397,47 @@ defmodule FountainWeb.Schemas do
   end
 
   item_response(AdminUserResponse, of: AdminUser)
+
+  defmodule AdminCreateUserRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminCreateUserRequest",
+      type: :object,
+      properties: %{
+        email: %Schema{
+          type: :string,
+          description: "The new account's address. Verified at creation; no mail is sent."
+        },
+        key_name: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Name of the API key minted with the account. Default `platform`."
+        }
+      },
+      required: [:email],
+      example: %{"email" => "helpdesk@apps.example.com"}
+    })
+  end
+
+  defmodule AdminCreatedUserResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminCreatedUserResponse",
+      type: :object,
+      properties: %{
+        data: AdminUser,
+        api_key: %Schema{
+          type: :string,
+          description: "The new account's full-scope API key. Shown once; only its hash is kept."
+        }
+      },
+      required: [:data, :api_key]
+    })
+  end
 
   defmodule AdminUserListResponse do
     @moduledoc false
@@ -2440,47 +2487,11 @@ defmodule FountainWeb.Schemas do
           minimum: 0,
           nullable: true,
           description:
-            "Override of the balance-funded concurrent-sandbox cap. Null clears it, " <>
-              "handing the cap back to the balance rule."
+            "Override of the concurrent-sandbox cap. Null clears it, " <>
+              "handing the cap back to the configured ceiling."
         }
       },
       required: [:limit]
-    })
-  end
-
-  defmodule AdminCompRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminCompRequest",
-      type: :object,
-      properties: %{comped: %Schema{type: :boolean}},
-      required: [:comped]
-    })
-  end
-
-  defmodule AdminCreditsRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminCreditsRequest",
-      type: :object,
-      properties: %{
-        cents: %Schema{
-          type: :integer,
-          minimum: 1,
-          description: "Credit to add, in cents. Never expires and is spent last."
-        },
-        note: %Schema{
-          type: :string,
-          nullable: true,
-          description: "Why, for the audit trail. A won dispute, a goodwill credit, an outage."
-        }
-      },
-      required: [:cents],
-      example: %{"cents" => 1000, "note" => "won dispute dp_123"}
     })
   end
 
@@ -2493,27 +2504,6 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{suspended: %Schema{type: :boolean}},
       required: [:suspended]
-    })
-  end
-
-  defmodule AdminResyncResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminResyncResponse",
-      type: :object,
-      properties: %{
-        data: %Schema{
-          type: :object,
-          properties: %{
-            outcome: %Schema{type: :string, enum: ~w(resynced customer_sync_enqueued)},
-            comped: %Schema{type: :boolean}
-          },
-          required: [:outcome]
-        }
-      },
-      required: [:data]
     })
   end
 
@@ -2598,180 +2588,6 @@ defmodule FountainWeb.Schemas do
       required: [:data]
     })
   end
-
-  defmodule BillingResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "BillingResponse",
-      type: :object,
-      properties: %{
-        data: %Schema{
-          type: :object,
-          properties: %{
-            sandbox_cap: %Schema{
-              type: :integer,
-              description:
-                "How many sandboxes this account may run at once: an admin override, " <>
-                  "or what the balance funds (ADR 0031)."
-            },
-            has_stripe_customer: %Schema{type: :boolean},
-            period: %Schema{
-              type: :object,
-              description:
-                "The calendar month the usage numbers cover, half-open: `end` is " <>
-                  "the first instant of the next month.",
-              properties: %{
-                start: %Schema{type: :string, format: :"date-time"},
-                end: %Schema{type: :string, format: :"date-time"}
-              }
-            },
-            credits: %Schema{
-              type: :object,
-              nullable: true,
-              description:
-                "The prepaid balance, in cents. Null when this deployment has " <>
-                  "billing off; a client must not show a zero balance then. " <>
-                  "At zero, new work is refused with 402 `insufficient_credits`.",
-              properties: %{
-                balance_cents: %Schema{
-                  type: :integer,
-                  description: "May be negative: an in-flight turn that crosses zero finishes."
-                },
-                expiring_cents: %Schema{
-                  type: :integer,
-                  description:
-                    "Unspent credit from the earliest live grant, which expires at expires_at."
-                },
-                expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
-                purchased_cents: %Schema{
-                  type: :integer,
-                  description:
-                    "The part of the balance that was bought. It never expires and is spent last."
-                },
-                turn_hour_cents: %Schema{
-                  type: :integer,
-                  description: "What one hour of turn time costs."
-                },
-                packs_cents: %Schema{
-                  type: :array,
-                  items: %Schema{type: :integer},
-                  description: "The packs on sale, ascending. Pass one to the credits checkout."
-                }
-              }
-            },
-            usage: %Schema{
-              type: :object,
-              properties: %{
-                conversations: %Schema{
-                  type: :integer,
-                  description: "Conversations that ran a turn in the month, deleted or not."
-                },
-                turns: %Schema{type: :integer},
-                credit_burned_cents: %Schema{
-                  type: :integer,
-                  nullable: true,
-                  description:
-                    "Cents the ledger took this month: turns and platform inference. " <>
-                      "The charged number, where turn_hours is the metered one. " <>
-                      "Null with billing off."
-                },
-                turn_hours: %Schema{
-                  type: :number,
-                  description:
-                    "Hours with a prompt in flight, on providers Fountain pays " <>
-                      "for; what burns credit. An idle sandbox spends none of " <>
-                      "these; sandbox_minutes counts it."
-                },
-                sandbox_minutes: %Schema{
-                  type: :number,
-                  description: "Active sandbox minutes inside the period, parked time excluded."
-                },
-                sandbox_minutes_by_provider: %Schema{
-                  type: :object,
-                  description:
-                    "sandbox_minutes split by sandbox provider (sprites, e2b, " <>
-                      "daytona, runner). Providers not used in the period are absent.",
-                  additionalProperties: %Schema{type: :number}
-                }
-              }
-            }
-          },
-          required: [:usage]
-        }
-      },
-      required: [:data]
-    })
-  end
-
-  defmodule CreditsCheckoutRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "CreditsCheckoutRequest",
-      type: :object,
-      properties: %{
-        cents: %Schema{
-          type: :integer,
-          description: "The pack to buy, in cents. Must be one of credits.packs_cents."
-        }
-      },
-      required: [:cents],
-      example: %{"cents" => 2500}
-    })
-  end
-
-  defmodule StripeUrlResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "StripeUrlResponse",
-      description: "A Stripe-hosted URL to open in a browser. Single-use and short-lived.",
-      type: :object,
-      properties: %{
-        data: %Schema{
-          type: :object,
-          properties: %{url: %Schema{type: :string, format: :uri}},
-          required: [:url]
-        }
-      },
-      required: [:data]
-    })
-  end
-
-  defmodule Export do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "Export",
-      description:
-        "An account data export. Built asynchronously; the payload is fetched " <>
-          "from the download endpoint, never embedded here.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        status: %Schema{type: :string, enum: ~w(pending completed failed)},
-        byte_size: %Schema{type: :integer, nullable: true, description: "Uncompressed size."},
-        error: %Schema{type: :string, nullable: true},
-        expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        downloadable: %Schema{
-          type: :boolean,
-          description: "Completed and not yet expired — the only state the download serves."
-        },
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
-      required: [:id, :status]
-    })
-  end
-
-  item_response(ExportResponse, of: Export)
-
-  list_response(ExportListResponse, of: Export)
 
   defmodule AccountDeleteRequest do
     @moduledoc false
@@ -3715,30 +3531,6 @@ defmodule FountainWeb.Schemas do
               },
               required: [:conversations, :team]
             },
-            mcp_servers: %Schema{
-              type: :array,
-              description:
-                "Remote MCP servers verified to complete the MCP authorization " <>
-                  "discovery chain, each with the date it was last verified. " <>
-                  "Suggestions, not an allowlist — any URL can be discovered.",
-              items: %Schema{
-                type: :object,
-                properties: %{
-                  slug: %Schema{type: :string},
-                  name: %Schema{type: :string},
-                  url: %Schema{type: :string},
-                  dcr: %Schema{
-                    type: :boolean,
-                    description:
-                      "Whether the authorization server offers dynamic client " <>
-                        "registration (RFC 7591). False means the tenant pastes a " <>
-                        "client id from their own app registration."
-                  },
-                  verified_on: %Schema{type: :string, format: :date}
-                },
-                required: [:slug, :name, :url, :dcr, :verified_on]
-              }
-            },
             first_request: %Schema{
               type: :object,
               description:
@@ -3892,176 +3684,6 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule WebhookEndpoint do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "WebhookEndpoint",
-      description:
-        "A URL of yours that Fountain POSTs lifecycle events to. The signing secret is " <>
-          "returned only by create and rotate, and never appears here.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        url: %Schema{type: :string, example: "https://example.com/hooks/fountain"},
-        description: %Schema{type: :string, nullable: true, maxLength: 500},
-        event_types: %Schema{
-          type: :array,
-          items: %Schema{type: :string},
-          description:
-            "What this endpoint is subscribed to. An exact type " <>
-              "(`conversation.turn.done`), one stage (`conversation.turn.*`), or `*` for " <>
-              "everything. `GET /api/catalog` is not the source for these; the docs page is.",
-          example: ["conversation.turn.done", "conversation.turn.failed"]
-        },
-        status: %Schema{
-          type: :string,
-          enum: ["active", "disabled"],
-          description:
-            "`disabled` means Fountain stopped delivering, either because you switched it " <>
-              "off or because deliveries failed for long enough."
-        },
-        consecutive_failures: %Schema{
-          type: :integer,
-          description:
-            "Events in a row that exhausted their retries. Any accepted delivery clears it."
-        },
-        disabled_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        disabled_reason: %Schema{type: :string, nullable: true},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
-      required: [:id, :url, :event_types, :status]
-    })
-  end
-
-  item_response(WebhookEndpointResponse, of: WebhookEndpoint)
-  list_response(WebhookEndpointListResponse, of: WebhookEndpoint)
-
-  defmodule WebhookEndpointCreatedResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "WebhookEndpointCreatedResponse",
-      description:
-        "The endpoint, plus the signing secret. This is the only response that carries " <>
-          "the secret; it is not recoverable afterwards, only replaceable.",
-      type: :object,
-      properties: %{
-        data: WebhookEndpoint,
-        secret: %Schema{
-          type: :string,
-          description: "The HMAC-SHA256 signing secret. Store it; it is not shown again.",
-          example: "whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU"
-        }
-      },
-      required: [:data, :secret]
-    })
-  end
-
-  defmodule WebhookEndpointCreateRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "WebhookEndpointCreateRequest",
-      type: :object,
-      properties: %{
-        url: %Schema{
-          type: :string,
-          description:
-            "https:// only, unless the instance permits http. Loopback, link-local " <>
-              "(including the cloud metadata address) and RFC1918 targets are refused, " <>
-              "at request time as well as here.",
-          example: "https://example.com/hooks/fountain"
-        },
-        description: %Schema{type: :string, nullable: true, maxLength: 500},
-        event_types: %Schema{
-          type: :array,
-          items: %Schema{type: :string},
-          description:
-            "Defaults to conversation.turn.done, conversation.turn.failed and " <>
-              "conversation.provision.failed when absent.",
-          example: ["conversation.turn.done"]
-        }
-      },
-      required: [:url]
-    })
-  end
-
-  defmodule WebhookEndpointUpdateRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "WebhookEndpointUpdateRequest",
-      description: "Any subset. `status` toggles delivery; the secret is rotated separately.",
-      type: :object,
-      properties: %{
-        url: %Schema{type: :string},
-        description: %Schema{type: :string, nullable: true, maxLength: 500},
-        event_types: %Schema{type: :array, items: %Schema{type: :string}},
-        status: %Schema{type: :string, enum: ["active", "disabled"]}
-      }
-    })
-  end
-
-  defmodule WebhookDelivery do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "WebhookDelivery",
-      description: "One HTTP attempt at one event. Retained for 30 days by default, then pruned.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        event_id: %Schema{
-          type: :string,
-          description: "The log_events row id, which is also the SSE event id."
-        },
-        event_type: %Schema{type: :string, example: "conversation.turn.done"},
-        attempt: %Schema{type: :integer, description: "1 for the first try."},
-        status_code: %Schema{
-          type: :integer,
-          nullable: true,
-          description: "null when the request never got a response."
-        },
-        duration_ms: %Schema{type: :integer, nullable: true},
-        error: %Schema{type: :string, nullable: true},
-        response_body: %Schema{
-          type: :string,
-          nullable: true,
-          description: "The first few KB of what the receiver said."
-        },
-        inserted_at: %Schema{type: :string, format: :"date-time"}
-      },
-      required: [:id, :event_id, :event_type, :attempt]
-    })
-  end
-
-  list_response(WebhookDeliveryListResponse, of: WebhookDelivery)
-
-  defmodule WebhookTestResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "WebhookTestResponse",
-      description:
-        "The test event was queued. Its delivery shows up in " <>
-          "`GET /api/webhooks/{id}/deliveries` once the worker has run.",
-      type: :object,
-      properties: %{
-        queued: %Schema{type: :boolean},
-        event_type: %Schema{type: :string, example: "webhook.test"}
-      },
-      required: [:queued, :event_type]
-    })
-  end
-
   defmodule Error do
     @moduledoc false
     require OpenApiSpex
@@ -4079,7 +3701,7 @@ defmodule FountainWeb.Schemas do
           type: :string,
           description:
             "The machine-readable code: `validation_failed`, `not_found`, " <>
-              "`insufficient_credits`, `sandbox_quota_exceeded`, `expired`, " <>
+              "`sandbox_quota_exceeded`, `expired`, " <>
               "`invalid_token` and the rest. On the key-authentication and scope " <>
               "refusals it is a sentence and `reason` carries the code.",
           example: "validation_failed"
@@ -4105,10 +3727,6 @@ defmodule FountainWeb.Schemas do
               "`error: \"validation_failed\"`, whether the request died at the " <>
               "OpenAPI cast or in a changeset (#1431).",
           additionalProperties: %Schema{type: :array, items: %Schema{type: :string}}
-        },
-        upgrade_url: %Schema{
-          type: :string,
-          description: "Where to buy credit, on `insufficient_credits` (402)."
         },
         active_sandboxes: %Schema{
           type: :integer,
@@ -4195,14 +3813,12 @@ defmodule FountainWeb.Schemas do
           "and a Teammate document is read as a whole declaration, so an absent " <>
           "`environment` or `vault` clears that binding. Schedule specs take " <>
           "`teammate` plus the TeamScheduleCreateRequest fields `cron`, " <>
-          "`prompt`, `one_off` and `enabled`; Webhook specs take the " <>
-          "WebhookEndpointCreateRequest fields `url`, `description` and " <>
-          "`event_types`, and are keyed by `url` rather than by `name`.",
+          "`prompt`, `one_off` and `enabled`.",
       type: :object,
       properties: %{
         kind: %Schema{
           type: :string,
-          enum: ["Environment", "Vault", "Agent", "Teammate", "Schedule", "Webhook"]
+          enum: ["Environment", "Vault", "Agent", "Teammate", "Schedule"]
         },
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
@@ -4262,16 +3878,7 @@ defmodule FountainWeb.Schemas do
               "`upserted` under `secrets`."
         },
         errors: %Schema{type: :object, additionalProperties: true, nullable: true},
-        secrets: %Schema{type: :array, items: ApplySecretResult},
-        secret: %Schema{
-          type: :string,
-          nullable: true,
-          description:
-            "A Webhook endpoint's HMAC-SHA256 signing secret, on the apply that " <>
-              "created it. Store it; it is not shown again, and an update never " <>
-              "returns it. Null on every other row.",
-          example: "whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU"
-        }
+        secrets: %Schema{type: :array, items: ApplySecretResult}
       },
       required: [:kind, :name, :action]
     })
@@ -4356,34 +3963,19 @@ defmodule FountainWeb.Schemas do
         role: %Schema{type: :string, enum: ~w(user admin)},
         email_verified: %Schema{type: :boolean},
         onboarding_completed: %Schema{type: :boolean},
-        comped: %Schema{type: :boolean, nullable: true, description: "Null when billing is off."},
         brokered: %Schema{
           type: :boolean,
           description:
             "Whether this account's conversations run behind the egress credential " <>
               "broker (ADR 0019): secrets with bindings stay at the broker, a limited " <>
               "environment is enforced there, and /api/conversations/:id/egress " <>
-              "has content. Connections availability is separate. Read-only; an operator " <>
-              "sets it."
-        },
-        connections_enabled: %Schema{
-          type: :boolean,
-          description:
-            "Whether this account may add connections, providers, or credential bindings. " <>
-              "Use connections_manageable to show existing credentials and their removal controls."
+              "has content. Read-only; an operator sets it."
         },
         chatgpt_subscriptions_enabled: %Schema{
           type: :boolean,
           description:
             "Whether this account may link a new ChatGPT subscription. Listing, renaming, " <>
               "reconnecting, disconnecting and removing the ones it holds never depend on it."
-        },
-        connections_manageable: %Schema{
-          type: :boolean,
-          description:
-            "Whether this account may list, revoke, and delete existing connections, " <>
-              "providers, and credential bindings. Remains true when the connections " <>
-              "rollout flag is off but the deployment still brokers credentials."
         },
         expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },
@@ -4555,136 +4147,6 @@ defmodule FountainWeb.Schemas do
   end
 
   list_response(RunnerListResponse, of: Runner)
-
-  defmodule ClaimableUser do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ClaimableUser",
-      description:
-        "A claimable principal (ADR 0044): the anonymous tenant an application " <>
-          "opens for a visitor who has no Fountain account yet. `principal_id` is " <>
-          "the tenant every resource it builds belongs to, and it never changes — " <>
-          "claiming attaches an owner rather than moving anything.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid, description: "The grant's id."},
-        principal_id: %Schema{
-          type: :string,
-          format: :uuid,
-          description:
-            "The tenant id. Baked into every sandbox name the principal creates, " <>
-              "and identical before and after a claim."
-        },
-        application_id: %Schema{
-          type: :string,
-          description: "The application's own label for itself, as given at creation."
-        },
-        status: %Schema{type: :string, enum: ~w(unclaimed claimed expired released)},
-        expires_at: %Schema{type: :string, format: :"date-time"},
-        claimed_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        claimed_by_user_id: %Schema{
-          type: :string,
-          format: :uuid,
-          nullable: true,
-          description:
-            "The account that claimed it. Only shown to that account and to the application."
-        },
-        budget_exhausted_at: %Schema{
-          type: :string,
-          format: :"date-time",
-          nullable: true,
-          description: "When the introductory grant first refused a spend, if it has."
-        },
-        grant_cents: %Schema{
-          type: :integer,
-          description: "The introductory grant, in cents. Zero when credits are off."
-        },
-        max_live_sandboxes: %Schema{type: :integer, nullable: true},
-        metadata: %Schema{type: :object, description: "Whatever the application stored here."},
-        created_at: %Schema{type: :string, format: :"date-time"}
-      },
-      required: [:id, :principal_id, :application_id, :status, :expires_at, :created_at]
-    })
-  end
-
-  item_response(ClaimableUserResponse, of: ClaimableUser)
-
-  defmodule ClaimableUserCreated do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ClaimableUserCreated",
-      description:
-        "The grant plus its two secrets. Both are shown once and stored only as " <>
-          "hashes. Replaying the create with the same `Idempotency-Key` returns the " <>
-          "same principal with a fresh pair, which invalidates this one.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        principal_id: %Schema{type: :string, format: :uuid},
-        application_id: %Schema{type: :string},
-        status: %Schema{type: :string, enum: ~w(unclaimed claimed expired released)},
-        expires_at: %Schema{type: :string, format: :"date-time"},
-        grant_cents: %Schema{type: :integer},
-        max_live_sandboxes: %Schema{type: :integer, nullable: true},
-        metadata: %Schema{type: :object},
-        created_at: %Schema{type: :string, format: :"date-time"},
-        api_key: %Schema{
-          type: :string,
-          description:
-            "A `principal`-scoped API key for the principal, expiring with it. It " <>
-              "reaches agents, environments, vaults, conversations and sandboxes, and " <>
-              "nothing that manages an account."
-        },
-        claim_token: %Schema{
-          type: :string,
-          description: "The one-time capability that claims this principal."
-        }
-      },
-      required: [:id, :principal_id, :status, :expires_at, :api_key, :claim_token]
-    })
-  end
-
-  item_response(ClaimableUserCreatedResponse, of: ClaimableUserCreated)
-
-  defmodule ClaimedPrincipal do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ClaimedPrincipal",
-      description:
-        "The result of a claim. The principal's resources are untouched: the same " <>
-          "sandbox, agent, environment, vault and conversations, under the same ids.",
-      type: :object,
-      properties: %{
-        user: %Schema{
-          type: :object,
-          description: "The account that now owns the principal.",
-          properties: %{
-            id: %Schema{type: :string, format: :uuid},
-            email: %Schema{type: :string, nullable: true}
-          }
-        },
-        principal_id: %Schema{type: :string, format: :uuid},
-        status: %Schema{type: :string, enum: ~w(unclaimed claimed expired released)},
-        claimed_at: %Schema{type: :string, format: :"date-time"},
-        api_key: %Schema{
-          type: :string,
-          description:
-            "A fresh `principal`-scoped key that expires 30 days after issuance. " <>
-              "The claim revokes the application credential. Owners can replace the key " <>
-              "from API keys in the console, including after expiry."
-        }
-      },
-      required: [:user, :principal_id, :status, :api_key]
-    })
-  end
-
-  item_response(ClaimedPrincipalResponse, of: ClaimedPrincipal)
 
   defmodule SecretBinding do
     @moduledoc false
@@ -5063,211 +4525,6 @@ defmodule FountainWeb.Schemas do
         message: %Schema{type: :string}
       },
       required: [:email, :message]
-    })
-  end
-
-  defmodule Connection do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "Connection",
-      description:
-        "A provider account the tenant signed in to once, whose credential " <>
-          "Fountain holds (#1178). Agents get the capability, never the token: " <>
-          "an agent's `mcp_servers` names the connection " <>
-          ~s|(`{"gmail": {"connection": "<id>"}}`) and Fountain serves the Gmail | <>
-          "tools; and the access token is brokered under `env_key` for an MCP " <>
-          "server the tenant runs. Only on a deployment that runs the egress broker.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        provider: %Schema{
-          type: :string,
-          description: "The provider's slug: `google`, or a tenant provider's."
-        },
-        provider_id: %Schema{
-          type: :string,
-          format: :uuid,
-          nullable: true,
-          description: "The tenant provider (#1186); null for the platform provider."
-        },
-        account_email: %Schema{
-          type: :string,
-          description: "The connected account: an address, or the label the provider gave."
-        },
-        scopes: %Schema{type: :array, items: %Schema{type: :string}},
-        env_key: %Schema{
-          type: :string,
-          description:
-            "The env var name the access token is brokered under (`GOOGLE_ACCESS_TOKEN`)."
-        },
-        status: %Schema{
-          type: :string,
-          enum: ["active", "revoked", "expired"],
-          description:
-            "`revoked` once the tenant cut it or the provider refused the refresh token; " <>
-              "`expired` when the access token lapsed and the provider issued no refresh token. " <>
-              "The row stays so the console can say why the tools stopped. Reconnect to replace it."
-        },
-        expires_at: %Schema{
-          type: :string,
-          format: :"date-time",
-          nullable: true,
-          description: "When the cached access token expires. Refreshed on use."
-        },
-        revoked_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        created_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
-      required: [:id, :provider, :account_email, :scopes, :env_key, :status]
-    })
-  end
-
-  list_response(ConnectionListResponse, of: Connection)
-
-  defmodule ConnectionProvider do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ConnectionProvider",
-      description:
-        "Where a connection's tokens come from (#1186, #1299): a platform " <>
-          "provider (`platform: true`, id `google`, `microsoft` or `slack` — " <>
-          "Fountain's own OAuth client), a tenant's own OAuth app at a " <>
-          "service (`kind: oauth2`), or a remote MCP server whose authorization " <>
-          "Fountain discovered (`kind: mcp`). The client secret is never returned.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, description: "A uuid, or a platform slug."},
-        slug: %Schema{type: :string},
-        name: %Schema{type: :string},
-        kind: %Schema{type: :string, enum: ["oauth2", "mcp"]},
-        platform: %Schema{
-          type: :boolean,
-          description: "True for a platform provider, which has no row."
-        },
-        configured: %Schema{
-          type: :boolean,
-          description: "True when the provider has a client Fountain can start a flow with."
-        },
-        authorize_url: %Schema{type: :string, nullable: true},
-        token_url: %Schema{type: :string, nullable: true},
-        revoke_url: %Schema{type: :string, nullable: true},
-        userinfo_url: %Schema{type: :string, nullable: true},
-        account_label_path: %Schema{
-          type: :string,
-          nullable: true,
-          description: "A dotted path into the userinfo body that names the account."
-        },
-        scopes: %Schema{type: :array, items: %Schema{type: :string}},
-        client_id: %Schema{type: :string, nullable: true},
-        has_client_secret: %Schema{type: :boolean},
-        token_endpoint_auth: %Schema{
-          type: :string,
-          enum: ["client_secret_post", "client_secret_basic", "none"]
-        },
-        pkce: %Schema{type: :boolean},
-        env_key: %Schema{
-          type: :string,
-          description: "The env var a connection's access token is brokered under."
-        },
-        token_hosts: %Schema{
-          type: :array,
-          items: %Schema{type: :string},
-          description: "The hosts the brokered token is attached to as a bearer."
-        },
-        mcp_url: %Schema{type: :string, nullable: true},
-        issuer: %Schema{
-          type: :string,
-          nullable: true,
-          description: "The authorization server discovery found (`mcp`)."
-        },
-        client_source: %Schema{
-          type: :string,
-          nullable: true,
-          enum: ["dcr", "manual", nil],
-          description: "`dcr` when the client came from RFC 7591 registration."
-        },
-        registration_endpoint: %Schema{type: :string, nullable: true},
-        redirect_uri: %Schema{
-          type: :string,
-          description: "The callback to register at the service."
-        },
-        connect_url: %Schema{
-          type: :string,
-          description:
-            "Where to send the account owner, in a browser signed in to the console, " <>
-              "to connect an account."
-        },
-        created_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        updated_at: %Schema{type: :string, format: :"date-time", nullable: true}
-      },
-      required: [
-        :id,
-        :slug,
-        :name,
-        :kind,
-        :platform,
-        :configured,
-        :scopes,
-        :env_key,
-        :token_hosts,
-        :redirect_uri,
-        :connect_url
-      ]
-    })
-  end
-
-  list_response(ConnectionProviderListResponse, of: ConnectionProvider)
-
-  defmodule ConnectionProviderRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ConnectionProviderRequest",
-      description:
-        "`kind: oauth2` needs `name`, `authorize_url`, `token_url`, `client_id` and " <>
-          "`client_secret` (unless `token_endpoint_auth` is `none`). `kind: mcp` " <>
-          "needs `mcp_url`; the rest comes from discovery. `slug` defaults from the " <>
-          "name or the server host, `env_key` from the slug (`GITHUB_ACCESS_TOKEN`).",
-      type: :object,
-      properties: %{
-        kind: %Schema{type: :string, enum: ["oauth2", "mcp"]},
-        slug: %Schema{type: :string},
-        name: %Schema{type: :string},
-        authorize_url: %Schema{type: :string},
-        token_url: %Schema{type: :string},
-        revoke_url: %Schema{type: :string, nullable: true},
-        userinfo_url: %Schema{type: :string, nullable: true},
-        account_label_path: %Schema{type: :string, nullable: true},
-        scopes: %Schema{type: :array, items: %Schema{type: :string}},
-        client_id: %Schema{type: :string},
-        client_secret: %Schema{type: :string, description: "Write-only."},
-        token_endpoint_auth: %Schema{
-          type: :string,
-          enum: ["client_secret_post", "client_secret_basic", "none"]
-        },
-        pkce: %Schema{type: :boolean},
-        env_key: %Schema{type: :string},
-        token_hosts: %Schema{type: :array, items: %Schema{type: :string}},
-        mcp_url: %Schema{type: :string}
-      },
-      example: %{
-        kind: "oauth2",
-        slug: "github",
-        name: "GitHub",
-        authorize_url: "https://github.com/login/oauth/authorize",
-        token_url: "https://github.com/login/oauth/access_token",
-        userinfo_url: "https://api.github.com/user",
-        account_label_path: "login",
-        scopes: ["repo", "read:user"],
-        client_id: "Iv1.abc",
-        client_secret: "…",
-        token_hosts: ["api.github.com"]
-      }
     })
   end
 end

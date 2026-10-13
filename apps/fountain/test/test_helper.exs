@@ -9,19 +9,6 @@ ExUnit.start()
 # Same value as config/config.exs.
 Application.put_env(:managoat_runner, :host, Fountain.Runners.Host)
 
-# Extension fixtures describe OpenAPI paths only while the suite runs (ADR 0043,
-# #1506). The published spec artifact is generated in MIX_ENV=test —
-# `scripts/sdk-contract/build.sh` runs `mix openapi.export`, and both ci.yml and
-# release.yml set MIX_ENV: test for it — so the `dist/openapi.json` attached to
-# every tag, and `sdk/contract/contract.json` projected from it, would otherwise
-# carry `/api/fixture/whoami` in every release. `mix openapi.export` is not a
-# test run and never loads this file, which is exactly the distinction wanted:
-# the fixture is part of the suite's distribution, not of the artifact's.
-#
-# A real extension is the opposite case and needs no flag — the bundled
-# distribution serves its operations, so they belong in the artifact.
-Application.put_env(:fountain, :extension_fixture_openapi, true)
-
 # Only set sandbox mode when the Repo is actually running (integration tests).
 # Pure unit tests that don't touch the DB can run without a live Postgres.
 if Process.whereis(Fountain.Repo) do
@@ -52,14 +39,7 @@ Mimic.copy(Task.Supervisor)
 # publishers are done, before the controller starts its short idle timeout.
 Mimic.copy(Plug.Adapters.Test.Conn)
 
-# Stripe modules — needed by billing tests and webhook controller tests.
-# Billing itself is copied so the webhook controller's :retry/500 arm can be
-# driven with an injected transient failure — there is no real Stripe outage
-# to reproduce in a test.
-Mimic.copy(Fountain.Billing)
-Mimic.copy(Stripe.Webhook)
-Mimic.copy(Stripe.Customer)
-Mimic.copy(Stripe.Checkout.Session)
+Mimic.copy(Fountain.Usage)
 
 Mimic.copy(Fountain.Conversations)
 Mimic.copy(Fountain.Conversations.ExecutionAllowance)
@@ -72,7 +52,6 @@ Mimic.copy(Fountain.Conversations.Launch)
 Mimic.copy(Fountain.Conversations.Wake)
 Mimic.copy(Fountain.Conversations.Reapply)
 Mimic.copy(Fountain.Conversations.Termination)
-Mimic.copy(Fountain.Workers.WebhookDelivery)
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Conversations.Provisioning)
 Mimic.copy(Fountain.Conversations.InferenceBinding)
@@ -85,7 +64,6 @@ Mimic.copy(Managoat.Runtimes.Layout)
 Mimic.copy(Fountain.Accounts)
 Mimic.copy(Fountain.Audit)
 Mimic.copy(Oban)
-Mimic.copy(Fountain.Activation)
 Mimic.copy(Fountain.Crypto)
 Mimic.copy(Fountain.Health)
 Mimic.copy(FountainWeb.OAuth)
@@ -120,8 +98,8 @@ Mimic.copy(Fountain.Machines.Resume)
 # ─── The schema guard (#1427) ────────────────────────────────────────────────
 #
 # Every other check in this repository compares a schema with another schema.
-# `sdk/contract` projects the OpenAPI document and pins four SDKs to it,
-# `sdk/conformance` pins what those clients do with it, and both pass happily
+# `sdk/contract` projects the OpenAPI document and pins the SDK to it,
+# `sdk/conformance` pins what that client does with it, and both pass happily
 # when the document is a lie about its own controller. Three defects of that
 # shape surfaced in one day (#1417, #1418, #1427).
 #

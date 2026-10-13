@@ -28,26 +28,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
   end
 
   describe "self-serve, on /account" do
-    test "billing disabled: the deletion warning does not mention a subscription", %{conn: conn} do
-      # There is no subscription to cancel on a billing-disabled instance —
-      # the last billing reference the #513 walkthrough sweep found.
-      previous = Application.get_env(:fountain, :credits_enabled)
-      Application.put_env(:fountain, :credits_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, previous) end)
-
-      user = insert_verified_user()
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account")
-
-      assert html =~ "Destroys every running sandbox"
-      refute html =~ "subscription"
-    end
-
-    test "billing enabled: the warning is the same, there is no subscription to cancel (ADR 0031)",
-         %{conn: conn} do
-      previous = Application.get_env(:fountain, :credits_enabled)
-      Application.put_env(:fountain, :credits_enabled, true)
-      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, previous) end)
-
+    test "the deletion warning does not mention a subscription", %{conn: conn} do
       user = insert_verified_user()
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account")
 
@@ -60,10 +41,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
 
       {:ok, lv, html} = live(login_user(conn, user), ~p"/account")
       assert html =~ "Delete account"
-      # The export nudge sits in the danger zone and anchors to the export
-      # section above it (#450).
-      assert html =~ "Request an export above"
-      assert html =~ ~s{id="export"}
+      refute html =~ "export"
 
       capture_log(fn ->
         assert {:error, {:redirect, %{to: to}}} =

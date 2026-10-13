@@ -45,14 +45,6 @@ defmodule FountainWeb.Router do
   # at render time (#323). What it does pin down: no framing, no <object>,
   # no off-origin form posts, fetch/websocket restricted to self + the LV
   # socket, images to self + the data: URLs the image picker and avatars use.
-  #
-  # This is the console's policy, and it names no PostHog origin — the console
-  # loads no analytics script (`FountainWeb.Plugs.WebAnalytics`), so it has no
-  # business permitting one. The public pages, which do load it, get those two
-  # origins appended at runtime by that same plug: `POSTHOG_HOST` is read in
-  # `config/runtime.exs`, so a compile-time entry here would carry whatever
-  # the *build* saw — for a release, nothing — and would block every
-  # self-hosted PostHog behind a header that looked correct in the source.
   @csp [
          "default-src 'self'",
          "base-uri 'self'",
@@ -77,23 +69,11 @@ defmodule FountainWeb.Router do
     # After the policy is set: widens img-src with the brand bundle's origin
     # (BRAND_ASSETS_URL), which is read at runtime and so cannot be in @csp.
     plug FountainWeb.Plugs.BrandAssets
-    # After :fetch_session — it reads the session on both sides of the
-    # request to spot a sign-in. On every browser route on purpose: the merge
-    # has to happen wherever a session is established, and five controllers do
-    # that today.
-    plug FountainWeb.Plugs.AnalyticsIdentity
   end
 
   # Public browser routes (login, register, verify) — no auth check
   pipeline :browser_public do
     # intentionally empty; inherits :browser
-  end
-
-  # The public, unauthenticated surface: the landing and legal pages, the
-  # manual, and the auth flow. The only routes that load the PostHog browser
-  # snippet — see FountainWeb.Plugs.WebAnalytics for why the console does not.
-  pipeline :public_analytics do
-    plug FountainWeb.Plugs.WebAnalytics
   end
 
   # Authenticated browser routes — loads current_user from session
@@ -156,7 +136,7 @@ defmodule FountainWeb.Router do
   # pages (managoat/site) sit in front of these paths at the ingress; the app
   # itself serves a plain front door at `/` everywhere.
   scope "/", FountainWeb do
-    pipe_through [:browser, :browser_optional_auth, :public_analytics]
+    pipe_through [:browser, :browser_optional_auth]
     get "/", FrontDoorController, :home
     get "/terms", FrontDoorController, :terms
     get "/privacy", FrontDoorController, :privacy
@@ -169,7 +149,7 @@ defmodule FountainWeb.Router do
 
   # Multi-tenant auth routes (no session auth required)
   scope "/auth", FountainWeb do
-    pipe_through [:browser, :public_analytics]
+    pipe_through [:browser]
 
     get "/login", SessionController, :new
     post "/login", SessionController, :create
@@ -194,7 +174,7 @@ defmodule FountainWeb.Router do
 
   # Email verification (token in path)
   scope "/users", FountainWeb do
-    pipe_through [:browser, :public_analytics]
+    pipe_through [:browser]
     get "/confirm/:token", EmailVerificationController, :confirm
   end
 
@@ -259,32 +239,6 @@ defmodule FountainWeb.Router do
     post "/email/confirm", AccountSecurityController, :api_confirm_email_change
   end
 
-  ## ─── Stripe webhook (credit packs, ADR 0031) ───────────────────────────────────────────────────────────
-  # No TenantAPIAuth: authenticated via Stripe-Signature header verification.
-  # Must be reachable by Stripe's servers without a bearer token.
-
-  scope "/api/stripe", FountainWeb do
-    pipe_through :api_public
-    post "/webhook", StripeWebhookController, :create
-  end
-
-  # Outbound webhooks (#700) — the ones Fountain *sends*. Full scope, like
-  # key management: a sandbox's per-conversation token must not be able to
-  # point the account's lifecycle events at a URL of its choosing.
-  scope "/api/webhooks", FountainWeb do
-    pipe_through [:accepts_json, :api, :require_full_scope]
-
-    get "/", WebhookEndpointController, :index
-    post "/", WebhookEndpointController, :create
-    get "/:id", WebhookEndpointController, :show
-    patch "/:id", WebhookEndpointController, :update
-    delete "/:id", WebhookEndpointController, :delete
-    post "/:id/rotate-secret", WebhookEndpointController, :rotate
-    post "/:id/test", WebhookEndpointController, :test
-    get "/:id/deliveries", WebhookEndpointController, :deliveries
-    post "/:id/deliveries/:delivery_id/redeliver", WebhookEndpointController, :redeliver
-  end
-
   ## ─── Authenticated JSON resource endpoints ──────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
@@ -328,36 +282,6 @@ defmodule FountainWeb.Router do
     delete "/api-keys/:id", ApiKeyController, :delete
   end
 
-  # Claimable principals (ADR 0044): the anonymous tenants an application opens
-  # for visitors who have no account yet. Full scope on every route, which is
-  # what keeps a principal out of its own grant surface — a `principal`-scoped
-  # key cannot open a second principal, enumerate anyone else's, claim itself,
-  # or release the grant that bounds it.
-  #
-  # `/:id/claim` is declared before `/:id` so a literal segment is never read
-  # as a grant id.
-  scope "/api/claimable-users", FountainWeb do
-    pipe_through [:accepts_json, :api, :require_full_scope]
-
-    post "/", ClaimableUserController, :create
-    post "/:id/claim", ClaimableUserController, :claim
-    get "/:id", ClaimableUserController, :show
-    delete "/:id", ClaimableUserController, :delete
-
-    # The one thing an application must do for a principal that the
-    # principal's own credential cannot do for itself (ADR 0053 decision 7):
-    # put the customer's inference key on it. Full scope, and authorised as
-    # the read above is — the application that opened it, or the account that
-    # claimed it.
-    put "/:id/inference-credentials/:provider",
-        ClaimableUserController,
-        :put_inference_credential
-
-    delete "/:id/inference-credentials/:provider",
-           ClaimableUserController,
-           :delete_inference_credential
-  end
-
   # Self-hosted runners (ADR 0022). Full scope: a sandbox's per-conversation
   # token must not be able to attach a machine that then runs the account's
   # agents. `/ws` is the daemon's WebSocket; it authenticates like any other
@@ -367,34 +291,6 @@ defmodule FountainWeb.Router do
 
     get "/", RunnerController, :index
     delete "/:id", RunnerController, :delete
-  end
-
-  # Connections (#1178): the provider accounts the tenant has signed in to.
-  # Full scope: a conversation-scoped token must not be able to list or cut
-  # the account's connections. Connecting one needs a browser and a session,
-  # so it is not an API operation — `GET /api/connections/providers` says
-  # where to send the owner.
-  scope "/api/connections", FountainWeb do
-    pipe_through [:accepts_json, :api, :require_full_scope]
-
-    get "/", ConnectionController, :index
-    get "/providers", ConnectionController, :providers
-    get "/:id", ConnectionController, :show
-    delete "/:id", ConnectionController, :delete
-  end
-
-  # Connection providers (#1186): where a tenant's connections get their
-  # tokens — their own OAuth app, or a discovered MCP authorization server.
-  # Full scope: a provider holds a client secret and names where a token goes.
-  scope "/api/connection-providers", FountainWeb do
-    pipe_through [:accepts_json, :api, :require_full_scope]
-
-    get "/", ConnectionProviderController, :index
-    post "/", ConnectionProviderController, :create
-    get "/:id", ConnectionProviderController, :show
-    patch "/:id", ConnectionProviderController, :update
-    delete "/:id", ConnectionProviderController, :delete
-    post "/:id/discover", ConnectionProviderController, :discover
   end
 
   # Secret bindings (ADR 0019 gate 1b). Full scope for the same reason as
@@ -463,17 +359,8 @@ defmodule FountainWeb.Router do
   scope "/api/account", FountainWeb do
     pipe_through [:accepts_json, :api, :require_full_scope]
 
-    # Billing self-serve (#524). The controller lives in ee/ with the rest of
-    # billing; the route has to be here, like the Stripe webhook above.
-    get "/billing", CreditsApiController, :show
-    post "/billing/credits/checkout", CreditsApiController, :credits_checkout
-
-    # Export and deletion (#523). Deletion is irreversible and takes the
-    # tenant key with it, so it wants the strongest credential the account has.
-    post "/exports", AccountDataController, :create_export
-    get "/exports", AccountDataController, :index_exports
-    get "/exports/:id", AccountDataController, :show_export
-    get "/exports/:id/download", AccountDataController, :download_export
+    # Deletion (#523) is irreversible and takes the tenant key with it, so it
+    # wants the strongest credential the account has.
     delete "/", AccountDataController, :delete_account
 
     get "/onboarding", OnboardingController, :show
@@ -538,10 +425,6 @@ defmodule FountainWeb.Router do
     # The team tools a teammate's sandbox calls to see and message the team (#851).
     post "/mcp/team/:conversation_id", TeamMcpController, :handle
 
-    # The Gmail tools for a Google connection used to be `/mcp/gmail/...` here;
-    # they are the `fountain_google` extension's now (ADR 0043, #2152), mounted
-    # by `ExtensionDispatch` at the same path.
-
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end
@@ -595,11 +478,6 @@ defmodule FountainWeb.Router do
     patch "/team/:agent_id/schedules/:id", TeamScheduleController, :update
     delete "/team/:agent_id/schedules/:id", TeamScheduleController, :delete
     post "/team/:agent_id/schedules/:id/run", TeamScheduleController, :run
-
-    # Problem reports (#843) used to be declared here. They are the
-    # `fountain_support` extension's now (ADR 0043, #1528): `/api/support` is a
-    # mount, dispatched at the end of this same pipeline, and a core-only
-    # release serves none of it.
 
     # The machines conversations run on (ADR 0023 gate 3). Read-only: a
     # sandbox is made by creating a conversation and reused by naming it as
@@ -675,11 +553,10 @@ defmodule FountainWeb.Router do
     pipe_through [:accepts_json, :api, :require_full_scope, :require_admin_api]
 
     get "/users", AdminController, :index_users
+    post "/users", AdminController, :create_user
     get "/users/:id", AdminController, :show_user
     post "/users/:id/role", AdminController, :set_role
     post "/users/:id/sandbox-limit", AdminController, :set_sandbox_limit
-    post "/users/:id/comp", AdminController, :set_comp
-    post "/users/:id/credits", AdminController, :grant_credits
     post "/users/:id/suspend", AdminController, :set_suspended
     delete "/users/:id", AdminController, :delete_user
 
@@ -701,26 +578,16 @@ defmodule FountainWeb.Router do
     # ── Avatar serving — tenant-scoped image endpoint ─────────────────────────────────────────────────────
     get "/agents/:id/avatar", AgentAvatarController, :show
 
-    # ── Account data export download — owner-scoped, expiring artifact (#288) ─────────────────────────────
-    get "/account/exports/:id/download", ExportController, :download
-
     # ── Credential management (#448) — controller POSTs so the session can be
     # re-issued after a password change and RateLimit applies; the page they
     # POST from is AccountSecurityLive below ─────────────────────────────────
     post "/account/security/password", AccountSecurityController, :change_password
     post "/account/security/email", AccountSecurityController, :request_email_change
 
-    # ── Connections (#1178): the OAuth round trip to a provider. Session-
-    # authenticated so the grant lands on the signed-in account; the page
-    # they start from is ConnectionsLive below ───────────────────────────
-    get "/connections/:provider/start", ConnectionsController, :start
-    get "/connections/:provider/callback", ConnectionsController, :callback
-
     # ── The console ───────────────────────────────────────────────────────────
     # What Fountain's own UI is for: the account, its keys and credentials, and
-    # the three primitives a conversation runs on. No billing gate — an
-    # account at zero can still read and manage what it has, and the gate that
-    # protects spend is in the context (ADR 0031), not here.
+    # the three primitives a conversation runs on. The gates that protect a
+    # sandbox start live in the context, not here.
     live_session :authenticated,
       on_mount: [{FountainWeb.Live.Hooks, :require_authenticated_user}] do
       # The verified landing (ADR 0038): a key, one request, the reply. Where
@@ -747,11 +614,8 @@ defmodule FountainWeb.Router do
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
 
-      # ── Account page: data export + deletion (#479) ────────────────────────────────────────
+      # ── Account page: deletion (#479) ─────────────────────────────────────────────────────
       live "/account", Live.AccountLive, :index
-
-      # ── Credits: account/billing. Redirects to /account when billing is disabled ────────────
-      live "/account/billing", Live.CreditsLive, :index
 
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────
       live "/account/inference-credentials", InferenceCredentialsLive.Index, :index
@@ -764,12 +628,6 @@ defmodule FountainWeb.Router do
 
       # ── Secret bindings at the egress broker (ADR 0019 gate 1b) ────────────────────────────
       live "/account/bindings", SecretBindingsLive.Index, :index
-
-      # ── Connections: provider accounts Fountain holds the credential for (#1178) ────────────
-      live "/account/connections", ConnectionsLive.Index, :index
-
-      # ── Outbound webhooks (#700) ───────────────────────────────────────────────────────────
-      live "/account/webhooks", WebhooksLive.Index, :index
 
       # ── Credential management (#448) ───────────────────────────────────────────────────────
       live "/account/security", AccountSecurityLive, :index
@@ -789,35 +647,24 @@ defmodule FountainWeb.Router do
       live "/admin/inference", AdminLive.Inference, :index
       live "/admin/broker", AdminLive.Broker, :index
       live "/admin/activity", AdminLive.Activity, :index
-      # Lives in ee/ with the rest of billing (#472): it is a revenue page.
-      live "/admin/finance", Live.AdminFinanceLive, :index
       live "/admin/users/:id", AdminLive.UserDetail, :show
       live "/admin/conversations/:id", AdminLive.ConversationDetail, :show
     end
   end
 
-  ## ─── Extension API surface (ADR 0043, #1505) ────────────────────────────────────────────────────────
+  ## ─── Unmatched /api paths ───────────────────────────────────────────────────────────────────────────
 
-  # Whatever an installed extension serves under /api/<its prefix>. Declared
-  # LAST, after every core route including the browser scope's
-  # `/api/settings/theme`, because Phoenix matches in declaration order: an
-  # extension therefore cannot shadow a core path, and this plug only ever sees
-  # a request core routing had no answer for.
+  # Declared LAST, after every core route including the browser scope's
+  # `/api/settings/theme`, because Phoenix matches in declaration order: this
+  # only ever sees a request core routing had no answer for.
   #
-  # Inside the ordinary `:api` pipeline on purpose. The rate limit,
-  # TenantAPIAuth and the request audit run before the extension's plug does,
-  # so there is no prefix an extension can pick that reaches it without the
-  # host having authenticated the caller and assigned current_user. An
-  # extension gets a mount point, not a door of its own.
-  #
-  # `/api/<unknown>` reaches here too and answers 404 JSON rather than raising
-  # NoRouteError. That is the intended trade: one unmatched-path behaviour for
-  # the whole authenticated API, and no way for a client to learn from a status
-  # code which optional extensions a deployment installed.
+  # `/api/<unknown>` answers 404 JSON rather than raising NoRouteError, and
+  # only after the ordinary `:api` pipeline has run, so an unauthenticated
+  # caller gets the same 401 on a path that does not exist as on one that does.
   scope "/api" do
     pipe_through [:accepts_json, :api]
 
-    forward "/", FountainWeb.Plugs.ExtensionDispatch
+    forward "/", FountainWeb.Plugs.ApiNotFound
   end
 
   ## ─── Dev dashboard ──────────────────────────────────────────────────────────────────────────────────

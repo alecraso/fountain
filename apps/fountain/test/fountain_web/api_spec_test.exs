@@ -58,9 +58,6 @@ defmodule FountainWeb.ApiSpecTest do
       # The spec machinery itself — plugs, not controllers.
       {"/api/openapi.json", :get},
       {"/api/docs", :get},
-      # Authenticated by Stripe-Signature, not a bearer token. Its caller is
-      # Stripe, which does not read our spec.
-      {"/api/stripe/webhook", :post},
       # A browser-session route that happens to live under /api/ — CSRF-
       # protected, session-authenticated, and driven by the theme toggle.
       {"/api/settings/theme", :patch},
@@ -69,11 +66,8 @@ defmodule FountainWeb.ApiSpecTest do
       # client, which discovers tools via `tools/list`, not our OpenAPI spec.
       # Same: the team tools a teammate's sandbox calls (#851).
       {"/api/mcp/team/{conversation_id}", :post}
-      # The Gmail tools (#1178) used to be a row here; they are the Google
-      # extension's route now (#2152), and `FountainGoogle.BoundaryTest`
-      # carries the same exception for the same reason. The retired tool
-      # bridge's `/api/mcp/caller/{conversation_id}` was the row after it,
-      # and left with the bridge (ADR 0057, #2252).
+      # The retired tool bridge's `/api/mcp/caller/{conversation_id}` was the
+      # row after it, and left with the bridge (ADR 0057, #2252).
     ]
 
     setup do

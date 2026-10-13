@@ -130,7 +130,7 @@ applies to every assignment with one of those names, including your own
 
 Inference auth inputs also stay out of that shared file. This includes
 `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`,
-`GEMINI_API_KEY` and OpenCode's Google alias,
+`GEMINI_API_KEY` and its alias
 `GOOGLE_GENERATIVE_AI_API_KEY`. The rule applies whether a value comes from a
 credential set, the platform, an environment or a vault. The reserved managed
 name `CODEX_CHATGPT_ACCESS_TOKEN` is filtered too, including when its value is
@@ -183,8 +183,8 @@ remains allowed.
 A tenant environment or vault secret can override a static credential of the
 same kind. Vault wins over environment; supported aliases resolve to the
 same kind. Conflicting alias values within one layer are refused. The
-runtime then selects the kind it supports: Claude prefers its OAuth token,
-while OpenCode's Anthropic provider uses an API key. Billing follows the
+runtime then selects the kind it supports: Claude prefers its OAuth token
+over an API key. Billing follows the
 resolved source. Managed ChatGPT inputs remain reserved, including static
 tokens on the managed path.
 
@@ -217,7 +217,7 @@ provable source binding must also be replaced before it can use a new source.
 A ChatGPT subscription that a set names is the exception: Codex keeps that
 sign-in in a home of its own, so it shares a sandbox with each other source.
 A sandbox that was first bound before Fountain prepared such homes keeps the
-rule above. Use separate principals when different customers need isolation.
+rule above. Use separate accounts when different customers need isolation.
 
 Set the whole thing up at `/account/inference-credentials`, or over the API
 under `/api/account/inference-credential-sets`.
@@ -291,16 +291,10 @@ redaction that a new caller will one day forget.
 
 ## Bindings, when the broker is on
 
-!!! note "Connections"
-
-    Connections and credential binding management also need the `connections`
-    feature flag. On your own instance, add `connections` to `FEATURE_FLAGS_ON`
-    after configuring the broker and provider apps. Hosted accounts are enrolled
-    separately; see [feature status](../reference/feature-status.md).
-    The broker is on for every account of a deployment that runs one, and
-    the hosted platform runs one. Without a broker, a secret enters the
-    sandbox in the clear, and the bindings page and routes are absent. On your own instance, read
-    [Feature status](../reference/feature-status.md).
+The broker is on for every account of a deployment that runs one, and the
+hosted platform runs one. Without a broker, a secret enters the sandbox in
+the clear, and the bindings page and routes are absent. On your own instance,
+read [Feature status](../reference/feature-status.md).
 
 On a hosted account with the egress credential broker on, a secret can have
 one or more **bindings**. A binding names a host. By default the broker

@@ -512,17 +512,17 @@ defmodule Fountain.PlatformChatGPTTest do
                resolve(user, "openai/gpt-5.5-codex", "codex")
     end
 
-    test "opencode on an openai model never takes the grant", %{user: user} do
+    test "a runtime other than codex on an openai model never takes the grant", %{user: user} do
       broker_on()
       connect!()
 
       assert {:ok, %Source{scope: :missing}, %{}} =
-               resolve(user, "openai/gpt-5.5", "opencode")
+               resolve(user, "openai/gpt-5.5", "acp")
 
       Application.put_env(:fountain, :platform_openai_api_key, "sk-platform")
 
       assert {:ok, %Source{scope: :platform, kind: :openai_api_key},
-              %{openai_api_key: "sk-platform"}} = resolve(user, "openai/gpt-5.5", "opencode")
+              %{openai_api_key: "sk-platform"}} = resolve(user, "openai/gpt-5.5", "acp")
 
       assert {:ok, %Source{scope: :platform, kind: :openai_api_key},
               %{openai_api_key: "sk-platform"}} = resolve(user, "openai/gpt-5.5", nil)
@@ -546,13 +546,11 @@ defmodule Fountain.PlatformChatGPTTest do
                resolve(user, "openai/gpt-5.5-codex", "codex")
     end
 
-    test "the ceiling gate counts the grant as platform-served" do
+    test "the grant counts as platform-served" do
       user = insert_verified_user()
 
-      assert {:ok, %Source{scope: :missing} = source, _} =
+      assert {:ok, %Source{scope: :missing}, _} =
                InferenceCredentials.resolve(user.id, "openai/gpt-5.5-codex", "codex", [])
-
-      assert :ok = PlatformInference.gate_source(source)
 
       # The grant is selected only on a brokered deployment (decision 4 of
       # the selection order): configure one, as the egress tests do.
@@ -562,8 +560,7 @@ defmodule Fountain.PlatformChatGPTTest do
       assert {:ok, %Source{scope: :platform, kind: :codex_chatgpt_access_token} = source, _} =
                InferenceCredentials.resolve(user.id, "openai/gpt-5.5-codex", "codex", [])
 
-      # With credits off the ceiling never trips, so the gate is :ok.
-      assert :ok = PlatformInference.gate_source(source)
+      assert Source.platform?(source)
     end
   end
 
@@ -653,7 +650,6 @@ defmodule Fountain.PlatformChatGPTTest do
         broker: session,
         brokered: %{},
         tenant_keys: [],
-        connection_keys: [],
         secret_sources: nil,
         broker_bindings: %{},
         inference_credentials: creds,

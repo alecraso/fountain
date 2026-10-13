@@ -186,7 +186,6 @@ answer. `resume(id).answer(...)` is the same call from a process that is not
 the one following the turn.
 
 The default policy is `auto_allow` and never asks, so this is opt-in per agent.
-`opencode` never asks at all and refuses anything stricter than `auto_allow`.
 
 ## Defining what you run
 
@@ -296,7 +295,6 @@ Every error carries `status`, `code`, `body`, `retryAfter` and `retryable`.
 | class | when |
 |---|---|
 | `AuthError` | 401, or no key configured at all |
-| `InsufficientCreditsError` | 402 — carries `upgradeUrl` |
 | `NotFoundError` | 404 — wrong id, or it belongs to another account |
 | `ValidationError` | 422 — read `fieldErrors` |
 | `RateLimitError` | 429 |
@@ -439,23 +437,17 @@ published surface deliberately without releasing, label the PR
 
 ## License
 
-[Apache-2.0](LICENSE). Fountain is not licensed as a single unit: the server is
-AGPL-3.0-or-later, and the clients — this SDK and the CLI — are Apache-2.0 on
-purpose. Talking to the API, or shipping this SDK inside a proprietary
-application, puts no licence obligation on your code.
+[Apache-2.0](LICENSE), like the server and the CLI. Talking to the API, or
+shipping this SDK inside a proprietary application, puts no licence
+obligation on your code beyond keeping the licence and notice.
 
-## Credit error migration (2.0.0)
+## Credit removal (7.0.0)
 
-Replace `SubscriptionRequiredError` imports and `instanceof` checks with
-`InsufficientCreditsError`. The old export is removed. Read `error.upgradeUrl`
-to offer the credit-purchase page; do not retry a 402 without adding credit.
-
-For billing error handling, use Fountain v0.13.0 or newer.
-[v0.13.0](https://github.com/managoat/fountain/releases/tag/v0.13.0) is the first
-release containing the credit-only server contract (`c3349343`).
-`insufficient_credits` and a generic HTTP 402 identify the credit gate.
-`subscription_required` has no special mapping; it follows the HTTP status.
-The response still exposes its original code and purchase URL.
+Fountain no longer has credits, so the server never answers 402.
+`InsufficientCreditsError` and its `upgradeUrl` are removed: delete the
+`instanceof InsufficientCreditsError` branch and its import. A 402 from
+something in front of the server (a proxy, say) is now a plain
+`FountainError` carrying its `status`.
 
 ### API-shaped launches
 

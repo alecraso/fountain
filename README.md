@@ -44,7 +44,7 @@ nothing and takes none of your concurrency, so the next prompt lands on the
 same files instead of on a fresh box that has to be told everything again.
 
 Coding agents are not the scarce thing. There are dozens of them and Fountain
-runs Claude Code, Codex, Gemini CLI and opencode behind one API. The scarce
+runs Claude Code, Codex and Gemini CLI behind one API. The scarce
 thing is the computer underneath: building it, installing on it, configuring
 it, getting the networking right, getting a credential onto it that the model
 never reads, and turning it off before the bill notices. Nobody sets out to
@@ -59,14 +59,14 @@ Fountain is that half. You write the conversation.
 Agent, Environment and Vault are templates: rows you write once and use many
 times. A Conversation is a run of an Agent on a machine that Fountain builds,
 warms, meters and reclaims. Secrets merge at launch, the Vault winning; on a
-hosted account with the egress broker on, a bound secret never enters the
+deployment with the egress broker on, a bound secret never enters the
 sandbox at all. [The four primitives](docs/primitives.md) says why there are
 four.
 
 ## Self-hosting
 
 [Run your own Fountain instance](docs/self-hosting.md) with the same apps,
-API, CLI and SDKs under your own keys and infrastructure.
+API, CLI and SDK under your own keys and infrastructure.
 
 Fountain's own UI is an operator console. You configure things in it; you do
 not watch an agent work in it. The three apps we build for that are separate
@@ -83,7 +83,7 @@ applications built on this API.
 
 ## Four surfaces
 
-Every public feature lives on the first three; the SDKs wrap the verbs most
+Every public feature lives on the first three; the SDK wraps the verbs most
 code actually reaches for.
 
 | Surface | Use it when |
@@ -91,24 +91,12 @@ code actually reaches for.
 | **Web UI** (`/dashboard`) | Getting started, managing agents, environments, vaults, keys and audit visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
-| **TypeScript, Python, Elixir and Swift SDKs** | Running an agent from your own code: `run(prompt, agent: ..., vault: ...)` |
+| **TypeScript SDK** | Running an agent from your own code: `run(prompt, { agent, vault })` |
 
-The CLI and the SDKs are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
+The CLI and the SDK are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
 ```bash
 npm install @managoat/fountain-sdk
-# or
-pip install fountain-agent-sdk
-# or add {:fountain_sdk, "~> 0.1.0"} to mix.exs
-```
-
-Add Fountain with Swift Package Manager:
-
-```swift
-.package(
-    url: "https://github.com/managoat/fountain.git",
-    from: "0.16.0"
-)
 ```
 
 ```ts
@@ -122,34 +110,12 @@ const run = await new Fountain().run("Upgrade us to Phoenix 1.8 and open a PR", 
 console.log(run.text, run.url);
 ```
 
-```elixir
-client = Fountain.new()
-run = Fountain.run(client, "Upgrade us to Phoenix 1.8 and open a PR", agent: "reposage")
-{:ok, result} = Fountain.Run.await(run)
-
-IO.puts(result.text)
-```
-
-```python
-from fountain import Fountain
-
-run = Fountain().run(
-    "Upgrade us to Phoenix 1.8 and open a PR",
-    agent="reposage",
-    vault="github-bot",
-).result()
-
-print(run.text, run.url)
-```
-
 The sandbox is still there afterwards. A follow-up continues on the same
 machine, with the same checkout and the same session. See
-[`sdk/typescript/`](sdk/typescript/), [`sdk/python/`](sdk/python/),
-[`sdk/elixir/`](sdk/elixir/), [`sdk/swift/`](sdk/swift/), or the
-[TypeScript](https://managoat.com/docs/sdk),
-[Python](https://managoat.com/docs/python-sdk),
-[Elixir](https://managoat.com/docs/elixir-sdk) and
-[Swift](https://managoat.com/docs/swift-sdk) SDK docs.
+[`sdk/typescript/`](sdk/typescript/) or the
+[TypeScript SDK docs](https://managoat.com/docs/sdk). The Python, Elixir and
+Swift SDKs are retired: their published releases stay on PyPI, Hex and the
+`sdk-swift-v*` tags but are no longer maintained ([SDKs.md](SDKs.md)).
 
 ## Get started with the CLI
 
@@ -271,32 +237,27 @@ See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, the tenant isolati
 
 ## Licence
 
-Fountain is not licensed as a single unit. The short version:
+Fountain is licensed under the [Apache License 2.0](LICENSE), with one
+exception that is on its way out:
 
 | What | Licence | What it means for you |
 |---|---|---|
-| The server (`apps/fountain`) | [AGPL-3.0-or-later](LICENSE) | Run it, modify it, host it. If you host a modified version, your users are entitled to your source |
-| [`ee/`](ee/) — Stripe billing and growth email | [Elastic Licence 2.0](ee/LICENSE) | Free to run in your own instance, changes stay yours. You may not offer it to third parties as a hosted service |
-| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/python`](sdk/python), [`sdk/elixir`](sdk/elixir), [`sdk/swift`](sdk/swift) | [Apache-2.0](cli/LICENSE) | Build on the API or ship a client in a proprietary product; follow the Apache license and notice terms when you redistribute it |
+| The server (`apps/fountain`) | [Apache-2.0](LICENSE) | Run it, modify it, host it, ship it inside your own product. Keep the licence and notice when you redistribute it |
+| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript) | [Apache-2.0](cli/LICENSE) | Build on the API or ship a client in a proprietary product; follow the Apache license and notice terms when you redistribute it |
 
-The client surfaces are permissive on purpose. Integrating with Fountain
-should never put a licence obligation on your application, and an AGPL SDK
-would do exactly that.
+Earlier releases of the server were AGPL-3.0-or-later. The copyleft was there
+to stop a competing host improving Fountain in private. Fountain is a
+self-hosted application now, not a hosted service, so the server moved to
+Apache-2.0. Releases made under the AGPL stay under it for anyone who has
+them.
 
-The copyleft is aimed at one thing: a company that improves Fountain and runs
-it as a service owes those improvements back to everyone else running it. It
-does not stop anyone hosting Fountain commercially, including in competition
-with the hosted product. It stops them doing it in private.
-
-The hosted instance at [managoat.com](https://managoat.com) is one
-instance of this code under the name Managoat; the project keeps the name
-Fountain. The long form of the split, and where everything lives, is
-[docs/open-source.md](docs/open-source.md), published at `/docs/open-source`
-(`decisions/0034-project-site-is-the-product-site.md` says why there is no
-separate project site).
+Fountain is a self-hosted application and is not sold as a hosted service.
+[managoat.com](https://managoat.com) is the maintainer's own instance of this
+code. The long form, and where everything lives, is
+[docs/open-source.md](docs/open-source.md), published at `/docs/open-source`.
 
 See [`NOTICE`](NOTICE) for third-party attribution,
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how the licences apply to
 contributions, and
-[`decisions/0027-agpl-relicensing.md`](decisions/0027-agpl-relicensing.md) for
-the reasoning.
+[`decisions/0068-relicense-the-server-under-apache.md`](decisions/0068-relicense-the-server-under-apache.md)
+for the reasoning.

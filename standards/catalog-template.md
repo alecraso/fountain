@@ -177,7 +177,7 @@ verification version is cheaper than pretending it does not.
 
 ## How the contract maps
 
-<!-- Sandbox providers only. The existing e2b.md, daytona.md and runners.md all
+<!-- Sandbox providers only. The existing e2b.md and runners.md both
      have this section already and it is the best thing about them. Table of
      contract operation against this provider's call. -->
 
@@ -195,9 +195,9 @@ verification version is cheaper than pretending it does not.
 ## Troubleshooting
 
 <!-- Symptom, cause, fix. Three entries maximum. Anything longer moves to the
-     Troubleshooting section and this becomes a link. This cap is what keeps
-     buzz.md from happening again; it reached 395 lines partly by growing an
-     operator runbook in place. -->
+     Troubleshooting section and this becomes a link. This cap keeps a page
+     from growing an operator runbook in place, as one integration page once
+     did on its way to 395 lines. -->
 
 ## Related
 

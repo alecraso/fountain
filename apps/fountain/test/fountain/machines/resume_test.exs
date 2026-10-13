@@ -55,7 +55,7 @@ defmodule Fountain.Machines.ResumeTest do
 
   defp usage_events(ctx) do
     Repo.all(
-      from e in Fountain.Billing.UsageEvent,
+      from e in Fountain.Usage.Event,
         where: e.resource_id == ^ctx.sandbox.id,
         select: e.event_type,
         order_by: e.id
@@ -359,9 +359,8 @@ defmodule Fountain.Machines.ResumeTest do
 
   describe "a ready row the provider says is parked" do
     # The other half of the 6b review note: a park whose finalize was lost
-    # leaves a `ready` row over a machine E2B calls `paused` and Daytona calls
-    # `stopped`. `main` reused it and handed the conversation a handle to a
-    # machine that was not running.
+    # leaves a `ready` row over a machine E2B calls `paused`. `main` reused it
+    # and handed the conversation a handle to a machine that was not running.
     test "is restarted at the provider when the caller's probe saw it suspended", ctx do
       stamp(ctx, status: "ready")
       expect(Managoat.Sandbox, :resume, fn handle -> {:ok, handle} end)
@@ -912,7 +911,6 @@ defmodule Fountain.Machines.ResumeTest do
       travelling = [
         :provisioning,
         :fleet_full,
-        :insufficient_credits,
         {:sandbox_quota_exceeded, %{count: 1, limit: 1}}
       ]
 
@@ -999,7 +997,7 @@ defmodule Fountain.Machines.ResumeTest do
 
           assert 1 =
                    Repo.aggregate(
-                     from(e in Fountain.Billing.UsageEvent,
+                     from(e in Fountain.Usage.Event,
                        where: e.resource_id == ^tenant.sandbox.id
                      ),
                      :count
@@ -1070,13 +1068,12 @@ defmodule Fountain.Machines.ResumeTest do
   # ── unboxed helpers ───────────────────────────────────────────────────────
 
   # A committed user and machine, kept as small as the foreign keys allow so
-  # `discard/1` can take them all back out. Funded and given a cap, because
+  # `discard/1` can take them all back out. Given a cap, because
   # unlike the boxed cases these go through the real admission.
   defp committed_tenant do
     user =
       Repo.insert!(%Fountain.Accounts.User{
         email: "machine-resume-#{Ecto.UUID.generate()}@example.test",
-        credit_balance_cents: 5_000,
         sandbox_limit_override: 5
       })
 
@@ -1094,7 +1091,7 @@ defmodule Fountain.Machines.ResumeTest do
 
   defp discard(%{user: user, sandbox: sandbox}) do
     Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
-    Repo.delete_all(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^user.id)
+    Repo.delete_all(from e in Fountain.Usage.Event, where: e.user_id == ^user.id)
     Repo.delete!(sandbox)
     Repo.delete!(user)
   end

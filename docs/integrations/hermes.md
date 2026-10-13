@@ -110,7 +110,7 @@ away in the Fountain UI. The answer itself is the agent's text.
 
 Fountain serves the log feed already parsed into blocks, with `?blocks=true`,
 from ADR 0014. So the plugin never learns a runtime's dialect. A claude,
-codex, gemini or opencode agent all come back the same way.
+codex or gemini agent all come back the same way.
 
 Two extras come with it. A `fountain` skill, at
 `skill_view("fountain:fountain")`, tells the Hermes model *when* to delegate
@@ -162,6 +162,5 @@ in the Fountain repo.
 ## Related
 
 - [API reference](../api.md), which is everything the plugin wraps.
-- [Python SDK](../python-sdk.md), for the full client in the same language.
 - [TypeScript SDK](../sdk.md), if you build the same thing in TS.
 - [Plug into Fountain](clients.md).

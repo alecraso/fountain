@@ -37,7 +37,7 @@ SCENARIOS = HERE / "scenarios"
 MATRIX = HERE / "matrix.json"
 CONTRACT = ROOT / "sdk" / "contract" / "contract.json"
 
-SDKS = ("typescript", "python", "swift", "swift-kit", "elixir")
+SDKS = ("typescript",)
 
 OPS = {
     "me": set(),
@@ -72,7 +72,6 @@ ERROR_KINDS = {
     "rate_limited",
     "busy",
     "quota",
-    "insufficient_credits",
     "not_ready",
     "timeout",
     "connection",
@@ -118,7 +117,6 @@ ERROR_KEYS = {
     "retryable",
     "retry_after",
     "field_errors",
-    "upgrade_url",
     "partial_text",
 }
 

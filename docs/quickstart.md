@@ -1,7 +1,9 @@
 # Run your first agent
 
 One request gets a reply from an agent in its own sandbox. You need an
-account and nothing else. No repository, no GitHub token, and no install.
+account on a Fountain instance and nothing else. No repository, no GitHub
+token, and no install. To run an instance of your own, read
+[Self-host Fountain](self-hosting.md).
 
 ## 1. Your key and your agent
 
@@ -9,12 +11,12 @@ Your start page holds an API key and the id of your agent. The page adds both
 to the request below, and it shows a key once. Copy the key there.
 
 ```sh
-export FOUNTAIN_BASE_URL="https://managoat.com"
+export FOUNTAIN_BASE_URL="https://fountain.example.com"
 export FOUNTAIN_API_KEY="the key from your start page"
 export FOUNTAIN_AGENT_ID="the agent id from your start page"
 ```
 
-For your own server, use that server's address as `FOUNTAIN_BASE_URL`.
+Use your instance's address as `FOUNTAIN_BASE_URL`.
 
 !!! note "Whose model key"
 
@@ -43,8 +45,7 @@ curl -N -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
 ```
 
 That reply came from your agent, on a machine that Fountain operates for you.
-Fountain counts that moment as activation. It is the whole product, in one
-request.
+It is the whole product, in one request.
 
 ## The same request from the SDK
 
@@ -59,9 +60,8 @@ npm install @managoat/fountain-sdk@^5.2.0
 `new Fountain()` reads `FOUNTAIN_API_KEY` and `FOUNTAIN_BASE_URL` from the
 environment, exactly as the CLI does. The request uses the same agent ID as
 the curl example; copy it from your start page. `runRequest` accepts API fields
-directly, with local timeout/event options passed separately. There are
-[Python](python-sdk.md), [Elixir](elixir-sdk.md) and [Swift](swift-sdk.md)
-clients over the same API.
+directly, with local timeout/event options passed separately. From another
+language, call the [HTTP API](api.md) directly.
 
 ## Where to go next
 
@@ -172,6 +172,6 @@ the Agent. The [guided tour](tour.md) adds a GitHub token, changes a repository,
 and opens a pull request.
 
 The example uses Claude because it is Fountain's most exercised runtime. To
-use Codex, Gemini CLI, or OpenCode, change `runtime` and `model` in the
+use Codex or Gemini CLI, change `runtime` and `model` in the
 manifest and add that provider's inference credential. The
 [runtime catalog](catalog/runtimes/index.md) lists the accepted shapes.

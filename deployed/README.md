@@ -33,7 +33,7 @@ the two accounts once per deployment; see
 [below](#provision-test-accounts).
 
 `probe`, `basic`, `execution`, `streaming` and `canary` run from here. The
-`secrets`, `mcp`, `webhooks` and `schedules` profiles need receiver origins,
+`secrets`, `mcp` and `schedules` profiles need receiver origins,
 schedule windows or fixture settings that no flag supplies; write a target
 file and use [the CLI](#the-underlying-cli) for those.
 
@@ -48,8 +48,8 @@ node deployed/verify.mjs https://fountain.example.com --profile execution \
 execution timings through `lib/target.mjs`, the same module `ci.mjs` uses, so a
 local verdict and a CI verdict mean the same thing. Plaintext HTTP is accepted
 only for a loopback target. A deployment adapter, a provider matrix and a
-rollout digest belong to an environment rather than a caller, so they stay in
-`ci.mjs`; see [Run in CI](../docs/guides/operate/deploy.md#run-in-ci).
+rollout digest belong to a target file or to `ci.mjs`'s environment; see
+[Run after a rollout](../docs/guides/operate/deploy.md#run-after-a-rollout).
 
 ### The underlying CLI
 
@@ -125,9 +125,9 @@ On a deployment you administer, with registration open:
    secret store. Posting the token to `POST /api/auth/verify` instead skips
    both.
 
-`secrets`, `mcp` and `webhooks` additionally need Connections enabled on both
-accounts; an account may be brokered and still have `connections_enabled`
-false, which fails those profiles at setup.
+`secrets` and `mcp` additionally need a deployment that runs the egress
+broker; without it the binding routes answer 404 and those profiles fail at
+setup.
 
 Removing a suite account afterwards removes its fixtures with it. Keep the
 accounts if you intend to verify this deployment again.
@@ -287,8 +287,8 @@ By default, deployment identity is unverified. The optional Kubernetes adapter
 checks the intended runtime image digest across every serving pod before and
 after the public suite. Reports record the suite checkout revision separately.
 See the [operating guide](../docs/guides/operate/deploy.md#verify-the-deployed-instance)
-for CI environments, rollout hooks, scheduled canaries, fixture provisioning
-and failure ownership. Public profiles need no cluster credentials.
+for running after a rollout, from your own CI, fixture provisioning and
+failure handling. Public profiles need no cluster credentials.
 
 ## Interrupted runs and cleanup
 
@@ -323,27 +323,17 @@ later entries remain `not_run`. If cleanup finishes, its final result replaces
 the interrupted entry, but the batch remains unsuccessful. A forced process
 kill can still prevent completion; an interrupted entry is not proof of cleanup.
 
-In CI, verification has a 52-minute step timeout within a 75-minute job.
-After a failed or interrupted suite step, the workflow uploads the original
-evidence, then starts a fresh cleanup process with a six-minute step timeout.
-Replay admits work for two minutes; a CI manifest can then need its 90-second
-fixture cleanup and a separate 90-second receiver cleanup. The six-minute cap
-leaves another minute for process and evidence overhead. Setup, monitors and both
-artifact uploads have explicit step limits; all step limits total 71 minutes,
-leaving four minutes of job overhead. Increasing the job limit does not increase
-the verification step or inference budgets.
-It uploads updated manifests and replay evidence under a separate
-`deployed-cleanup-...` artifact, preserving the original `deployed-...` artifact.
-A successful retry does not change the failed verification verdict.
-CI passes `--allow-empty`: a setup failure before any manifest was written
-produces a successful replay step with `status: "no_manifests"` and no API calls,
-even when the target file or results directory was never created. This records
-that no cleanup was attempted. Invalid evidence still fails; manual replay
-without this flag rejects missing or empty results.
-[GitHub cancellation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation)
-can terminate the job before these final steps finish. A hard job timeout or
-runner loss can prevent upload and replay. This step cannot recover journals
-lost with the runner. Use the [runner-loss recovery procedure](runner-loss-recovery.md)
+After a failed or interrupted run, replay its cleanup in a fresh process
+with `cleanup-replay.mjs`, against the same target file and results directory,
+into a new output directory. Replay admits work for two minutes; a manifest
+can then need its 90-second fixture cleanup and a separate 90-second receiver
+cleanup. A successful replay does not change the failed verification verdict.
+`--allow-empty` makes a setup failure before any manifest was written a
+successful replay with `status: "no_manifests"` and no API calls, even when
+the target file or results directory was never created. Invalid evidence still
+fails; replay without this flag rejects missing or empty results. A killed
+process or a lost machine can prevent replay. This cannot recover journals
+lost with the machine. Use the [runner-loss recovery procedure](runner-loss-recovery.md)
 from a separate machine/process: replay copied evidence when available, or
 reconstruct a bounded, reviewed cleanup manifest with `recover-fixtures.mjs`
 when both the original journal and uploaded artifact are gone. The procedure
@@ -469,16 +459,10 @@ still verifies the Fountain release image for every cell. It does not establish
 the sandbox image or runtime package version. Full runtime/image provenance
 remains a limitation of #1613 until an authoritative surface exposes it.
 
-For CI, set environment variable `SUITE_MATRIX_JSON` to the reviewed matrix
-and select `matrix-canary`, `matrix-scheduled` or `matrix-full` in the existing
-workflow. `matrix-canary` with rollout mode verifies the declared minimal
-subset after an image rollout. The existing basic/execution canary remains
-available. A separate weekly schedule at 04:43 UTC Saturday uses
-`matrix-scheduled`; it runs only when repository variable
-`DEPLOYED_MATRIX_ENABLED=true`. It shares target concurrency with all other
-deployed runs. Configure its distinct `SUITE_MATRIX_MONITOR_URL` secret before
-enabling the weekly schedule. A missing weekly monitor does not fall back to
-the frequent canary monitor. The workflow retains all per-cell artifacts.
+From `ci.mjs`, set environment variable `SUITE_MATRIX_JSON` to the reviewed
+matrix and select `matrix-canary`, `matrix-scheduled` or `matrix-full` as
+`SUITE_PROFILE`. `matrix-canary` with rollout mode verifies the declared
+minimal subset after an image rollout. Every cell keeps its own results.
 
 The matrix implementation and local lifecycle tests do not establish hosted
 provider support. Retain each target's first released-deployment matrix result
@@ -547,9 +531,9 @@ response bodies.
 ### Configure and run the profile
 
 Copy `deployed/secrets.example.json` and set the actual Fountain and receiver
-URLs, runtime/model and provider. Both dedicated tenants must have broker and
-Connections access. The primary tenant also needs its usual inference
-credentials. Select an ephemeral Sprites, E2B or Daytona sandbox. A runner is
+URLs, runtime/model and provider. Both dedicated tenants must have broker
+access. The primary tenant also needs its usual inference
+credentials. Select an ephemeral Sprites or E2B sandbox. A runner is
 rejected because it does not enforce broker egress. The sandbox image must
 provide Python 3 and curl; runtime setup must also have its usual dependencies.
 
@@ -568,7 +552,7 @@ node deployed/cli.mjs run \
 
 The prompt budget is explicitly one, with no automatic retry. The run limit
 cannot exceed ten minutes, within the receiver's retention window. Missing
-broker/Connections access or unreachable/mismatched receiver hosts fail setup
+broker access or unreachable/mismatched receiver hosts fail setup
 before fixture creation. Provisioning/broker setup failures remain failures
 with their category recorded, and each later assertion has its own named check.
 Receiver observations are retained even when the turn fails. A healthy model
@@ -584,11 +568,10 @@ cleanup intent. The ordinary cleanup command with the original target file
 also retries receiver cleanup after Fountain cleanup. An operator can inspect
 these manifests when a process is killed before its cleanup runs.
 
-The existing workflow accepts `profile: secrets` for manual public or rollout
-verification. Add the receiver settings to the approved environment's
-`SUITE_TARGET_JSON` and its admin key as environment secret
-`FOUNTAIN_RECEIVER_ADMIN_KEY`. This profile is separate from frequent and
-matrix canaries; no schedule enables it automatically. Retain a successful
+`ci.mjs` accepts `SUITE_PROFILE=secrets` for public or rollout verification.
+Add the receiver settings to `SUITE_TARGET_JSON` and its admin key as
+`FOUNTAIN_RECEIVER_ADMIN_KEY`. This profile is separate from the canary and
+matrix profiles. Retain a successful
 released-deployment result before considering #1614 verified. Local receiver,
 proxy-wire and API-fixture checks cover narrower boundaries and do not replace
 that result.
@@ -603,8 +586,8 @@ and valid only for this receiver run.
 
 This mode tests static bearer delivery. Its permitted identity is the fixture's
 per-run principal. It does not establish a Fountain conversation identity or
-test callback-token rotation. Conversation authentication for Claude, Codex,
-Gemini and OpenCode remains an explicit linked gap under
+test callback-token rotation. Conversation authentication for Claude, Codex
+and Gemini remains an explicit linked gap under
 [#1405](https://github.com/managoat/fountain/issues/1405).
 Each result lists the selected runtime as required and the other runtimes as
 not run. A selected runtime that cannot authenticate or discover the tools
@@ -663,85 +646,12 @@ interruption; it also reads this manifest and cleans the receiver. Receiver
 cleanup is attempted even if a Fountain resource remains, revoking access to
 the controlled tools.
 
-The workflow accepts `profile: mcp` for manual public or rollout checks. Store
-`FOUNTAIN_MCP_ADMIN_KEY` in the selected protected GitHub environment. MCP is not
-part of scheduled canaries. A local receiver or SDK diagnostic does not count
+`ci.mjs` accepts `SUITE_PROFILE=mcp` for public or rollout checks, with
+`FOUNTAIN_MCP_ADMIN_KEY` in its environment. MCP is not part of the canary
+profiles. A local receiver or SDK diagnostic does not count
 as a deployed Fountain runtime/provider verdict.
 
-## Webhook delivery and retry
-
-The independent `webhooks` profile covers the outbound-delivery half of #1616.
-It provisions a run-owned conversation without a prompt, registers an endpoint
-through `POST /api/webhooks`, then terminates the conversation. This produces
-the documented `conversation.terminate.done` event with zero inference turns.
-The signing secret is accepted only from the endpoint's creation response and
-is checked for disclosure in subsequent public responses before redaction.
-
-The controlled receiver verifies the HMAC over the timestamp and exact raw
-body bytes, with a five-minute replay window. It also verifies the event
-headers, attempt counter and metadata-only payload. It returns one 503 for the
-first valid event and 200 for later valid deliveries. The suite requires an
-automatic later attempt; it never invokes the test-send or redeliver APIs.
-Each receiver receipt must match a public delivery record, and the payload
-must match the conversation event's ID, timestamp, stage, state and duration.
-Conversation status remains advisory, as the
-[webhook contract](../docs/reference/webhooks.md#the-payload) specifies.
-
-Delivery is at least once and unordered. Multiple successful deliveries,
-repeated attempts and out-of-order public rows are retained for analysis.
-They do not fail merely because there are more than two records. The profile
-observes for a configured window after successful retry, then reports that
-window and all observed delivery IDs. This does not assert that duplicates
-can never arrive later. The receiver response precedes Fountain's delivery
-record write; the suite waits for these two evidence sources to agree.
-
-Run `deployed/receivers/webhooks.mjs` from the suite checkout on one controlled
-HTTPS origin. Route the origin to one process and disable request/header
-logging. Set `FOUNTAIN_WEBHOOK_ADMIN_KEY` to at least 32 random characters.
-Provide `TLS_CERT_FILE` and `TLS_KEY_FILE`, or explicitly set
-`RECEIVER_TLS_AT_INGRESS=true` behind HTTPS ingress. The default port is 8080.
-The origin must resolve publicly and be reachable from Fountain's outbound
-workers and from the suite. Fountain's SSRF protections remain in force.
-
-The receiver keeps signing secrets in memory to verify HMACs. It never returns
-or logs them. Runs expire after 15 minutes; capacity is 32 runs, 64 deliveries
-per run and 16 KiB per request. Invalid signatures and unexpected payload
-fields are rejected and recorded as booleans without their raw values. Only
-verified metadata payloads and generated receipts appear in observations.
-Browser origins are rejected. Deleting the receiver run removes its secret.
-
-Copy `deployed/webhooks.example.json` and set the real origins and dedicated
-account credentials. Pin the runtime, model and provider for provisioning.
-The second account must be distinct and verified. Exactly zero prompts and
-at least four resources must be authorized. A run is bounded to ten minutes;
-the default delivery deadline is three minutes and duplicate observation is
-30 seconds. The endpoint API, signed dispatch and automatic retry are all
-required verdicts. A missing worker queue or disabled dispatch fails the
-selected profile.
-
-```bash
-node deployed/cli.mjs run \
-  --config /tmp/fountain-webhooks.json \
-  --out /tmp/fountain-webhooks-001
-```
-
-Cleanup first attempts to disable and delete the endpoint, then verifies 404.
-A failed disable reply does not prevent deletion. Endpoint cleanup precedes
-conversation cleanup so teardown does not queue more outbound events. Lost
-creation replies retain the endpoint description and exact target URL for
-ownership checks. The receiver has a separate `webhook-receiver.json` intent
-manifest. The ordinary cleanup command handles both manifests with the
-original target configuration. Cleanup failures remain explicit; expiry of a
-receiver run does not prove that a Fountain endpoint was deleted.
-
-The report distinguishes provisioning, registration, conversation-event and
-background-delivery failures. A separate cleanup snapshot retains the final
-receiver observations and public delivery records when those reads succeed.
-The analyzed window and snapshot are labeled separately.
-
-Manual CI selection is `profile: webhooks`, with
-`FOUNTAIN_WEBHOOK_ADMIN_KEY` in the selected protected environment. It is not
-part of scheduled canaries. The `schedules` profile below selects scheduled execution independently.
+The `schedules` profile below selects scheduled execution independently.
 `one_off` on the current schedule API selects a fresh conversation per firing,
 not a cron that deletes itself after one firing.
 
@@ -813,9 +723,9 @@ before taking action. It never creates or enables a schedule during cleanup.
 Its bounded scan does not assert that it can stop an unreachable server or
 recover from a hard-killed client without a later cleanup invocation.
 
-Manual CI selection is `profile: schedules`. It uses the protected target's
-existing primary and secondary suite keys and a fifteen-minute run ceiling.
-It is separate from `webhooks` and is not part of scheduled canaries. A
+From `ci.mjs`, select `SUITE_PROFILE=schedules`. It uses the target's primary
+and secondary suite keys and a fifteen-minute run ceiling. It is not part of
+the canary profiles. A
 missing scheduler or failed background firing fails the selected profile;
 local fixture diagnostics do not count as a deployed hosted-runtime verdict.
 ## Deterministic ACP fixture
@@ -900,7 +810,7 @@ has a separate name, fixed command, account admission rule and one-turn sandbox
 capacity. There is no tenant runtime CRUD, general harness registry, custom
 bootstrap or permission claim for arbitrary code. Those remain #1007 work.
 The deterministic profile runs separately from real-model canaries and is not
-an option in the production CI workflow.
+a `ci.mjs` profile.
 
 The explicit [staging recovery profile](recovery-controls.md) uses the deterministic
 fixture to verify accepted turns, replay and persistent-home artifacts across

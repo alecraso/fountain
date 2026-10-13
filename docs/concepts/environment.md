@@ -100,15 +100,9 @@ out. That is deliberate, and it is not a defect. An empty allowlist that
 quietly meant "allow everything" would be the worst default for a policy whose
 whole purpose is restriction.
 
-!!! note "Connections"
-
-    Connections and credential binding management also need the `connections`
-    feature flag. On your own instance, add `connections` to `FEATURE_FLAGS_ON`
-    after configuring the broker and provider apps. Hosted accounts are enrolled
-    separately; see [feature status](../reference/feature-status.md).
-    The broker is on for every account on the hosted platform. On your own
-    instance it is off until you turn it on. Read
-    [Feature status](../reference/feature-status.md).
+The broker is on for every account on the hosted platform. On your own
+instance it is off until you turn it on. Read
+[Feature status](../reference/feature-status.md).
 
 On a hosted account with the egress credential broker on, the sandbox can
 reach only the broker. The broker then applies your policy. With
@@ -119,10 +113,17 @@ request log, `GET /api/conversations/:id/egress`, shows each decision. List what
 `registry.npmjs.org` for the agent's adapter. A host with a bound credential,
 such as the model's API, needs no entry.
 
+The policy is applied before the environment's packages install, so the
+package mirrors belong in the allowlist too: `archive.ubuntu.com` and
+`security.ubuntu.com` for `apt`, `registry.npmjs.org` for `npm`. A `limited`
+environment that lists packages without its mirrors fails at the `packages`
+stage, with the mirror's name in the output, rather than installing them on
+an open network.
+
 Put an IPv6 address in square brackets, such as `[2001:db8::1]`. Without them
 there is no way to tell the port apart from the address.
 
-Not every backend can hold egress. Sprites, E2B and Daytona can. A
+Not every backend can hold egress. Sprites and E2B can. A
 [self-hosted runner](../integrations/runners.md) cannot. The agent selects the
 backend, and the environment sets the policy. Fountain therefore compares the
 two at launch. It refuses a `limited` environment on a backend that cannot

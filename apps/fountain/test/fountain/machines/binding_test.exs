@@ -180,10 +180,10 @@ defmodule Fountain.Machines.BindingTest do
       assert {:error, :sandbox_identity_mismatch} =
                Machine.attach(ctx.sandbox.id, attach_attrs(ctx, %{environment_id: other_env.id}))
 
-      ctx.agent |> Ecto.Changeset.change(runtime: "opencode") |> Repo.update!()
+      ctx.agent |> Ecto.Changeset.change(runtime: "gemini") |> Repo.update!()
 
       assert {:error, :sandbox_runtime_mismatch} =
-               Machine.attach(ctx.sandbox.id, attach_attrs(ctx, %{runtime: "opencode"}))
+               Machine.attach(ctx.sandbox.id, attach_attrs(ctx, %{runtime: "gemini"}))
 
       ctx.agent |> Repo.reload!() |> Ecto.Changeset.change(runtime: "claude") |> Repo.update!()
 
@@ -839,7 +839,7 @@ defmodule Fountain.Machines.BindingTest do
   # `unboxed_run` commits, so the rows a race case makes are removed by hand.
   defp discard(user, sandboxes) do
     Repo.delete_all(from e in Audit.Event, where: e.user_id == ^user.id)
-    Repo.delete_all(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^user.id)
+    Repo.delete_all(from e in Fountain.Usage.Event, where: e.user_id == ^user.id)
     Repo.delete_all(from c in Conversation, where: c.user_id == ^user.id)
     for sandbox <- sandboxes, do: Repo.delete!(sandbox)
     Repo.delete!(user)

@@ -21,8 +21,7 @@ config :fountain, Fountain.Repo,
   # `queue_interval`, and the 50 ms / 1 s defaults are sized for a pool with
   # spare connections rather than for a queue that is a queue by construction.
   # On a loaded workstation that dropped real tests: #1524 (Ecto's preloader,
-  # waits of 121-160 ms) and #1568 (the credit ledger's concurrent-post test,
-  # 263 ms), neither of them a defect in the code under test.
+  # waits of 121-160 ms) and #1568 (a concurrent-post test, 263 ms), neither of them a defect in the code under test.
   #
   # 200 ms / 5 s tolerates about 5 s of continuous backlog on one connection,
   # against the ~250 ms the real failures waited. A genuinely stuck connection
@@ -63,11 +62,6 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_id: "test-github-client-id",
   client_secret: "test-github-client-secret"
 
-# The runtime CREDITS_ENABLED switch defaults to off (#336) but is not applied
-# in :test (see config/runtime.exs) — the suite pins the gate on here and
-# toggles it per-test via the application env.
-config :fountain, :credits_enabled, true
-
 # The public chrome links the marketing site's pages in :test (MARKETING_SITE
 # is not read in :test — see config/runtime.exs); the chrome without them is
 # covered by flipping this off per-test.
@@ -83,18 +77,17 @@ config :fountain, :legal, %{
   updated: "2026-01-01"
 }
 
-# A known webhook secret so StripeWebhookController's fail-closed secret
-# resolution (#390) succeeds; signature-path tests sign payloads with the
-# value they read back from this key, exercising the real construct_event.
-config :stripity_stripe, webhook_secret: "whsec_test_signing_secret"
+# A per-account cap well under the fleet ceiling, so a test that fills one
+# account's cap meets the account's refusal (429) rather than the fleet's (503).
+config :fountain, :sandboxes, cap_ceiling: 2, fleet_ceiling: 20
 
 # Key rate limit buckets by calling process PID instead of IP, so async
 # ExUnit tests don't share counters. Each test runs in its own process.
 config :fountain, :rate_limit_test_isolation, true
 
-# The funnel telemetry poller queries the DB outside any test's SQL Sandbox
-# ownership; keep it off here (Fountain.Funnel is tested directly).
-config :fountain, :funnel_poller_enabled, false
+# The gauge telemetry poller queries the DB outside any test's SQL Sandbox
+# ownership; keep it off here (Fountain.OpsGauges is tested directly).
+config :fountain, :gauge_poller_enabled, false
 
 # Managoat.Sandbox.Retry sleeps between attempts; 1ms keeps retry-path tests
 # fast without changing the retry logic under test.
@@ -137,23 +130,6 @@ config :fountain, Fountain.OAuth,
 # runner tests switch it on explicitly.
 config :fountain, :runners_enabled, false
 
-# The PostHog flag lookup goes to a Req.Test plug, so a test that forgets to
-# stub fails loudly instead of reaching PostHog. A flag stays off (no
-# override, no PostHog key) until a test flips `:feature_flag_overrides`.
-config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}
-
-# Connections (#1178, #1299): every platform OAuth client set so the flows
-# are "configured", and Req.Test plugs so no test reaches a provider: an
-# unstubbed call fails loudly.
-# Every platform provider's pair lives under its extension (ADR 0054
-# decision 5), read only where that app loads and inert elsewhere.
-config :fountain_google, :google_oauth_client_id, "google-test-client-id"
-config :fountain_google, :google_oauth_client_secret, "google-test-client-secret"
-config :fountain_microsoft, :microsoft_oauth_client_id, "microsoft-test-client-id"
-config :fountain_microsoft, :microsoft_oauth_client_secret, "microsoft-test-client-secret"
-config :fountain_slack, :slack_oauth_client_id, "slack-test-client-id"
-config :fountain_slack, :slack_oauth_client_secret, "slack-test-client-secret"
-config :fountain, :connections_req_options, plug: {Req.Test, Fountain.Connections.OAuth}
 # The ChatGPT grant for codex (ADR 0047): every call to auth.openai.com goes to
 # a Req.Test plug, so a test that forgets to stub it fails rather than dialling
 # out.
@@ -161,45 +137,3 @@ config :fountain, :platform_chatgpt_req_options, plug: {Req.Test, Fountain.Platf
 # `ChatGPTAccounts.RefreshBreaker` reads a test's clock
 # (`:chatgpt_refresh_breaker_now_ms`) only in a build compiled with this.
 config :fountain, :chatgpt_refresh_breaker_test_clock, true
-# Discovery and the OAuth client (Managoat.McpAuth.Client, whose Req options
-# Fountain.Connections.OAuth takes from :connections_req_options above) refuse
-# private hosts; the Req.Test stub answers for any host, so the resolution
-# check is off here (#1186).
-config :managoat_mcp_auth, :req_options, plug: {Req.Test, Fountain.Connections.OAuth}
-config :managoat_mcp_auth, :allow_private_hosts, true
-# The Google extension (ADR 0043): every call to the Gmail API goes to a
-# Req.Test plug, so a test that forgets to stub it fails rather than dialling
-# out. Under its own otp_app, like every extension key.
-config :fountain_google, :req_options, plug: {Req.Test, FountainGoogle.Gmail}
-
-# Product analytics (`Fountain.Analytics`). Capture is inert without a project
-# API key, which the suite deliberately does not set — so the default here is
-# "nothing is sent", and a test that wants to assert on a payload sets the key
-# and stubs the plug. `:inline` sends from the calling process so the stub is
-# owned by the test that installed it, exactly as the flag lookup is.
-config :fountain, :analytics_mode, :inline
-config :fountain, :analytics_req_options, plug: {Req.Test, Fountain.Analytics}
-config :fountain, :analytics_instance, "test"
-
-# Webhooks (#700). Every delivery goes to a Req.Test plug, so a test that
-# forgets to stub fails loudly instead of reaching a real receiver. `http://`
-# endpoints are permitted here so a test can use a plain URL; the SSRF guard
-# is unaffected by that flag and is exercised directly in
-# `webhooks/url_test.exs`.
-config :fountain, :webhook_req_options, plug: {Req.Test, Fountain.Webhooks}
-config :fountain, :webhook_allow_http, true
-config :fountain, :webhooks_enabled, true
-
-# Extensions (ADR 0043) are assembled in `config/runtime.exs`, not here.
-#
-# `Code.ensure_loaded?/1` is the only way to ask whether a sibling app is on
-# this run's code path — `apps/fountain` depends on none of them, so running
-# from there (which is what CI's partition script does) must install none — and
-# that question can only be answered AFTER compilation. This file is evaluated
-# before it, where the answer is always false. `runtime.exs` runs after, in
-# every entry point, so the whole list is built there in one place: fixtures for
-# the suite, plus the Buzz extension where it loads.
-#
-# `config :fountain, :extensions` REPLACES the key rather than appending, which
-# is why it must be one declaration and not two — two silently deleted the
-# fixtures and made the seam's own tests measure an empty list.

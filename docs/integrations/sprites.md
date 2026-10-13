@@ -31,20 +31,19 @@ setup on the provider side.
 | Variable | Default | Effect |
 |---|---|---|
 | `SPRITES_TOKEN` | — | The platform token. Fountain does not check it at boot, so the app starts without it and the first conversation fails at provision time. |
-| `SPRITES_BASE_URL` | `https://api.sprites.dev` | Repoints the Sprites API. Whatever you point it at must implement the same transport. [E2B](e2b.md) and [Daytona](daytona.md) are separate providers, and not replacements behind this variable. |
+| `SPRITES_BASE_URL` | `https://api.sprites.dev` | Repoints the Sprites API. Whatever you point it at must implement the same transport. [E2B](e2b.md) is a separate provider, and not a replacement behind this variable. |
 | `SPRITES_TIMEOUT_MS` | `30000` | Bounds each HTTP call to the Sprites API. A long command, such as a package install or a clone, sets its own timeout for that call. Boot refuses a value that is not positive. |
 
 ## The cost model
 
 **One platform token pays for each Sprites sandbox.** Fountain provisions
 every tenant's Sprites sandboxes with `SPRITES_TOKEN`, and the bill lands on
-that token's account. On the hosted instance, the credit a tenant burns
-recovers it. On yours, you pay. Two results follow.
+that token's account, which is yours. Two results follow.
 
 - Each signup that can start a conversation can spend your money. Close
   registration, or restrict it, before you put an instance on the internet.
-- Fountain caps concurrency for each user. The credit balance sets the cap,
-  between a floor of 2 and a ceiling of 20. An admin can override it for one
+- Fountain caps concurrency for each user, at 20 by default
+  (`SANDBOX_CAP_CEILING`). An admin can override it for one
   user from the admin panel, or with `POST /api/admin/users/:id/sandbox-limit`.
   A sandbox counts from the moment a provision starts, because that is
   the moment it starts to cost money.

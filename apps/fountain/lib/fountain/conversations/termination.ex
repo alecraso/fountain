@@ -195,7 +195,7 @@ defmodule Fountain.Conversations.Termination do
       interrupted and the adapter closed, and a conversation rebound to another
       machine in between would make the second decision `:sandbox_kept`,
       leaving this machine fenced, live and billing with no server left to
-      finish it (`ee/test/.../termination_billing_test.exs` is that race).
+      finish it.
     * **`nil` again**, from every forced teardown. A home whose agent is gone,
       a tenant's machines during account deletion, an abandoned machine past
       its ceiling and an admin reap are all operations *on the machine*, not
@@ -535,7 +535,7 @@ defmodule Fountain.Conversations.Termination do
   # `terminated_at` is nobody's argument any more. This used to pass none so
   # that `update_sandbox/2` would stamp it from `stamp_terminated_at/1` at the
   # *start* of the retirement rather than after the provider call — the gap
-  # mattered because `Billing.SandboxUsage` reconciles a provider bill against
+  # mattered because `Machines.Usage` reconciles a provider bill against
   # it. `Lease.stamp_terminated_at/2` keeps that behaviour: `COALESCE` fills
   # the column only when it is empty, so a caller that already stamped it under
   # its own lock keeps the stamp it wrote.

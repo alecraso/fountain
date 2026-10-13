@@ -264,9 +264,8 @@ defmodule Fountain.Machines.Binding do
 
   Both guest options are read by `attachable/6` under the lock.
 
-  Answers `{:ok, conversation, allowance}` after the commit, having fired the
-  two effects every conversation insert owes: `Conversations.after_conversation_created/1`
-  and the allowance's audit event.
+  Answers `{:ok, conversation, allowance}` after the commit, having recorded
+  the allowance's audit event.
   """
   @spec attach(Ecto.UUID.t(), map(), keyword()) ::
           {:ok, Conversation.t(), struct()} | {:error, term()}
@@ -277,7 +276,6 @@ defmodule Fountain.Machines.Binding do
     else
       case Repo.transaction(fn -> locked_attach(sandbox_id, attrs, opts) end) do
         {:ok, {conv, allowance}} ->
-          Conversations.after_conversation_created(conv)
           Conversations.record_execution_allowance_created(allowance, conv.user_id, opts)
           {:ok, conv, allowance}
 
@@ -302,11 +300,9 @@ defmodule Fountain.Machines.Binding do
       :erlang.phash2(sandbox_id)
     ])
 
-    # Deliberately unlocked. `users` is the row every credit posting takes
-    # `FOR UPDATE` (`Credits.insert_and_move/3` holds it across a ledger
-    # insert, lot consumption and the balance move), so locking it here would
-    # park admission behind an unrelated billing transaction. This read is an
-    # ownership recheck; the insert's foreign keys enforce integrity.
+    # Deliberately unlocked: locking `users` here would park admission behind
+    # any unrelated transaction that holds the row. This read is an ownership
+    # recheck; the insert's foreign keys enforce integrity.
     Repo.one(from u in Fountain.Accounts.User, where: u.id == ^attrs.user_id, select: u.id) ||
       Repo.rollback(:not_found)
 
@@ -539,8 +535,8 @@ defmodule Fountain.Machines.Binding do
   #   * Only claude and codex, together (#2525, maintainer decision after a
   #     red-team review). The set of runtimes — the machine's, the guest's,
   #     and every other agent's by the reading below — must be exactly
-  #     `@guest_runtimes`. The directory rule would also admit gemini and
-  #     opencode pairs; nothing tests that their files stay apart beyond a
+  #     `@guest_runtimes`. The directory rule would also admit gemini
+  #     pairs; nothing tests that their files stay apart beyond a
   #     one-time audit, so they wait for #2525 item 3.
   #   * One agent per runtime. The pair above holds as well for a second
   #     codex agent on a machine that already has one, so the guest's

@@ -15,30 +15,16 @@ defmodule Fountain.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :email_verified_at, :utc_datetime
     field :onboarding_completed_at, :utc_datetime
-    # Per-user override of the balance-funded concurrent-sandbox cap
-    # (`Fountain.Quotas.sandbox_limit/1`); null means the balance rule. The
+    # Per-user override of the concurrent-sandbox cap
+    # (`Fountain.Quotas.sandbox_limit/1`); null means the configured ceiling. The
     # Postgres column is still `max_concurrent_sandboxes` — renaming it would
     # break a rolling deploy — so the honest name lives here.
     field :sandbox_limit_override, :integer, source: :max_concurrent_sandboxes
-    # Cached sum of `credit_ledger` (ADR 0030). Written only by
-    # `Fountain.Credits`, in the same transaction as the ledger row; never
-    # cast from user input.
-    field :credit_balance_cents, :integer, default: 0
     # Operator-owned per-turn ceilings, read by launch preflight. Later-turn and
     # recovery ceiling checks remain unwired; leave overrides empty until integrated.
-    # Never cast it through registration, OAuth, principal or profile changes.
+    # Never cast it through registration, OAuth or profile changes.
     field :execution_limits, :map, default: %{}
     field :role, :string, default: "user"
-    # A claimable principal (ADR 0044): a tenant with no identity, opened by a
-    # trusted application before its visitor has an account and claimed later
-    # by attaching an owner. It never gets an email, so it never verifies —
-    # which is why the auth path and the unverified-account pruner both read
-    # this column rather than inferring "unverified" means "abandoned".
-    field :principal, :boolean, default: false
-    field :stripe_customer_id, :string
-    # A free account (ADR 0031): the balance is never checked. Set only from
-    # the admin panel; the one operator lever.
-    field :comped, :boolean, default: false
     # Set by an operator; a suspended account cannot sign in or spend.
     field :suspended_at, :utc_datetime
     # Bumped to invalidate every session (password change, suspension).
@@ -73,17 +59,23 @@ defmodule Fountain.Accounts.User do
   end
 
   @doc """
-  Changeset for a claimable principal (ADR 0044).
+  Changeset for an account an admin opens over the API (ADR 0064): a platform
+  built on this instance opening one per application.
 
-  No email, no password: the row is an identity-less tenant. `principal` is
-  put here rather than cast, so no other changeset can set it from user input
-  and no request can turn an ordinary account into one.
+  No password, so nobody signs in as it: the platform holds its API key.
+  Verified at creation, because the address is the operator's own naming and
+  no mail is read there. The role is never cast; it is always `user`.
   """
-  def principal_changeset(user, attrs) do
+  def admin_created_changeset(user, attrs) do
     user
-    |> cast(attrs, [:sandbox_limit_override])
-    |> validate_number(:sandbox_limit_override, greater_than_or_equal_to: 0)
-    |> put_change(:principal, true)
+    |> cast(attrs, [:email])
+    |> validate_required([:email])
+    |> validate_format(:email, ~r/^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+      message: "must be a valid email address"
+    )
+    |> update_change(:email, &String.downcase/1)
+    |> unique_constraint(:email)
+    |> put_change(:email_verified_at, DateTime.utc_now() |> DateTime.truncate(:second))
   end
 
   @doc "Changeset for OAuth registration (no password required; email pre-verified by provider)."
@@ -104,7 +96,7 @@ defmodule Fountain.Accounts.User do
 
   Admin-only. Zero is valid and meaningful — it is the lever for cutting off an
   abusive tenant without deleting their account. `nil` is valid too and means
-  something different: clear the override and let the balance decide again.
+  something different: clear the override and fall back to the ceiling.
   """
   def sandbox_limit_changeset(user, attrs) do
     user
@@ -126,18 +118,6 @@ defmodule Fountain.Accounts.User do
       {:error, {:execution_limits_invalid, field}} ->
         user |> change() |> add_error(:execution_limits, "invalid #{field}")
     end
-  end
-
-  @doc "Changeset for the Stripe customer id, written when a Checkout is opened."
-  def billing_changeset(user, attrs) do
-    user
-    |> cast(attrs, [:stripe_customer_id])
-    |> unique_constraint(:stripe_customer_id)
-  end
-
-  @doc "Admin-only: the comp flag (ADR 0031)."
-  def comp_changeset(user, attrs) do
-    user |> cast(attrs, [:comped]) |> validate_required([:comped])
   end
 
   @doc "Changeset for updating theme preference (light | dark | system)."

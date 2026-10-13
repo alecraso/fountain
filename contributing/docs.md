@@ -29,18 +29,18 @@ open the route.
 | Change | CI checks |
 |---|---|
 | `CLAUDE.md`, `CONTRIBUTING.md`, `SETUP.md`, `scripts/ci/README.md`, Markdown under `contributing/`, `standards/`, `decisions/` or `changelog.d/` | Repository policy, changelog and conflict-marker checks, plus the secret scan |
-| `README.md`, `CHANGELOG.md`, `docs/`, or the Buzz, Google, Microsoft or Slack manuals | Core rendering and structural tests, plus every extension's documentation and manual-integration tests |
-| An SDK's `README.md` or its page under `docs/` | The four SDK checks, which run on every plan; published pages also get the manual tests |
+| `README.md`, `CHANGELOG.md` or `docs/` | Core rendering and structural tests |
+| The SDK's `README.md` or its page under `docs/` | The TypeScript SDK check, which runs on every plan; published pages also get the manual tests |
 | `docs/cli.md` or `docs/cli/` | Manual tests and the CLI reference parity checks |
-| Code, configuration, unregistered paths, or mixed code/documentation changes | Full server validation and the four SDK checks |
+| Code, configuration, unregistered paths, or mixed code/documentation changes | Full server validation and the TypeScript SDK check |
 
 The short paths apply to pull requests and merge groups. Main reuses a tested
 tree when possible; otherwise it runs full CI. A manual CI dispatch also runs
 full validation. ADRs retain their separate OKF validation and index check.
 Non-Markdown decision evidence and executable files still select full server
 validation. Alert fixtures run on full plans, including main and manual runs;
-docs-only plans skip their evaluator. The four SDK jobs still run on every
-plan unless the tree is reused.
+docs-only plans skip their evaluator. The TypeScript SDK job still runs on
+every plan unless the tree is reused.
 
 For contributor-only Markdown, run:
 
@@ -56,11 +56,9 @@ For published manual changes, use the pinned toolchain and run:
 bash scripts/test-docs.sh
 ```
 
-This runs the core and extension documentation suites, including navigation,
-rendering and links across manuals. It needs the usual migrated test database.
-A changed core heading can break an extension's link, so both sides are checked
-together. `README.md` participates because its diagram text has a docs test.
-While editing one page, its app's `docs_test.exs` is a useful narrower check.
+This runs the manual's documentation suites, including navigation, rendering
+and links. It needs the usual migrated test database. `README.md` participates
+because its diagram text has a docs test.
 
 For CLI reference changes, also run:
 
@@ -102,14 +100,6 @@ For code, tooling or mixed changes, use the component checks in
 - **`docs/cli.md` is diffed against the CLI.** `cli/internal/cmd/docs_test.go`
   fails if a command exists that the page does not mention, or the reverse.
   Add a CLI command, add it to `docs/cli.md` in a fenced `bash` block.
-- **An extension may own pages** (ADR 0043, #1510). They live in
-  `apps/<app>/docs/` with that app's own `nav.yml`, embedded by its own
-  `use Managoat.Docs` module and merged into the sidebar by `Fountain.Manual`,
-  which is what every renderer asks instead of `Fountain.Docs`. Sections
-  merge by title. A core page must not link to an extension page: the core
-  test walks the core manual alone, and a core-only distribution would carry
-  a dead link. The extension's own suite runs the link checks over the merged
-  manual.
 
 ## Writing guidance (optional)
 
@@ -132,7 +122,7 @@ Run this when checking the manual's external references:
 python3 scripts/ci/check_external_links.py
 ```
 
-It checks public GitHub links in the manual, extension manuals and CLAUDE.md.
+It checks public GitHub links in the manual and CLAUDE.md.
 Network availability and remote link changes do not block merge CI. Internal
 links and anchors remain part of the structural tests above.
 

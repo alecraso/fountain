@@ -11,6 +11,103 @@ server releases.
 
 ---
 
+## [Unreleased]
+
+Fountain removed the `opencode` runtime, the `daytona` sandbox provider, the
+Buzz extension, Connections, outbound webhooks and the account data export.
+Held for the next release (`release:skip-sdk`). Removing `client.connections`
+takes a public method away, so that release is a major one.
+
+### Removed
+
+- `client.connections` and `client.connections.providers`, the `Connections`
+  and `ConnectionProviders` classes, and the `Connection`,
+  `ConnectionProvider`, `ConnectionProviderInput` and
+  `ConnectionProviderPatch` types. The server answers `404` on
+  `/api/connections` and `/api/connection-providers`. Pass a remote MCP
+  server's bearer from a vault secret instead.
+
+- `connections_enabled` and `connections_manageable` from `AuthMe`, and
+  `mcp_servers` from `Catalog`; the server no longer sends them. Read
+  `brokered` on `AuthMe` to decide whether to show credential bindings.
+
+- `paths["/api/connections"]`, `paths["/api/connections/providers"]`,
+  `paths["/api/connections/{id}"]`, `paths["/api/connection-providers"]`,
+  `paths["/api/connection-providers/{id}"]` and
+  `paths["/api/connection-providers/{id}/discover"]`, and the `Connection`,
+  `ConnectionListResponse`, `ConnectionProvider`,
+  `ConnectionProviderListResponse` and `ConnectionProviderRequest` schemas,
+  from the generated types.
+
+- The `/api/webhooks` paths (list, create, show, update, delete,
+  `rotate-secret`, `test`, `deliveries` and `redeliver`) and the
+  `/api/account/exports` paths (request, list, show and `download`), with the
+  `WebhookEndpoint`, `WebhookEndpointResponse`, `WebhookEndpointListResponse`,
+  `WebhookEndpointCreatedResponse`, `WebhookEndpointCreateRequest`,
+  `WebhookEndpointUpdateRequest`, `WebhookDelivery`,
+  `WebhookDeliveryListResponse`, `WebhookTestResponse`, `Export`,
+  `ExportResponse` and `ExportListResponse` schemas, from the generated types.
+  No client method used them; the server answers `404`.
+
+- `"Webhook"` from the `kind` enum of `components["schemas"]["ManifestResource"]`,
+  and `secret` from `["ApplyResult"]`. An apply naming the kind is refused.
+
+- `paths["/api/buzz/agents"]` and `paths["/api/buzz/agents/{id}"]`, and the
+  `BuzzProvisionRequest`, `BuzzAccessUpdateRequest`, `BuzzIdentity`,
+  `BuzzIdentityResponse` and `BuzzIdentityListResponse` schemas, from the
+  generated types. No client method used them; the server answers `404`.
+
+- `"opencode"` from the `runtime` enums of
+  `components["schemas"]["AgentRequest"]` and `["AgentUpdate"]`, and
+  `"daytona"` from their `sandbox_provider` enums and the `Agent` response's.
+  Requests naming either are refused by the server.
+
+### Changed
+
+- `runtime` on the `Agent`, `Conversation` and `SandboxConversation` responses,
+  and `provider` on the `Sandbox` response, are typed `string` rather than a
+  union: a row written before the removal still reads `opencode` or `daytona`.
+  Narrow with your own check where you switched on them.
+
+---
+
+## [7.0.0] - 2026-10-12
+
+Fountain is now a self-hosted app with no credits, Stripe or claimable
+principals, and the server no longer answers 402. This release removes what
+the SDK carried for them.
+
+### Removed
+
+- `InsufficientCreditsError` and its `upgradeUrl`, and `"insufficient_credits"`
+  from `FountainErrorCode`. A 402 (which only a proxy in front of the server can
+  send now) becomes a plain `FountainError` carrying its `status`. Delete any
+  `instanceof InsufficientCreditsError` branch and its import.
+- The generated types for credits, comps and Stripe:
+  `components["schemas"]["BillingResponse"]`, `["CreditsCheckoutRequest"]`,
+  `["StripeUrlResponse"]`, `["AdminCompRequest"]` and `["AdminCreditsRequest"]`;
+  the `/api/account/billing`, `/api/account/billing/credits/checkout`,
+  `/api/admin/users/{id}/comp` and `/api/admin/users/{id}/credits` entries of
+  `paths` and `operations`; the `comped` query parameter of the admin user list;
+  the `402` responses; `Error.upgrade_url`; and `AdminUser.comped`,
+  `AdminUser.has_stripe_customer`, `AdminUser.credit_balance_cents` and
+  `AuthMe.comped`. The server no longer serves or sends them (ADRs 0030 and
+  0031, retired; #2609).
+- The generated types for claimable principals:
+  `components["schemas"]["ClaimableUser"]`, `["ClaimableUserCreated"]`,
+  `["ClaimedPrincipal"]` and their response wrappers, with the
+  `/api/claimable-users` entries of `paths` and `operations`. The server no
+  longer serves those routes (ADR 0044, retired; #2607). No hand-written client
+  method used them.
+
+## [6.5.1] - 2026-10-13
+
+### Changed
+
+- The generated types carry `AdminCreateUserRequest` and
+  `AdminCreatedUserResponse`, for `POST /api/admin/users` (ADR 0064). No
+  hand-written client calls it; nothing else changes.
+
 ## [6.5.0] - 2026-10-02
 
 ### Added

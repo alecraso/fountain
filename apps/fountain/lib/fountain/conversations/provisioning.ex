@@ -4,15 +4,17 @@ defmodule Fountain.Conversations.Provisioning do
   runtime CLI is spawned. Each step publishes its own stage events so the
   UI/SSE clients can show progress.
 
-  Order in `ConversationServer.handle_continue(:provision)`:
-    1. mount skills (inline writes + skills.sh github installs — github
-       installs need network and run before the policy lockdown)
-    2. `install_packages/4` (apt/npm — needs unrestricted network; must
-       run before the policy lockdown so apt can reach package repos)
-    3. `apply_network_policy/3` (sandbox API call — fast)
-    4. `clone_repositories/4` (git clone — slow)
-    5. user's `setup_script` (whatever they supplied)
-    6. write runtime-specific config (e.g. claude `~/.claude.json`)
+  Order in `FreshProvision.run_provisioning_pipeline/6`, after the sandbox
+  config (runtime config, instructions, env file, broker CA and sudoers) is
+  on the disk:
+    1. `apply_network_policy/3` or `apply_broker_floor/2` (sandbox API call —
+       fast). First, so that nothing the tenant chose runs on the open
+       network: apt and npm reach their mirrors through the proxy, which the
+       CA and the sudoers `env_keep` already installed make possible.
+    2. `install_packages/4` (apt/npm, through the proxy)
+    3. `clone_repositories/4` (git clone — slow)
+    4. user's `setup_script` (whatever they supplied)
+  Skills are written beside the pipeline and awaited at its end.
 
   Each step is a no-op when the corresponding field is empty, so legacy
   environments with bare config (just a name) provision instantly.
@@ -299,7 +301,7 @@ defmodule Fountain.Conversations.Provisioning do
 
   Not every provider can hold egress. `Managoat.Runner.Adapter` answers
   `{:error, :not_supported}` and leaves `:network_policy` out of its
-  `capabilities/0`; Sprites, E2B and Daytona all advertise it. The pairing has
+  `capabilities/0`; Sprites and E2B both advertise it. The pairing has
   always failed closed — `apply_network_policy/3` turns the `:not_supported`
   into `{:error, {:network_policy, :not_supported}}` and the cold-provision
   `with` aborts — so a `limited` environment has never run unrestricted.
@@ -587,7 +589,7 @@ defmodule Fountain.Conversations.Provisioning do
     install =
       "( trap #{shell_quote(cleanup)} EXIT; safe=0; " <>
         "if command -v flock >/dev/null 2>&1; then flock -w 120 9 || exit 75; safe=1; fi; " <>
-        "{ cmp -s #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "{ #{same_ca_key(staging, path)} && " <>
         "sha256sum -c --status #{shell_quote(marker)} 2>/dev/null; } || " <>
         "{ sudo rm -f -- #{shell_quote(marker)} && " <>
         "if [ ! -e #{shell_quote(path)} ] && [ -s #{shell_quote(bundle)} ]; then " <>
@@ -635,6 +637,21 @@ defmodule Fountain.Conversations.Provisioning do
         publish_stage(conv_id, "broker", "failed", %{reason: inspect(reason)})
         err
     end
+  end
+
+  # Whether the CA at `installed` is the one at `staged`, compared the way a
+  # TLS client matches a trust anchor: by public key. The bytes cannot be
+  # compared. `Managoat.Broker.CA` derives the key, subject, serial and
+  # validity from the seed, but ECDSA signing is randomised, so every
+  # derivation is a different PEM. Compared with `cmp`, the installed CA never
+  # matched the one about to be written, and every provision and every wake
+  # rebuilt the whole system trust store: ~1.5–2.3 s of each wake, measured on
+  # 2026-10-07. An empty key (no `openssl`, or a file that does not parse) is
+  # never a match, so a machine without `openssl` rebuilds as before.
+  defp same_ca_key(staged, installed) do
+    "{ staged_key=$(openssl x509 -noout -pubkey -in #{shell_quote(staged)} 2>/dev/null) && " <>
+      "installed_key=$(openssl x509 -noout -pubkey -in #{shell_quote(installed)} 2>/dev/null) && " <>
+      ~s([ -n "$staged_key" ] && [ "$staged_key" = "$installed_key" ]; })
   end
 
   # Global, so it covers the agent's own `git push`/`fetch` inside the sandbox

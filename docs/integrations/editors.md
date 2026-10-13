@@ -112,7 +112,7 @@ that [environment](../concepts/environment.md), and not from the agent's own.
 
 Use it when one agent config must run under several baselines. The same
 "engineer" then runs against a `fountain` environment in one entry and a
-`buzz` environment in another, and you duplicate no agent. The vault, if there
+`website` environment in another, and you duplicate no agent. The vault, if there
 is one, still wins on a key collision. An agent can also restrict which
 environments can stand in for its own, with `allowed_environment_ids`.
 
@@ -172,12 +172,6 @@ continues from where it stopped.
 ## Limits, stated rather than discovered
 
 - **No access to your local files**, as above.
-- **The opencode runtime never asks.** It decides permission inside its own
-  server, and it sends no request to your editor. Fountain refuses a policy it
-  cannot enforce, with a 422 at session start
-  ([#959](https://github.com/managoat/fountain/issues/959)). Nobody has
-  measured whether opencode's own config reaches the protocol
-  ([#962](https://github.com/managoat/fountain/issues/962)).
 - **A reclaimed sandbox loses the agent's memory.** If Fountain reclaimed a
   conversation's sandbox while you were away, `session/load` still replays the
   full transcript. The agent itself does not remember it

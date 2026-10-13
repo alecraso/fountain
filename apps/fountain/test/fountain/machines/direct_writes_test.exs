@@ -40,8 +40,8 @@ defmodule Fountain.Machines.DirectWritesTest do
 
   ## What the scan does and does not see
 
-  This is a plain-text scan of every `.ex` file under `apps/fountain/lib`,
-  `ee/lib` (when present) and `apps/fountain_*/lib`, excluding anything
+  This is a plain-text scan of every `.ex` file under `apps/fountain/lib`
+  and `apps/fountain_*/lib`, excluding anything
   under `lib/fountain/machines/` (the owner's own namespace, exempted from
   `UnsafeCallOwnership` in `.credo.exs` for the same reason). No compilation,
   no `mix xref`, no database — it is a `String.split` and a handful of
@@ -747,14 +747,10 @@ defmodule Fountain.Machines.DirectWritesTest do
   end
 
   defp source_files(root) do
-    top_level =
-      ["apps/fountain/lib", "ee/lib"]
-      |> Enum.map(&Path.join(root, &1))
-      |> Enum.filter(&File.dir?/1)
-
-    buzz = root |> Path.join("apps/fountain_*/lib") |> Path.wildcard()
-
-    (top_level ++ buzz)
+    root
+    |> Path.join("apps/fountain/lib")
+    |> List.wrap()
+    |> Enum.filter(&File.dir?/1)
     |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.ex")))
     |> Enum.reject(&String.contains?(&1, "/lib/fountain/machines/"))
     |> Enum.sort()

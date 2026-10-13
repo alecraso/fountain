@@ -25,15 +25,11 @@ name in a red build says which toolchain to look at:
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
 | **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `manual_docs` (which selects the published-manual tests), `cli_docs` and `tree` (`scripts/ci/changes.py`). Fail-open: an unreadable diff or an unregistered path selects the full server plan. Runs on `pull_request`, `merge_group` and `workflow_dispatch`, never on `push`, where the outputs are empty so every `!=`-gated job runs |
 | **already-tested** | `Skip the re-run when a PR already tested this exact tree`: `scripts/ci/already-tested.sh` compares the checkout tree with a successful run's `tested-tree` artifact. Runs only on `push` and `merge_group`. Missing or expired artifacts and API failures leave `skip=false` |
-| **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
-| **python-sdk** (×2) | The Python SDK on 3.9 and 3.13, conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
 | **typescript-sdk** (×2) | The TypeScript SDK on the minimum Node in `engines.node` (20.19.0) and on 24, conformance fixtures, and the packed tarball installed into a throwaway consumer project |
-| **swift-sdk** (×2) | The Swift SDK on ubuntu-24.04 (upstream Swift 6.1.3) and macos-15 (Apple Swift 6.1.2 from the installed Xcode 16.4), with its own conformance step. Both satisfy the package's Swift 6.1 minimum. Update the Xcode pin when the runner image retires it. It runs no `sdk/conformance/lint.py` |
-| **cli-plugins** | Both Go modules (`cli/` and `apps/fountain_buzz/cli`) with vet and gofmt, the Hermes plugin, and the deployed-instance runner tests under `deployed/test/` |
-| **core-distribution** | Builds with `BUNDLE_EXTENSIONS=false`, boots and migrates a fresh database, probes health, and checks that extension applications and API paths are absent; then rebuilds with extensions to check their inclusion. Skips docs-only changes and reused trees |
+| **cli-plugins** | The Go module (`cli/`) with vet and gofmt, the Hermes plugin, and the deployed-instance runner tests under `deployed/test/` |
 | **compose-fresh-clone** | `docker compose config --quiet` without `.env`, `SECRET_KEY_BASE` or `MASTER_SECRETS_KEY`, so the documented database-only startup can load the Compose file |
 | **compose-pinned-image-boot** | `scripts/compose-boot-check.sh` exercises the Compose quick start against its pinned release image. An unpublished pin that matches the version in `mix.exs` defers the boot check to `release.yml`; any other missing pin fails |
-| **docs** | Compiles the embedded manual, runs `scripts/test-docs.sh` (core and extension documentation suites), and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` and `manual_docs` are true and the tree is not reused; skipped on `push` |
+| **docs** | Compiles the embedded manual, runs `scripts/test-docs.sh` (the manual's suites), and runs CLI documentation parity when `cli_docs` is true. Selected only when `docs_only` and `manual_docs` are true and the tree is not reused; skipped on `push` |
 | **gate** | `CI required`: validates every expected job result and records a successful PR checkout tree |
 
 `mix hex.audit` is not one of these: `scripts/hex-audit-gate.exs` fails the
@@ -142,31 +138,18 @@ is ejected. Main reuses successful tested-tree evidence as described above.
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
-PR runs 24 jobs; a full merge group runs 25 because both probes run. The
+PR runs 18 jobs; a full merge group runs 19 because both probes run. The
 documented limit is 20 concurrent runners. The queue builds one group at a
 time. Its merge settings do not batch builds. Revisit
 `max_entries_to_build` when the concurrency limit changes.
 
 ## SDK jobs
 
-The Elixir, Python and TypeScript SDKs run in `elixir-sdk`, `python-sdk` and
-`typescript-sdk`. The Go CLI, Hermes plugin and deployed-runner checks run in
-`cli-plugins`. The Swift job (`swift-sdk`) runs on Linux and
-macOS. Each reads the committed contract; `release-and-contract` checks its
-generation.
-The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
-package dry run, contract and conformance checks. It tests Elixir 1.15.8
-with OTP 26.2.5.21 and Elixir 1.19.2 with OTP 28.3. Formatting uses 1.19.2
-because formatter output differs between versions; all remaining checks run
-on both pairs. The Python job owns its
-tests, compilation, contract and conformance checks on Python 3.9 and 3.13.
-Both legs also build an sdist and wheel, install the wheel in a fresh virtual
-environment and run the SDK regression suite against that installed package.
-This replaces the full source-tree test run; separate contract and conformance
-steps retain their focused diagnostics.
-The verifier checks the type marker, package version and every SDK import path.
-These cover the package minimum and newest declared runtime. Both legs must
-pass; a failure does not cancel the other leg. The TypeScript job owns
+The TypeScript SDK runs in `typescript-sdk`. The Go CLI, Hermes plugin and
+deployed-runner checks run in `cli-plugins`. Each reads the committed contract;
+`release-and-contract` checks its generation. The Python, Elixir and Swift SDKs
+and their jobs were removed on 2026-10-12 (ADR 0059).
+The TypeScript job owns
 installation, type checks, tests, builds, browser bundling, contract and
 conformance checks on Node 20.19.0 and 24. The minimum runtime runs compiled
 JavaScript from the same test sources in a temporary fixture tree. Node 24
@@ -175,15 +158,13 @@ They also pack and install the npm artifact in a temporary consumer project.
 That project typechecks against the published declarations and exercises the
 Node and browser entry points with a fake fetch implementation. It also bundles
 that consumer for a browser, checking the package export conditions.
-These three extracted jobs lint fixtures before their
-tests. Swift retains its separate conformance test step.
-**The four SDK jobs run on every plan.** Pull requests, merge groups, manual
-dispatches and main pushes all run them, docs-only plans included; the one
+It lints the conformance fixtures before its tests.
+**The SDK job runs on every plan.** Pull requests, merge groups, manual
+dispatches and main pushes all run it, docs-only plans included; the one
 thing that skips an SDK leg is verified tested-tree reuse, exactly as it
-skips the server jobs. There is no per-language path classification: each
-leg is a fraction of a minute, and the routing that used to skip an
-unselected language cost more to keep right than it saved. `CI required`
-requires all four directly; a failed, cancelled or unexpectedly skipped leg
+skips the server jobs. There is no SDK path classification: each leg is a
+fraction of a minute, and routing cost more to keep right than it saved.
+`CI required` requires it directly; a failed, cancelled or unexpectedly skipped leg
 fails the gate.
 
 Register a new job in `gate.py`'s `FULL_JOBS` and the workflow gate's
@@ -196,7 +177,7 @@ their agreement and every supported event plan.
 `changes.py` reads one NUL-delimited diff with rename detection disabled, then
 selects documentation checks from those paths. The contributor-only
 allowlist includes ADR and changelog-fragment Markdown. Non-Markdown decision
-evidence, executable files and new extension directories select the full server
+evidence, executable files and new app directories select the full server
 plan. A move out of code retains the old code path in
 the diff. Missing bases, failed/empty diffs and malformed paths select full CI.
 
@@ -208,9 +189,7 @@ either way. The documentation job honors verified tree reuse on the merge
 queue, just like the server jobs.
 
 See [the manual contribution guide](../../contributing/docs.md#checks-for-documentation-changes)
-for the path table and matching local commands. Register an extension's docs
-in `MANUAL_EXTENSIONS` and `scripts/test-docs.sh` together; the routing tests
-check that the selected manuals have runnable documentation suites.
+for the path table and matching local commands.
 
 ## Coverage
 
@@ -248,13 +227,9 @@ PARTITION_DEBUG=1 elixir scripts/partition-files.exs 1 6
 Use one run's logs, not multiple runs, because durations for modules in the
 same file are summed. The artifact retention is one day. Unknown test files
 still get a median estimate and run; refreshing the table improves balance.
-The allocator reserves 30 seconds on partition 1 for the sibling suites,
-measured at 26-34 seconds on September 5, 2026. Update that reserve when the
+When a sibling app exists under `apps/`, the allocator reserves 30 seconds on
+partition 1 for its suite, measured at 26-34 seconds on September 5, 2026. Update that reserve when the
 `Run the sibling apps' tests with coverage` step changes materially.
-
-The core release uses a separate cache of compiled production modules. The
-assembled release is rebuilt each time, including the check that toggles from
-the core distribution to the bundled distribution.
 
 ## Manual public-link check
 
@@ -275,15 +250,13 @@ elixir scripts/ci/timing-formatter-test.exs
 
 ## Sandbox providers
 
-Merge CI runs no sandbox provider; three checks outside it do.
+Merge CI runs no sandbox provider; two checks outside it do.
 
-- `sandbox-images.yml` rebuilds the E2B template (`fountain`) and the Daytona
-  snapshot weekly, on changes under `images/` and on dispatch. The E2B job
-  uses repository secret `E2B_API_KEY`, prod's key, set 2026-10-05 (#2481).
-  The first run rebuilt the template that day. Its smoke step failed on an
-  argument bug, which is now fixed; the same smoke passed by hand against the
-  rebuilt template. `DAYTONA_API_KEY` is not set, so the Daytona job still
-  fails.
+- `sandbox-images.yml` rebuilds the E2B template (`fountain`) weekly, on
+  changes under `images/` and on dispatch. The job uses repository secret
+  `E2B_API_KEY`, prod's key, set 2026-10-05 (#2481). The first run rebuilt
+  the template that day. Its smoke step failed on an argument bug, which is
+  now fixed; the same smoke passed by hand against the rebuilt template.
 - The adapters' live suites, `test/live/` in
   [managoat_sandbox](https://github.com/managoat/managoat_sandbox), run daily
   in its `live.yml`:
@@ -295,11 +268,9 @@ Merge CI runs no sandbox provider; three checks outside it do.
     checkpoints and egress.
 
   Neither can be checked by the stubbed tests.
-- The deployed suite's matrix (`deployed/README.md`) declares four E2B cells
-  for production in `SUITE_MATRIX_JSON` on the `deployed-production`
-  environment: claude and codex, ephemeral and persistent. It runs on
-  dispatch only (`matrix-scheduled`), and each run needs an environment
-  reviewer's approval. `DEPLOYED_MATRIX_ENABLED` is unset, so no schedule.
+
+The deployed suite's provider matrix (`deployed/README.md`) has no workflow
+here; an operator runs it by hand against their own instance.
 
 ## Portable alert rules
 

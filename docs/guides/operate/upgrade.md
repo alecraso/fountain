@@ -28,53 +28,25 @@ under two tags, next to the tags that track development.
 | `latest` | On each merge to `main`. | Nothing you keep in production, because it moves under you. |
 | `sha-<commit>` | Never. | To reproduce exactly what one commit built. |
 
-## Two distributions
+## The `-core` tags
 
-Each tag above names the **bundled** image: the server plus the first-party
-extensions, which is what this project has always published. Each release also
-publishes the same version with a `-core` suffix.
-
-| Tag | Contains |
-|---|---|
-| `vX.Y.Z` and `vX.Y` | The server with Buzz, Support, Google/Gmail, Microsoft and Slack extensions, plus the Buzz executables. |
-| `vX.Y.Z-core` and `vX.Y-core` | The server. No extension, no extension route, no extension migration and no extension executable. |
-
-Use the bundled image unless you know you want the other one. The hosted
-deployment runs it, and we triage a bug report against it.
-
-The core image is smaller and has less surface to attack. It is also what to
-build an extension of your own against. The cost: hosted Buzz agents
-(`/api/buzz/agents` and the Nostr harness) and the problem-report endpoint
-answer `404`, because the code that serves them is not installed. The Gmail
-MCP route is also absent. Core lists no Google, Microsoft or Slack platform
-connection provider; their OAuth environment variables are inert. You can
-revoke or delete retained connections locally. They contribute no token while
-their extension is absent.
-
-To move between them, pull the other tag and restart. Extension tables stay in
-the database. A core image does not create them. It also does not drop the ones
-a bundled image made, so a move back finds your rows where you left them.
+Earlier releases also published each version with a `-core` suffix, an image
+without the first-party extensions. Fountain no longer has extensions, so a
+release publishes one image under the tags above. A `-core` tag you pinned
+keeps working, but no new version is published under one. To take a newer
+release, move to the tag without the suffix.
 
 Releases v0.2.1 and earlier are older than the image tags. They exist as
 `sha-` tags alone.
 
 ## Build your own image
 
-`BUNDLE_EXTENSIONS` is a build argument, defaulting to `true`. It selects the
-release's applications and extension executables when Docker builds the image.
-Setting it on a running container does not change its distribution.
-
 ```bash
-# Bundled: Fountain with all first-party extensions.
-docker build --build-arg BUNDLE_EXTENSIONS=true -t fountain:bundled .
-
-# Core: Fountain without first-party extensions.
-docker build --build-arg BUNDLE_EXTENSIONS=false -t fountain:core .
+docker build -t fountain .
 ```
 
 For a release built directly from the source tree, use
-`BUNDLE_EXTENSIONS=false MIX_ENV=prod mix release fountain_server` to select
-core. Omit the variable, or set it to `true`, to bundle the extensions.
+`MIX_ENV=prod mix release fountain_server`.
 
 ## Take a new version
 
@@ -156,69 +128,51 @@ Run it the same way and under the same bounds as the two above. After this
 migration no allowlist on an agent relies on a null to mean "anything the
 tenant owns"; the policy is readable from the record.
 
-## Principal credential expiry
+## Claimable principals removed
 
-Every unrevoked key with `principal` scope must have an expiry. The database
-CHECK enforces this independently of the issuer. Full and sprite keys can
-still omit expiry. Existing deadlines and revoked keys remain unchanged.
+Claimable principals (`/api/claimable-users`) are gone, along with the
+`principal` API-key scope. Migration `20261012120000` drops the
+`claimable_users` and `principal_owners` tables and the
+`api_keys_active_principal_expiry_required` CHECK. It deletes every remaining
+principal account, and with it that account's agents, conversations and keys.
+It then makes `users.email` required again.
 
-Principal issuance, create replay, claim, claim replay and owner renewal all
-supply an explicit deadline through `Principals.principal_key_opts/2` starting
-with [commit af1178dd](https://github.com/managoat/fountain/commit/af1178dd2b3462eb7a26e9d655ff3fe09681a0ed).
-Anonymous credentials use their grant deadline; claimed credentials get 30 days
-from issuance. The shared `Accounts.build_api_key/3` and `create_api_key/3`
-changeset also rejects missing principal expiry starting with
-[commit 1a005023](https://github.com/managoat/fountain/commit/1a005023d49556405d18dabc8cd11fed33a51db2).
-The console, API key, login-token and OAuth issuers create full credentials;
-sandbox callback issuers create sprite credentials. Those lifetimes are
-unaffected. Principal inference-credential writes change provider secrets,
-not the principal API key.
-
-Migration `20260913125930` removes the old-writer trigger and its function.
-Missing expiry then fails the CHECK rather than receiving an implicit 30-day
-deadline. The migration first requires the permanent CHECK to be validated;
-it never updates keys. Lock waits are bounded to five seconds and statements
-to 30 seconds. A failure rolls back the retirement and leaves it pending.
-
-**Finish the writer rollout before applying this migration.** Deploy a revision
-containing both commits above, but preceding the retirement migration, to
-every serving replica, worker and release-task process. Complete migrations
-through `20260913111350`, then drain and stop every older process. Inventory
-external database writers too: they must supply deadlines for principal keys.
-Only after that boundary is verified may a deployment containing the retirement
-migration start. Boot migrations run before replacement replicas serve requests,
-so a direct rolling upgrade from older writers is unsupported. A fresh database
-with no older processes can run the full migration sequence.
-
-Record each writer's deployed revision and the completed drain before removal.
-An image build, a published release or a validated CHECK alone does not prove
-that old writers have stopped.
-
-The hosted service's 2026-09-13 audit observed both ready replicas at commit
-`31a74cc9`, with no older pods or active replica sets. The CHECK was validated,
-and database clients belonged only to those replicas. No other Fountain writer
-workloads or jobs were inventoried. That establishes the hosted rollout boundary;
-self-hosted operators must establish it for their own processes and external
-writers. The required bridge revision predates v0.17.0. There is no earlier release
-tag containing the writer floor; use a reviewed bridge commit for this rollout.
-
-To check the database prerequisite, this query must return one row with
-`convalidated = true`:
+A migration cannot reach a sandbox provider, so it leaves a principal's
+sandboxes running. Release each open principal with the previous release
+before you upgrade. This query must return `0`:
 
 ```text
-SELECT convalidated
-FROM pg_constraint
-WHERE conrelid = 'api_keys'::regclass
-  AND conname = 'api_keys_active_principal_expiry_required';
+SELECT count(*) FROM users WHERE principal;
 ```
 
-A controlled rollback of this migration alone restores the 30-day default
-trigger, retaining the CHECK and every assigned deadline. It restores only
-this writer accommodation; it does not establish whole-release downgrade
-support. Any older writer would require that accommodation before restarting:
-an application-only rollback would reject its missing-expiry writes. Follow
-[the recovery policy](#when-an-upgrade-goes-wrong) for a failed release.
-Do not roll back the invariant or clear deadlines.
+The `users.principal` column stays for one release, so replicas from the
+previous release keep working during a rolling upgrade. Migration
+`20261012210000` drops it; see the next section.
+
+## Billing and principal columns dropped
+
+Removing credits left `credit_ledger` and the `users` columns
+`credit_balance_cents`, `stripe_customer_id` and `comped` in place, unread,
+for the same reason `users.principal` stayed: replicas of the release before
+it still read them during a rolling upgrade. Migration `20261012210000`
+drops all five, with the `users` indexes on `stripe_customer_id` and
+`principal`. The ledger's rows are deleted with the table.
+
+Take the release that removed credits first, and let it finish rolling out,
+before you take this one. Do not skip from a release that still has credits
+straight to this one with a rolling deploy: its replicas would fail every
+request that loads an account until they are replaced. A deploy that stops
+every old replica before migrating can skip it.
+
+## Webhook and connection tables dropped
+
+The release that removed outbound webhooks and Connections stopped reading
+`webhook_endpoints`, `webhook_deliveries`, `connections` and
+`connection_providers` but left them in place, because its predecessor reads
+them on every turn. Migration `20261012200000` drops all four. Take it only
+after that release is fully rolled out; a rolling upgrade straight from an
+older release fails the old replicas' turns until they are replaced. The
+stored webhook secrets and connection tokens go with the tables.
 
 ## Conversation message compatibility
 

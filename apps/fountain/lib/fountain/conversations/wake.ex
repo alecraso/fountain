@@ -182,18 +182,16 @@ defmodule Fountain.Conversations.Wake do
   # answered** (ADR 0058 stage 7a). Until 7a any `{:ok, _info}` was a reuse,
   # whatever `info.status` said, and the 6b review named what that cost: a park
   # whose finalize was lost leaves a row saying `ready` over a machine the
-  # provider has genuinely stopped, and on E2B (`paused`) and Daytona
-  # (`stopped`/`archived`) the wake then handed a conversation a handle to a
-  # machine that was not running. The third element of the verdict is
+  # provider has genuinely stopped, and on E2B (`paused`) the wake then handed
+  # a conversation a handle to a machine that was not running. The third element of the verdict is
   # `Managoat.Sandbox`'s own three-value fold — `:running | :suspended |
   # :unknown` — and `Machines.Resume` is what acts on it.
   #
   # Per adapter, so nobody has to go and find out:
   #
-  #   * **E2B** and **Daytona** report it faithfully. E2B's lookup asks for
-  #     `running,paused` explicitly and folds `paused` to `:suspended`; Daytona
-  #     folds six parked states including `archived` the same way. These are the
-  #     two the gap was real on.
+  #   * **E2B** reports it faithfully. Its lookup asks for `running,paused`
+  #     explicitly and folds `paused` to `:suspended`. This is the provider the
+  #     gap was real on.
   #   * The **self-hosted runner** reports it faithfully too, from the suspend
   #     marker its daemon writes (process backend) or the VM's own control
   #     socket (Firecracker).
@@ -365,14 +363,18 @@ defmodule Fountain.Conversations.Wake do
 
   `{:ok, :awake}` is a conversation whose server is already running: a parked
   conversation has none, so there is nothing to do. `{:ok, :waking}` is one this
-  call started a server for, on its own sandbox resumed from suspension or on a
-  fresh one when that sandbox is gone, exactly as a prompt would have. The
-  server's reattach or provision is still running when this returns; its stages
-  arrive on the conversation's event stream.
+  call is waking: on its own sandbox resumed from suspension, or on a fresh one
+  when that sandbox is gone, exactly as a prompt would.
+
+  The wake runs behind the answer (#2584), as a prompt's does since #2561. The
+  refusals that need no provider (`admit_prompt_wake/1`: the conversation, its
+  agent, the account, credit, a reset fence, room for a machine) still answer
+  the call; anything after that is a `wake` `failed` stage on the
+  conversation's event stream, with the reattach or provision stages before it.
 
   The same gates as a prompt's wake apply, since a woken machine is billed
   compute whether or not a prompt follows. Only a wake that started a server is
-  audited, as `conversation.woken`.
+  audited, as `conversation.woken`, when it finishes.
 
   A door like `wake_conversation/3`: the caller has established tenant
   ownership of `conv_id`.
@@ -384,12 +386,16 @@ defmodule Fountain.Conversations.Wake do
         {:ok, :awake}
 
       nil ->
-        result = wake_conversation_for(conv_id, nil, :work)
-        Termination.audit_lifecycle(conv_id, "conversation.woken", ok(result), opts)
+        with :ok <- admit_prompt_wake(conv_id) do
+          {:ok, _pid} =
+            Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
+              result = __MODULE__.wake_conversation_for(conv_id, nil, :work)
+              Termination.audit_lifecycle(conv_id, "conversation.woken", ok(result), opts)
 
-        case result do
-          {:ok, _conv} -> {:ok, :waking}
-          {:error, _} = err -> err
+              with {:error, reason} <- result, do: report_failed_wake(conv_id, reason)
+            end)
+
+          {:ok, :waking}
         end
     end
   end
@@ -423,7 +429,6 @@ defmodule Fountain.Conversations.Wake do
           # in so the owner can wake a machine the row calls `ready` and the
           # provider calls stopped — see `probe_sandbox/4`.
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-               :ok <- Fountain.Billing.check_spend(conv.user_id),
                :ok <- check_saved_inference(conv, agent),
                {:ok, _} <- wake_suspended_sandbox(conv, sandbox_id, observed) do
             case start_conversation_server(
@@ -619,7 +624,7 @@ defmodule Fountain.Conversations.Wake do
   @doc """
   The refusals a prompt's wake still owes its caller in the response, run
   without a provider round trip (#2561): the conversation's status, its saved
-  allowance, the agent, the account's suspension, its credit, the saved
+  allowance, the agent, the account's suspension, the saved
   inference source, a machine being reset, and, when the wake would add a
   machine, room under the tenant's cap and the fleet ceiling.
 
@@ -634,7 +639,6 @@ defmodule Fountain.Conversations.Wake do
   def admit_prompt_wake(conv_id) when is_binary(conv_id) do
     with {:ok, conv, agent, _runtime_module} <- preflight(conv_id, :work),
          :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-         :ok <- Fountain.Billing.check_spend(conv.user_id),
          :ok <- check_saved_inference(conv, agent) do
       check_machine(conv)
     end
@@ -689,7 +693,7 @@ defmodule Fountain.Conversations.Wake do
   end
 
   defp report_failed_wake(conv_id, reason) do
-    Logger.warning("conv #{conv_id}: background wake for a prompt failed: #{inspect(reason)}")
+    Logger.warning("conv #{conv_id}: background wake failed: #{inspect(reason)}")
     report_unrun_prompt(conv_id, reason)
   end
 
@@ -809,7 +813,6 @@ defmodule Fountain.Conversations.Wake do
 
     with :ok <- retire_replaced_home(mode, conv.sandbox_id),
          :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-         :ok <- Fountain.Billing.check_spend(conv.user_id),
          :ok <- check_saved_inference(conv, agent),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate

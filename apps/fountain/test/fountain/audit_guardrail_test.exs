@@ -43,9 +43,7 @@ defmodule Fountain.AuditGuardrailTest do
     Environments,
     InferenceCredentials,
     OAuth,
-    Principals,
-    Vaults,
-    Webhooks
+    Vaults
   }
 
   alias Fountain.Conversations.ConversationServer
@@ -88,9 +86,6 @@ defmodule Fountain.AuditGuardrailTest do
     {"vault copy", &__MODULE__.do_vault_copy/1, "vault.created"},
     {"api key mint", &__MODULE__.do_key_create/1, "api_key.created"},
     {"api key revoke", &__MODULE__.do_key_revoke/1, "api_key.revoked"},
-    {"owned principal credential renewal", &__MODULE__.do_principal_key_renewal/1,
-     "api_key.created"},
-    {"managed principal key revoke", &__MODULE__.do_managed_key_revoke/1, "api_key.revoked"},
     {"inference credential write", &__MODULE__.do_cred_write/1, "inference_credential.write"},
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"credential set create", &__MODULE__.do_set_create/1, "inference_credential_set.created"},
@@ -179,10 +174,6 @@ defmodule Fountain.AuditGuardrailTest do
     {"password reset", &__MODULE__.do_password_reset/1, "auth.password.reset"},
     {"password change", &__MODULE__.do_password_change/1, "auth.password.changed"},
     {"email verification", &__MODULE__.do_verify_email/1, "auth.email.verified"},
-    # The Buzz identity events moved with the extension (#1507); they are
-    # asserted the same way in apps/fountain_buzz. ADR 0013's actor vocabulary
-    # is still the host's and still closed — an extension records through
-    # `Fountain.Audit` and gets no trail of its own.
     # Team membership: a teammate is a channel-bound conversation, so add also
     # leaves conversation.created underneath; these are the team-side events.
     {"team member add", &__MODULE__.do_team_add/1, "team.member.added"},
@@ -198,16 +189,6 @@ defmodule Fountain.AuditGuardrailTest do
     {"team schedule run", &__MODULE__.do_schedule_run/1, "team.schedule.fired"},
     {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
     {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"},
-    # Outbound webhooks (ADR 0024). The auto-disable path is the one with no
-    # human behind it, hence `system:webhook_delivery` in the vocabulary.
-    {"webhook endpoint create", &__MODULE__.do_webhook_create/1, "webhook_endpoint.created"},
-    {"webhook endpoint update", &__MODULE__.do_webhook_update/1, "webhook_endpoint.updated"},
-    {"webhook endpoint delete", &__MODULE__.do_webhook_delete/1, "webhook_endpoint.deleted"},
-    {"webhook secret rotate", &__MODULE__.do_webhook_rotate/1, "webhook_endpoint.secret_rotated"},
-    {"webhook endpoint disable", &__MODULE__.do_webhook_disable/1, "webhook_endpoint.disabled"},
-    {"webhook endpoint enable", &__MODULE__.do_webhook_enable/1, "webhook_endpoint.enabled"},
-    # Prepaid credits (ADR 0030). Money in and money out are the two shapes;
-    # every reason family maps onto one of five `credit.*` actions.
     # Secret bindings (ADR 0019 gate 1b): where a credential goes is as
     # auditable as the credential's existence.
     {"secret binding create", &__MODULE__.do_binding_create/1, "secret_binding.created"},
@@ -216,19 +197,6 @@ defmodule Fountain.AuditGuardrailTest do
     {"oauth client create", &__MODULE__.do_oauth_client_create/1, "oauth_client.created"},
     {"oauth client update", &__MODULE__.do_oauth_client_update/1, "oauth_client.updated"},
     {"oauth client delete", &__MODULE__.do_oauth_client_delete/1, "oauth_client.deleted"},
-    {"connection connect", &__MODULE__.do_connection_connect/1, "connection.created"},
-    {"connection revoke", &__MODULE__.do_connection_revoke/1, "connection.revoked"},
-    {"connection expire", &__MODULE__.do_connection_expire/1, "connection.expired"},
-    # Connection providers (#1186): the tenant's own OAuth apps and the MCP
-    # authorization servers Fountain discovered. The secret is never in the trail.
-    {"connection provider create", &__MODULE__.do_provider_create/1,
-     "connection_provider.created"},
-    {"connection provider update", &__MODULE__.do_provider_update/1,
-     "connection_provider.updated"},
-    {"connection provider delete", &__MODULE__.do_provider_delete/1,
-     "connection_provider.deleted"},
-    {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
-    {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"},
     # OAuth (#1343). The state machine is the managoat_oauth library, which
     # has no Repo call of its own to audit beside; it cannot complete any of
     # these three mutations without calling Fountain.OAuth.Host.audit/3, and
@@ -236,14 +204,7 @@ defmodule Fountain.AuditGuardrailTest do
     # host still records them, whichever door the grant came through.
     {"oauth authorize", &__MODULE__.do_oauth_authorize/1, "oauth.authorized"},
     {"oauth device approve", &__MODULE__.do_oauth_device_approve/1, "oauth.device_approved"},
-    {"oauth device deny", &__MODULE__.do_oauth_device_deny/1, "oauth.device_denied"},
-    # Claimable principals (ADR 0044). The trail is written against the
-    # *application* that opened the principal, because a principal that
-    # expires unclaimed is a tenant nobody can ever sign in to read it from.
-    # The user each entry is exercised with here is that application.
-    {"claimable principal create", &__MODULE__.do_claimable_create/1, "claimable_user.created"},
-    {"claimable principal claim", &__MODULE__.do_claimable_claim/1, "claimable_user.claimed"},
-    {"claimable principal release", &__MODULE__.do_claimable_release/1, "claimable_user.released"}
+    {"oauth device deny", &__MODULE__.do_oauth_device_deny/1, "oauth.device_denied"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -343,9 +304,6 @@ defmodule Fountain.AuditGuardrailTest do
           {Lifecycle, :fence_sandbox_for_teardown, 2},
           {Fountain.Accounts.Deletion, :destroy_sprites, 2},
           {Conversations, :delete_conversation, 2},
-          {Webhooks, :create_endpoint, 3},
-          {Webhooks, :update_endpoint, 3},
-          {Webhooks, :delete_endpoint, 2},
           {Fountain.OAuth, :authorize, 3},
           {Fountain.OAuth, :approve_device_grant, 3},
           {Fountain.OAuth, :deny_device_grant, 3}
@@ -361,31 +319,6 @@ defmodule Fountain.AuditGuardrailTest do
   end
 
   ## ── the mutations ─────────────────────────────────────────────────────────
-
-  defp a_webhook(user) do
-    {:ok, {endpoint, _secret}} =
-      Webhooks.create_endpoint(user.id, %{"url" => "https://hooks.example.com/f"})
-
-    endpoint
-  end
-
-  def do_webhook_create(user), do: a_webhook(user)
-
-  def do_webhook_update(user) do
-    {:ok, _} = Webhooks.update_endpoint(a_webhook(user), %{"description" => "ci"})
-  end
-
-  def do_webhook_delete(user), do: {:ok, _} = Webhooks.delete_endpoint(a_webhook(user))
-
-  def do_webhook_rotate(user), do: {:ok, {_, _}} = Webhooks.rotate_secret(a_webhook(user))
-
-  def do_webhook_disable(user),
-    do: {:ok, _} = Webhooks.disable_endpoint(a_webhook(user), "test")
-
-  def do_webhook_enable(user) do
-    {:ok, disabled} = Webhooks.disable_endpoint(a_webhook(user), "test")
-    {:ok, _} = Webhooks.enable_endpoint(disabled)
-  end
 
   def do_agent_create(user),
     do: {:ok, _} = Agents.create_agent(agent_attrs(%{"user_id" => user.id}))
@@ -500,32 +433,6 @@ defmodule Fountain.AuditGuardrailTest do
     {:ok, _} = Fountain.SecretBindings.delete_binding(b)
   end
 
-  def do_connection_connect(user), do: insert_connection(user)
-
-  def do_connection_revoke(user) do
-    Req.Test.stub(Fountain.Connections.OAuth, fn conn -> Req.Test.json(conn, %{}) end)
-    {:ok, _} = Fountain.Connections.revoke(insert_connection(user))
-  end
-
-  # A tenant provider that issued no refresh token: the lapsed access token
-  # is the expiry event.
-  def do_connection_expire(user) do
-    past = DateTime.utc_now() |> DateTime.add(-1, :second) |> DateTime.truncate(:second)
-    p = insert_provider(user)
-    c = insert_connection(user, provider: p, refresh_token: nil, expires_at: past)
-    {:error, :expired} = Fountain.Connections.access_token(c)
-  end
-
-  def do_provider_create(user), do: insert_provider(user)
-
-  def do_provider_update(user) do
-    {:ok, _} = Fountain.Connections.update_provider(insert_provider(user), %{"name" => "renamed"})
-  end
-
-  def do_provider_delete(user) do
-    {:ok, _} = Fountain.Connections.delete_provider(insert_provider(user))
-  end
-
   def do_runner_register(user) do
     {:ok, _} = Fountain.Runners.register(user.id, %{"name" => "guard"})
   end
@@ -540,21 +447,6 @@ defmodule Fountain.AuditGuardrailTest do
   def do_key_revoke(user) do
     {:ok, {key, _}} = Fountain.Accounts.create_api_key(user.id, "guard-revoke")
     {:ok, _} = Fountain.Accounts.revoke_api_key(user.id, key.id)
-  end
-
-  def do_principal_key_renewal(user) do
-    app = insert_verified_user()
-    {:ok, opened} = Principals.create_claimable(app, %{"application_id" => "audit-renewal"})
-    {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, user)
-    {:ok, _} = Principals.renew_owned_credential(user.id, claimed.claimable.user_id)
-  end
-
-  def do_managed_key_revoke(user) do
-    app = insert_verified_user()
-    {:ok, opened} = Principals.create_claimable(app, %{"application_id" => "audit-guard"})
-    {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, user)
-    {:ok, _, key} = Fountain.Accounts.authenticate_api_key(claimed.api_key)
-    {:ok, _} = Fountain.Accounts.revoke_managed_api_key(user.id, key.id)
   end
 
   def do_cred_write(user) do
@@ -720,8 +612,30 @@ defmodule Fountain.AuditGuardrailTest do
     end)
 
     server = spawn(fn -> Process.sleep(:infinity) end)
-    stub_server_start(fn _supervisor, _child_spec -> {:ok, server} end)
+    test_pid = self()
+
+    stub_server_start(fn _supervisor, _child_spec ->
+      send(test_pid, :server_started)
+      {:ok, server}
+    end)
+
     {:ok, :waking} = Fountain.Conversations.Wake.wake_without_prompt(conv.id, actor: "ui")
+
+    # The wake, and its audit, run behind the answer (#2584): wait for the
+    # server to start, then for the audit the same task writes after it.
+    assert_receive :server_started, 2_000
+    await_audit(user.id, "conversation.woken")
+  end
+
+  defp await_audit(user_id, action, tries \\ 50) do
+    actions = user_id |> Audit.list_recent_for_user(200) |> Enum.map(& &1.action)
+
+    if action in actions or tries == 0 do
+      :ok
+    else
+      Process.sleep(20)
+      await_audit(user_id, action, tries - 1)
+    end
   end
 
   def do_conv_interrupt(user) do
@@ -1041,16 +955,6 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_verify_email(user), do: {:ok, _} = Fountain.Accounts.verify_email(user)
 
-  def do_credit_grant(user) do
-    {:ok, _} =
-      Fountain.Credits.grant(user.id, 100, "grant_admin", idempotency_key: "guard-#{user.id}")
-  end
-
-  def do_credit_debit(user) do
-    {:ok, _} =
-      Fountain.Credits.debit(user.id, 1, "burn_turn", idempotency_key: "guard-b-#{user.id}")
-  end
-
   # The consent request the test client in config/test.exs accepts.
   defp oauth_request do
     verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
@@ -1085,23 +989,5 @@ defmodule Fountain.AuditGuardrailTest do
   def do_oauth_device_deny(user) do
     {:ok, %{user_code: code}} = Fountain.OAuth.start_device_grant()
     :ok = Fountain.OAuth.deny_device_grant(code, user.id)
-  end
-
-  # ── claimable principals (ADR 0044) ──────────────────────────────────────
-
-  def do_claimable_create(app) do
-    {:ok, _} = Principals.create_claimable(app, %{"application_id" => "guardrail"})
-  end
-
-  def do_claimable_claim(app) do
-    {:ok, %{claimable: c, claim_token: token}} =
-      Principals.create_claimable(app, %{"application_id" => "guardrail"})
-
-    {:ok, _} = Principals.claim(c.id, token, insert_verified_user())
-  end
-
-  def do_claimable_release(app) do
-    {:ok, %{claimable: c}} = Principals.create_claimable(app, %{"application_id" => "guardrail"})
-    {:ok, _} = Principals.release(c)
   end
 end

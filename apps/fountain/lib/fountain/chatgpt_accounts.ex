@@ -427,8 +427,8 @@ defmodule Fountain.ChatGPTAccounts do
   writes and records nothing.
 
   It is a write all the same, so it asks what a link asks of the owner:
-  `:ineligible_owner` for an account that is suspended, unverified or a
-  principal. Seeing, disconnecting and removing a grant stay open to them.
+  `:ineligible_owner` for an account that is suspended or unverified.
+  Seeing, disconnecting and removing a grant stay open to them.
   """
   @spec rename_for_user(Ecto.UUID.t(), String.t(), String.t(), keyword()) ::
           {:ok, grant_view()} | {:error, :not_found | :ineligible_owner | Ecto.Changeset.t()}
@@ -1059,12 +1059,12 @@ defmodule Fountain.ChatGPTAccounts do
     )
   end
 
-  # Who may link, read or renew a credential: a verified, claimed,
-  # unsuspended account. One predicate for the join and for the link door.
+  # Who may link, read or renew a credential: a verified, unsuspended
+  # account. One predicate for the join and for the link door.
   defp eligible_owner_filter do
     Ecto.Query.dynamic(
       [owner: u],
-      not u.principal and not is_nil(u.email_verified_at) and is_nil(u.suspended_at)
+      not is_nil(u.email_verified_at) and is_nil(u.suspended_at)
     )
   end
 
@@ -1154,16 +1154,6 @@ defmodule Fountain.ChatGPTAccounts do
   """
   @spec list_recent_attempts_for_user(String.t()) :: [AttemptView.t()]
   def list_recent_attempts_for_user(user_id), do: LinkAttempts.list_recent(user_id)
-
-  @doc """
-  Every link attempt the account still has, oldest first, for the account
-  export (`Fountain.Exports`). Attempts are kept a week
-  (`purge_ended_attempts/0`). Scoped by the owner, and nothing is decrypted:
-  these views carry no user code and no verification page, even for an
-  attempt that is still open.
-  """
-  @spec list_all_attempts_for_user(String.t()) :: [AttemptView.t()]
-  def list_all_attempts_for_user(user_id), do: LinkAttempts.list_all(user_id)
 
   @doc """
   Cancel one pending attempt. Its secrets are dropped with the write, and a

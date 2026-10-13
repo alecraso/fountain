@@ -43,11 +43,6 @@
           "application/json": {
             "ref": "Error"
           }
-        },
-        "502": {
-          "application/json": {
-            "ref": "Error"
-          }
         }
       }
     },
@@ -286,11 +281,6 @@
           "application/json": {
             "ref": "Error"
           }
-        },
-        "502": {
-          "application/json": {
-            "ref": "Error"
-          }
         }
       }
     },
@@ -359,187 +349,6 @@
     },
     "DELETE /api/auth/api-keys/{id}": {
       "operation_id": "FountainWeb.ApiKeyController.delete",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "DELETE /api/buzz/agents/{id}": {
-      "operation_id": "FountainWeb.BuzzAgentController.delete",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "DELETE /api/claimable-users/{id}": {
-      "operation_id": "FountainWeb.ClaimableUserController.delete",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "409": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "DELETE /api/claimable-users/{id}/inference-credentials/{provider}": {
-      "operation_id": "FountainWeb.ClaimableUserController.delete_inference_credential",
-      "path_params": [
-        "id",
-        "provider"
-      ],
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "DELETE /api/connection-providers/{id}": {
-      "operation_id": "FountainWeb.ConnectionProviderController.delete",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "DELETE /api/connections/{id}": {
-      "operation_id": "FountainWeb.ConnectionController.delete",
       "path_params": [
         "id"
       ],
@@ -1013,76 +822,6 @@
         }
       }
     },
-    "DELETE /api/webhooks/{id}": {
-      "operation_id": "FountainWeb.WebhookEndpointController.delete",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/account/billing": {
-      "operation_id": "FountainWeb.BillingApiController.show",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "BillingResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "GET /api/account/chatgpt-subscriptions": {
       "operation_id": "FountainWeb.ChatGPTSubscriptionController.index",
       "path_params": [],
@@ -1154,113 +893,6 @@
         "200": {
           "application/json": {
             "ref": "ChatGPTLinkAttemptResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/account/exports": {
-      "operation_id": "FountainWeb.AccountDataController.index_exports",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ExportListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/account/exports/{id}": {
-      "operation_id": "FountainWeb.AccountDataController.show_export",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ExportResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/account/exports/{id}/download": {
-      "operation_id": "FountainWeb.AccountDataController.download_export",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "type": "string"
           }
         },
         "401": {
@@ -1492,10 +1124,6 @@
       "operation_id": "FountainWeb.AdminController.index_users",
       "path_params": [],
       "query_params": {
-        "comped": {
-          "required": false,
-          "type": "boolean"
-        },
         "dir": {
           "enum": [
             "asc",
@@ -1940,37 +1568,6 @@
         }
       }
     },
-    "GET /api/buzz/agents": {
-      "operation_id": "FountainWeb.BuzzAgentController.index",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "BuzzIdentityListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "GET /api/catalog": {
       "operation_id": "FountainWeb.CatalogController.show",
       "path_params": [],
@@ -1986,228 +1583,6 @@
           }
         },
         "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/claimable-users/{id}": {
-      "operation_id": "FountainWeb.ClaimableUserController.show",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ClaimableUserResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/connection-providers": {
-      "operation_id": "FountainWeb.ConnectionProviderController.index",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ConnectionProviderListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/connection-providers/{id}": {
-      "operation_id": "FountainWeb.ConnectionProviderController.show",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ConnectionProvider"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/connections": {
-      "operation_id": "FountainWeb.ConnectionController.index",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ConnectionListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/connections/providers": {
-      "operation_id": "FountainWeb.ConnectionController.providers",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ConnectionProviderListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/connections/{id}": {
-      "operation_id": "FountainWeb.ConnectionController.show",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "Connection"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
           "application/json": {
             "ref": "Error"
           }
@@ -3509,75 +2884,6 @@
         }
       }
     },
-    "GET /api/support/reports": {
-      "operation_id": "FountainWeb.SupportReportController.index",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "SupportReportListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/support/reports/{id}": {
-      "operation_id": "FountainWeb.SupportReportController.show",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "SupportReportResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "GET /api/team": {
       "operation_id": "FountainWeb.TeamController.index",
       "path_params": [],
@@ -3958,119 +3264,6 @@
         }
       }
     },
-    "GET /api/webhooks": {
-      "operation_id": "FountainWeb.WebhookEndpointController.index",
-      "path_params": [],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "WebhookEndpointListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/webhooks/{id}": {
-      "operation_id": "FountainWeb.WebhookEndpointController.show",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "WebhookEndpointResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "GET /api/webhooks/{id}/deliveries": {
-      "operation_id": "FountainWeb.WebhookEndpointController.deliveries",
-      "path_params": [
-        "id"
-      ],
-      "query_params": {
-        "limit": {
-          "required": false,
-          "type": "integer"
-        }
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "WebhookDeliveryListResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "GET /health": {
       "operation_id": "FountainWeb.HealthController.show",
       "path_params": [],
@@ -4252,108 +3445,6 @@
         "409": {
           "application/json": {
             "ref": "Error"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "PATCH /api/buzz/agents/{id}": {
-      "operation_id": "FountainWeb.BuzzAgentController.update (2)",
-      "path_params": [
-        "id"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "BuzzAccessUpdateRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "BuzzIdentityResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "PATCH /api/connection-providers/{id}": {
-      "operation_id": "FountainWeb.ConnectionProviderController.update",
-      "path_params": [
-        "id"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "ConnectionProviderRequest"
-          }
-        },
-        "required": true
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ConnectionProvider"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
           }
         },
         "422": {
@@ -4778,111 +3869,6 @@
         }
       }
     },
-    "PATCH /api/webhooks/{id}": {
-      "operation_id": "FountainWeb.WebhookEndpointController.update",
-      "path_params": [
-        "id"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "WebhookEndpointUpdateRequest"
-          }
-        },
-        "required": true
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "WebhookEndpointResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/account/billing/credits/checkout": {
-      "operation_id": "FountainWeb.BillingApiController.credits_checkout",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "CreditsCheckoutRequest"
-          }
-        },
-        "required": true
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "StripeUrlResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "502": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "POST /api/account/chatgpt-subscriptions/attempts": {
       "operation_id": "FountainWeb.ChatGPTSubscriptionController.create_attempt",
       "path_params": [],
@@ -4969,37 +3955,6 @@
           }
         },
         "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/account/exports": {
-      "operation_id": "FountainWeb.AccountDataController.create_export",
-      "path_params": [],
-      "responses": {
-        "202": {
-          "application/json": {
-            "ref": "ExportResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
           "application/json": {
             "ref": "Error"
           }
@@ -5134,23 +4089,21 @@
         }
       }
     },
-    "POST /api/admin/users/{id}/comp": {
-      "operation_id": "FountainWeb.AdminController.set_comp",
-      "path_params": [
-        "id"
-      ],
+    "POST /api/admin/users": {
+      "operation_id": "FountainWeb.AdminController.create_user",
+      "path_params": [],
       "request_body": {
         "content": {
           "application/json": {
-            "ref": "AdminCompRequest"
+            "ref": "AdminCreateUserRequest"
           }
         },
         "required": false
       },
       "responses": {
-        "200": {
+        "201": {
           "application/json": {
-            "ref": "AdminUserResponse"
+            "ref": "AdminCreatedUserResponse"
           }
         },
         "401": {
@@ -5159,62 +4112,6 @@
           }
         },
         "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/admin/users/{id}/credits": {
-      "operation_id": "FountainWeb.AdminController.grant_credits",
-      "path_params": [
-        "id"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "AdminCreditsRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "AdminUserResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
           "application/json": {
             "ref": "Error"
           }
@@ -5867,303 +4764,6 @@
         }
       }
     },
-    "POST /api/buzz/agents": {
-      "operation_id": "FountainWeb.BuzzAgentController.create",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "BuzzProvisionRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "201": {
-          "application/json": {
-            "ref": "BuzzIdentityResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "402": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/claimable-users": {
-      "header_params": {
-        "Idempotency-Key": {
-          "required": false,
-          "type": "string"
-        }
-      },
-      "operation_id": "FountainWeb.ClaimableUserController.create",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "properties": {
-              "application_id": {
-                "required": true,
-                "type": "string"
-              },
-              "expires_in": {
-                "required": false,
-                "type": "integer"
-              },
-              "limits": {
-                "properties": {
-                  "max_cost_usd": {
-                    "required": false,
-                    "type": "number"
-                  },
-                  "max_live_sandboxes": {
-                    "required": false,
-                    "type": "integer"
-                  }
-                },
-                "required": false,
-                "type": "object"
-              },
-              "metadata": {
-                "required": false,
-                "type": "object"
-              }
-            },
-            "type": "object"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "201": {
-          "application/json": {
-            "ref": "ClaimableUserCreatedResponse"
-          }
-        },
-        "400": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "402": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/claimable-users/{id}/claim": {
-      "header_params": {
-        "Idempotency-Key": {
-          "required": false,
-          "type": "string"
-        }
-      },
-      "operation_id": "FountainWeb.ClaimableUserController.claim",
-      "path_params": [
-        "id"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "properties": {
-              "claim_token": {
-                "required": true,
-                "type": "string"
-              }
-            },
-            "type": "object"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ClaimedPrincipalResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "409": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "410": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/connection-providers": {
-      "operation_id": "FountainWeb.ConnectionProviderController.create",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "ConnectionProviderRequest"
-          }
-        },
-        "required": true
-      },
-      "responses": {
-        "201": {
-          "application/json": {
-            "ref": "ConnectionProvider"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/connection-providers/{id}/discover": {
-      "operation_id": "FountainWeb.ConnectionProviderController.discover",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "ConnectionProvider"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "POST /api/conversations": {
       "operation_id": "FountainWeb.ConversationController.create",
       "path_params": [],
@@ -6197,11 +4797,6 @@
           }
         },
         "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "402": {
           "application/json": {
             "ref": "Error"
           }
@@ -6312,11 +4907,6 @@
           }
         },
         "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "402": {
           "application/json": {
             "ref": "Error"
           }
@@ -6493,11 +5083,6 @@
             "ref": "Error"
           }
         },
-        "402": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -6581,11 +5166,6 @@
           }
         },
         "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "402": {
           "application/json": {
             "ref": "Error"
           }
@@ -6850,50 +5430,6 @@
           }
         },
         "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/support/reports": {
-      "operation_id": "FountainWeb.SupportReportController.create",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "SupportReportCreateRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "201": {
-          "application/json": {
-            "ref": "SupportReportResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
           "application/json": {
             "ref": "Error"
           }
@@ -7324,165 +5860,6 @@
         }
       }
     },
-    "POST /api/webhooks": {
-      "operation_id": "FountainWeb.WebhookEndpointController.create",
-      "path_params": [],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "WebhookEndpointCreateRequest"
-          }
-        },
-        "required": true
-      },
-      "responses": {
-        "201": {
-          "application/json": {
-            "ref": "WebhookEndpointCreatedResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/webhooks/{id}/deliveries/{delivery_id}/redeliver": {
-      "operation_id": "FountainWeb.WebhookEndpointController.redeliver",
-      "path_params": [
-        "delivery_id",
-        "id"
-      ],
-      "responses": {
-        "202": {
-          "application/json": {
-            "ref": "WebhookTestResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/webhooks/{id}/rotate-secret": {
-      "operation_id": "FountainWeb.WebhookEndpointController.rotate",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "WebhookEndpointCreatedResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "POST /api/webhooks/{id}/test": {
-      "operation_id": "FountainWeb.WebhookEndpointController.test",
-      "path_params": [
-        "id"
-      ],
-      "responses": {
-        "202": {
-          "application/json": {
-            "ref": "WebhookTestResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "PUT /api/account/inference-credential-sets/{id}/credentials/{provider}": {
       "operation_id": "FountainWeb.InferenceCredentialController.update_in_set",
       "path_params": [
@@ -7713,105 +6090,6 @@
         }
       }
     },
-    "PUT /api/buzz/agents/{id}": {
-      "operation_id": "FountainWeb.BuzzAgentController.update",
-      "path_params": [
-        "id"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "BuzzAccessUpdateRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "200": {
-          "application/json": {
-            "ref": "BuzzIdentityResponse"
-          }
-        },
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
-    "PUT /api/claimable-users/{id}/inference-credentials/{provider}": {
-      "operation_id": "FountainWeb.ClaimableUserController.put_inference_credential",
-      "path_params": [
-        "id",
-        "provider"
-      ],
-      "request_body": {
-        "content": {
-          "application/json": {
-            "ref": "InferenceCredentialRequest"
-          }
-        },
-        "required": false
-      },
-      "responses": {
-        "204": {},
-        "401": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "403": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "404": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "406": {
-          "application/json": {
-            "ref": "NegotiationError"
-          }
-        },
-        "422": {
-          "application/json": {
-            "ref": "Error"
-          }
-        },
-        "429": {
-          "application/json": {
-            "ref": "Error"
-          }
-        }
-      }
-    },
     "PUT /api/environments/{id}": {
       "operation_id": "FountainWeb.EnvironmentController.update",
       "path_params": [
@@ -7955,25 +6233,29 @@
       },
       "type": "object"
     },
-    "AdminCompRequest": {
+    "AdminCreateUserRequest": {
       "properties": {
-        "comped": {
+        "email": {
           "required": true,
-          "type": "boolean"
+          "type": "string"
+        },
+        "key_name": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"
     },
-    "AdminCreditsRequest": {
+    "AdminCreatedUserResponse": {
       "properties": {
-        "cents": {
+        "api_key": {
           "required": true,
-          "type": "integer"
-        },
-        "note": {
-          "nullable": true,
-          "required": false,
           "type": "string"
+        },
+        "data": {
+          "ref": "AdminUser",
+          "required": true
         }
       },
       "type": "object"
@@ -8144,14 +6426,6 @@
           "required": false,
           "type": "integer"
         },
-        "comped": {
-          "required": false,
-          "type": "boolean"
-        },
-        "credit_balance_cents": {
-          "required": false,
-          "type": "integer"
-        },
         "email": {
           "required": true,
           "type": "string"
@@ -8165,10 +6439,6 @@
           "nullable": true,
           "required": false,
           "type": "string"
-        },
-        "has_stripe_customer": {
-          "required": false,
-          "type": "boolean"
         },
         "id": {
           "format": "uuid",
@@ -8365,13 +6635,6 @@
           "required": false
         },
         "runtime": {
-          "enum": [
-            "acp",
-            "claude",
-            "codex",
-            "gemini",
-            "opencode"
-          ],
           "required": true,
           "type": "string"
         },
@@ -8390,7 +6653,6 @@
         },
         "sandbox_provider": {
           "enum": [
-            "daytona",
             "e2b",
             "runner",
             "sprites"
@@ -8534,8 +6796,7 @@
             "acp",
             "claude",
             "codex",
-            "gemini",
-            "opencode"
+            "gemini"
           ],
           "required": true,
           "type": "string"
@@ -8555,7 +6816,6 @@
         },
         "sandbox_provider": {
           "enum": [
-            "daytona",
             "e2b",
             "runner",
             "sprites"
@@ -8691,8 +6951,7 @@
             "acp",
             "claude",
             "codex",
-            "gemini",
-            "opencode"
+            "gemini"
           ],
           "required": false,
           "type": "string"
@@ -8712,7 +6971,6 @@
         },
         "sandbox_provider": {
           "enum": [
-            "daytona",
             "e2b",
             "runner",
             "sprites"
@@ -8957,11 +7215,6 @@
           "required": true,
           "type": "string"
         },
-        "secret": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
         "secrets": {
           "items": {
             "ref": "ApplySecretResult"
@@ -9079,19 +7332,6 @@
           "required": false,
           "type": "boolean"
         },
-        "comped": {
-          "nullable": true,
-          "required": false,
-          "type": "boolean"
-        },
-        "connections_enabled": {
-          "required": false,
-          "type": "boolean"
-        },
-        "connections_manageable": {
-          "required": false,
-          "type": "boolean"
-        },
         "email": {
           "format": "email",
           "required": true,
@@ -9175,111 +7415,6 @@
           ],
           "required": true,
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "BillingResponse": {
-      "properties": {
-        "data": {
-          "properties": {
-            "credits": {
-              "nullable": true,
-              "properties": {
-                "balance_cents": {
-                  "required": false,
-                  "type": "integer"
-                },
-                "expires_at": {
-                  "format": "date-time",
-                  "nullable": true,
-                  "required": false,
-                  "type": "string"
-                },
-                "expiring_cents": {
-                  "required": false,
-                  "type": "integer"
-                },
-                "packs_cents": {
-                  "items": {
-                    "type": "integer"
-                  },
-                  "required": false,
-                  "type": "array"
-                },
-                "purchased_cents": {
-                  "required": false,
-                  "type": "integer"
-                },
-                "turn_hour_cents": {
-                  "required": false,
-                  "type": "integer"
-                }
-              },
-              "required": false,
-              "type": "object"
-            },
-            "has_stripe_customer": {
-              "required": false,
-              "type": "boolean"
-            },
-            "period": {
-              "properties": {
-                "end": {
-                  "format": "date-time",
-                  "required": false,
-                  "type": "string"
-                },
-                "start": {
-                  "format": "date-time",
-                  "required": false,
-                  "type": "string"
-                }
-              },
-              "required": false,
-              "type": "object"
-            },
-            "sandbox_cap": {
-              "required": false,
-              "type": "integer"
-            },
-            "usage": {
-              "properties": {
-                "conversations": {
-                  "required": false,
-                  "type": "integer"
-                },
-                "credit_burned_cents": {
-                  "nullable": true,
-                  "required": false,
-                  "type": "integer"
-                },
-                "sandbox_minutes": {
-                  "required": false,
-                  "type": "number"
-                },
-                "sandbox_minutes_by_provider": {
-                  "additionalProperties": {
-                    "type": "number"
-                  },
-                  "required": false,
-                  "type": "object"
-                },
-                "turn_hours": {
-                  "required": false,
-                  "type": "number"
-                },
-                "turns": {
-                  "required": false,
-                  "type": "integer"
-                }
-              },
-              "required": true,
-              "type": "object"
-            }
-          },
-          "required": true,
-          "type": "object"
         }
       },
       "type": "object"
@@ -9394,204 +7529,6 @@
       },
       "type": "object"
     },
-    "BuzzAccessUpdateRequest": {
-      "properties": {
-        "respond_to": {
-          "enum": [
-            "allowlist",
-            "anyone",
-            "nobody",
-            "owner-only"
-          ],
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "respond_to_allowlist": {
-          "items": {
-            "type": "string"
-          },
-          "nullable": true,
-          "required": false,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "BuzzIdentity": {
-      "properties": {
-        "agent_id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "display_name": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "enabled": {
-          "required": true,
-          "type": "boolean"
-        },
-        "environment_id": {
-          "format": "uuid",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "inserted_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "name": {
-          "required": true,
-          "type": "string"
-        },
-        "pubkey": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "relay_url": {
-          "required": false,
-          "type": "string"
-        },
-        "respond_to": {
-          "enum": [
-            "allowlist",
-            "anyone",
-            "nobody",
-            "owner-only"
-          ],
-          "required": false,
-          "type": "string"
-        },
-        "respond_to_allowlist": {
-          "items": {
-            "type": "string"
-          },
-          "required": false,
-          "type": "array"
-        },
-        "sandbox_mode": {
-          "enum": [
-            "ephemeral",
-            "persistent"
-          ],
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "vault_id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "BuzzIdentityListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "BuzzIdentity"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "BuzzIdentityResponse": {
-      "properties": {
-        "data": {
-          "ref": "BuzzIdentity",
-          "required": true
-        }
-      },
-      "type": "object"
-    },
-    "BuzzProvisionRequest": {
-      "properties": {
-        "agent_id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "auth_tag": {
-          "required": true,
-          "type": "string"
-        },
-        "display_name": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "environment_id": {
-          "format": "uuid",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "name": {
-          "required": true,
-          "type": "string"
-        },
-        "private_key_nsec": {
-          "required": true,
-          "type": "string"
-        },
-        "pubkey": {
-          "required": true,
-          "type": "string"
-        },
-        "relay_url": {
-          "required": true,
-          "type": "string"
-        },
-        "respond_to": {
-          "enum": [
-            "allowlist",
-            "anyone",
-            "nobody",
-            "owner-only"
-          ],
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "respond_to_allowlist": {
-          "items": {
-            "type": "string"
-          },
-          "nullable": true,
-          "required": false,
-          "type": "array"
-        },
-        "sandbox_mode": {
-          "enum": [
-            "ephemeral",
-            "persistent"
-          ],
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "CatalogResponse": {
       "properties": {
         "data": {
@@ -9636,36 +7573,6 @@
               },
               "required": true,
               "type": "object"
-            },
-            "mcp_servers": {
-              "items": {
-                "properties": {
-                  "dcr": {
-                    "required": true,
-                    "type": "boolean"
-                  },
-                  "name": {
-                    "required": true,
-                    "type": "string"
-                  },
-                  "slug": {
-                    "required": true,
-                    "type": "string"
-                  },
-                  "url": {
-                    "required": true,
-                    "type": "string"
-                  },
-                  "verified_on": {
-                    "format": "date",
-                    "required": true,
-                    "type": "string"
-                  }
-                },
-                "type": "object"
-              },
-              "required": false,
-              "type": "array"
             },
             "model_providers": {
               "items": {
@@ -9996,528 +7903,6 @@
       },
       "type": "object"
     },
-    "ClaimableUser": {
-      "properties": {
-        "application_id": {
-          "required": true,
-          "type": "string"
-        },
-        "budget_exhausted_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "claimed_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "claimed_by_user_id": {
-          "format": "uuid",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "created_at": {
-          "format": "date-time",
-          "required": true,
-          "type": "string"
-        },
-        "expires_at": {
-          "format": "date-time",
-          "required": true,
-          "type": "string"
-        },
-        "grant_cents": {
-          "required": false,
-          "type": "integer"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "max_live_sandboxes": {
-          "nullable": true,
-          "required": false,
-          "type": "integer"
-        },
-        "metadata": {
-          "required": false,
-          "type": "object"
-        },
-        "principal_id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "claimed",
-            "expired",
-            "released",
-            "unclaimed"
-          ],
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ClaimableUserCreated": {
-      "properties": {
-        "api_key": {
-          "required": true,
-          "type": "string"
-        },
-        "application_id": {
-          "required": false,
-          "type": "string"
-        },
-        "claim_token": {
-          "required": true,
-          "type": "string"
-        },
-        "created_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "expires_at": {
-          "format": "date-time",
-          "required": true,
-          "type": "string"
-        },
-        "grant_cents": {
-          "required": false,
-          "type": "integer"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "max_live_sandboxes": {
-          "nullable": true,
-          "required": false,
-          "type": "integer"
-        },
-        "metadata": {
-          "required": false,
-          "type": "object"
-        },
-        "principal_id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "claimed",
-            "expired",
-            "released",
-            "unclaimed"
-          ],
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ClaimableUserCreatedResponse": {
-      "properties": {
-        "data": {
-          "ref": "ClaimableUserCreated",
-          "required": true
-        }
-      },
-      "type": "object"
-    },
-    "ClaimableUserResponse": {
-      "properties": {
-        "data": {
-          "ref": "ClaimableUser",
-          "required": true
-        }
-      },
-      "type": "object"
-    },
-    "ClaimedPrincipal": {
-      "properties": {
-        "api_key": {
-          "required": true,
-          "type": "string"
-        },
-        "claimed_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "principal_id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "claimed",
-            "expired",
-            "released",
-            "unclaimed"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "user": {
-          "properties": {
-            "email": {
-              "nullable": true,
-              "required": false,
-              "type": "string"
-            },
-            "id": {
-              "format": "uuid",
-              "required": false,
-              "type": "string"
-            }
-          },
-          "required": true,
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
-    "ClaimedPrincipalResponse": {
-      "properties": {
-        "data": {
-          "ref": "ClaimedPrincipal",
-          "required": true
-        }
-      },
-      "type": "object"
-    },
-    "Connection": {
-      "properties": {
-        "account_email": {
-          "required": true,
-          "type": "string"
-        },
-        "created_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "env_key": {
-          "required": true,
-          "type": "string"
-        },
-        "expires_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "provider": {
-          "required": true,
-          "type": "string"
-        },
-        "provider_id": {
-          "format": "uuid",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "revoked_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "scopes": {
-          "items": {
-            "type": "string"
-          },
-          "required": true,
-          "type": "array"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "expired",
-            "revoked"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ConnectionListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "Connection"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "ConnectionProvider": {
-      "properties": {
-        "account_label_path": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "authorize_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "client_id": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "client_source": {
-          "enum": [
-            "None",
-            "dcr",
-            "manual"
-          ],
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "configured": {
-          "required": true,
-          "type": "boolean"
-        },
-        "connect_url": {
-          "required": true,
-          "type": "string"
-        },
-        "created_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "env_key": {
-          "required": true,
-          "type": "string"
-        },
-        "has_client_secret": {
-          "required": false,
-          "type": "boolean"
-        },
-        "id": {
-          "required": true,
-          "type": "string"
-        },
-        "issuer": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "kind": {
-          "enum": [
-            "mcp",
-            "oauth2"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "mcp_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "name": {
-          "required": true,
-          "type": "string"
-        },
-        "pkce": {
-          "required": false,
-          "type": "boolean"
-        },
-        "platform": {
-          "required": true,
-          "type": "boolean"
-        },
-        "redirect_uri": {
-          "required": true,
-          "type": "string"
-        },
-        "registration_endpoint": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "revoke_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "scopes": {
-          "items": {
-            "type": "string"
-          },
-          "required": true,
-          "type": "array"
-        },
-        "slug": {
-          "required": true,
-          "type": "string"
-        },
-        "token_endpoint_auth": {
-          "enum": [
-            "client_secret_basic",
-            "client_secret_post",
-            "none"
-          ],
-          "required": false,
-          "type": "string"
-        },
-        "token_hosts": {
-          "items": {
-            "type": "string"
-          },
-          "required": true,
-          "type": "array"
-        },
-        "token_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "userinfo_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ConnectionProviderListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "ConnectionProvider"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "ConnectionProviderRequest": {
-      "properties": {
-        "account_label_path": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "authorize_url": {
-          "required": false,
-          "type": "string"
-        },
-        "client_id": {
-          "required": false,
-          "type": "string"
-        },
-        "client_secret": {
-          "required": false,
-          "type": "string"
-        },
-        "env_key": {
-          "required": false,
-          "type": "string"
-        },
-        "kind": {
-          "enum": [
-            "mcp",
-            "oauth2"
-          ],
-          "required": false,
-          "type": "string"
-        },
-        "mcp_url": {
-          "required": false,
-          "type": "string"
-        },
-        "name": {
-          "required": false,
-          "type": "string"
-        },
-        "pkce": {
-          "required": false,
-          "type": "boolean"
-        },
-        "revoke_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "scopes": {
-          "items": {
-            "type": "string"
-          },
-          "required": false,
-          "type": "array"
-        },
-        "slug": {
-          "required": false,
-          "type": "string"
-        },
-        "token_endpoint_auth": {
-          "enum": [
-            "client_secret_basic",
-            "client_secret_post",
-            "none"
-          ],
-          "required": false,
-          "type": "string"
-        },
-        "token_hosts": {
-          "items": {
-            "type": "string"
-          },
-          "required": false,
-          "type": "array"
-        },
-        "token_url": {
-          "required": false,
-          "type": "string"
-        },
-        "userinfo_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "Conversation": {
       "properties": {
         "acp": {
@@ -10614,13 +7999,6 @@
           "required": false
         },
         "runtime": {
-          "enum": [
-            "acp",
-            "claude",
-            "codex",
-            "gemini",
-            "opencode"
-          ],
           "required": true,
           "type": "string"
         },
@@ -10987,15 +8365,6 @@
           ],
           "required": true,
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "CreditsCheckoutRequest": {
-      "properties": {
-        "cents": {
-          "required": true,
-          "type": "integer"
         }
       },
       "type": "object"
@@ -11456,80 +8825,6 @@
           "nullable": true,
           "required": false,
           "type": "string"
-        },
-        "upgrade_url": {
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "Export": {
-      "properties": {
-        "byte_size": {
-          "nullable": true,
-          "required": false,
-          "type": "integer"
-        },
-        "downloadable": {
-          "required": false,
-          "type": "boolean"
-        },
-        "error": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "expires_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "inserted_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "completed",
-            "failed",
-            "pending"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ExportListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "Export"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "ExportResponse": {
-      "properties": {
-        "data": {
-          "ref": "Export",
-          "required": true
         }
       },
       "type": "object"
@@ -11869,8 +9164,7 @@
             "Environment",
             "Schedule",
             "Teammate",
-            "Vault",
-            "Webhook"
+            "Vault"
           ],
           "required": true,
           "type": "string"
@@ -12432,12 +9726,6 @@
           "type": "string"
         },
         "provider": {
-          "enum": [
-            "daytona",
-            "e2b",
-            "runner",
-            "sprites"
-          ],
           "required": false,
           "type": "string"
         },
@@ -12566,13 +9854,6 @@
           "type": "boolean"
         },
         "runtime": {
-          "enum": [
-            "acp",
-            "claude",
-            "codex",
-            "gemini",
-            "opencode"
-          ],
           "required": false,
           "type": "string"
         },
@@ -12658,12 +9939,6 @@
           "type": "string"
         },
         "provider": {
-          "enum": [
-            "daytona",
-            "e2b",
-            "runner",
-            "sprites"
-          ],
           "required": false,
           "type": "string"
         },
@@ -13501,169 +10776,6 @@
           ],
           "required": true,
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "StripeUrlResponse": {
-      "properties": {
-        "data": {
-          "properties": {
-            "url": {
-              "format": "uri",
-              "required": true,
-              "type": "string"
-            }
-          },
-          "required": true,
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
-    "SupportReport": {
-      "properties": {
-        "category": {
-          "enum": [
-            "bug",
-            "idea",
-            "other",
-            "question",
-            "stuck"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "client": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "context": {
-          "additionalProperties": true,
-          "required": false,
-          "type": "object"
-        },
-        "external_url": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "forward_error": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "forwarded_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "has_screenshot": {
-          "required": false,
-          "type": "boolean"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "inserted_at": {
-          "format": "date-time",
-          "required": true,
-          "type": "string"
-        },
-        "message": {
-          "required": true,
-          "type": "string"
-        },
-        "screenshot_media_type": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "failed",
-            "forwarded",
-            "new"
-          ],
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "SupportReportCreateRequest": {
-      "properties": {
-        "category": {
-          "enum": [
-            "bug",
-            "idea",
-            "other",
-            "question",
-            "stuck"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "client": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "context": {
-          "additionalProperties": true,
-          "nullable": true,
-          "required": false,
-          "type": "object"
-        },
-        "message": {
-          "required": true,
-          "type": "string"
-        },
-        "screenshot": {
-          "nullable": true,
-          "properties": {
-            "data": {
-              "required": true,
-              "type": "string"
-            },
-            "media_type": {
-              "enum": [
-                "image/gif",
-                "image/jpeg",
-                "image/png",
-                "image/webp"
-              ],
-              "required": true,
-              "type": "string"
-            }
-          },
-          "required": false,
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
-    "SupportReportListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "SupportReport"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "SupportReportResponse": {
-      "properties": {
-        "data": {
-          "ref": "SupportReport",
-          "required": true
         }
       },
       "type": "object"
@@ -14519,221 +11631,6 @@
           "format": "uuid",
           "required": true,
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookDelivery": {
-      "properties": {
-        "attempt": {
-          "required": true,
-          "type": "integer"
-        },
-        "duration_ms": {
-          "nullable": true,
-          "required": false,
-          "type": "integer"
-        },
-        "error": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "event_id": {
-          "required": true,
-          "type": "string"
-        },
-        "event_type": {
-          "required": true,
-          "type": "string"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "inserted_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "response_body": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "status_code": {
-          "nullable": true,
-          "required": false,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookDeliveryListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "WebhookDelivery"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookEndpoint": {
-      "properties": {
-        "consecutive_failures": {
-          "required": false,
-          "type": "integer"
-        },
-        "description": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "disabled_at": {
-          "format": "date-time",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "disabled_reason": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "event_types": {
-          "items": {
-            "type": "string"
-          },
-          "required": true,
-          "type": "array"
-        },
-        "id": {
-          "format": "uuid",
-          "required": true,
-          "type": "string"
-        },
-        "inserted_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "disabled"
-          ],
-          "required": true,
-          "type": "string"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "required": false,
-          "type": "string"
-        },
-        "url": {
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookEndpointCreateRequest": {
-      "properties": {
-        "description": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "event_types": {
-          "items": {
-            "type": "string"
-          },
-          "required": false,
-          "type": "array"
-        },
-        "url": {
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookEndpointCreatedResponse": {
-      "properties": {
-        "data": {
-          "ref": "WebhookEndpoint",
-          "required": true
-        },
-        "secret": {
-          "required": true,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookEndpointListResponse": {
-      "properties": {
-        "data": {
-          "items": {
-            "ref": "WebhookEndpoint"
-          },
-          "required": true,
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookEndpointResponse": {
-      "properties": {
-        "data": {
-          "ref": "WebhookEndpoint",
-          "required": true
-        }
-      },
-      "type": "object"
-    },
-    "WebhookEndpointUpdateRequest": {
-      "properties": {
-        "description": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "event_types": {
-          "items": {
-            "type": "string"
-          },
-          "required": false,
-          "type": "array"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "disabled"
-          ],
-          "required": false,
-          "type": "string"
-        },
-        "url": {
-          "required": false,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "WebhookTestResponse": {
-      "properties": {
-        "event_type": {
-          "required": true,
-          "type": "string"
-        },
-        "queued": {
-          "required": true,
-          "type": "boolean"
         }
       },
       "type": "object"

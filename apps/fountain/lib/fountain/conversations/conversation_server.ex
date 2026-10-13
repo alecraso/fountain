@@ -256,11 +256,6 @@ defmodule Fountain.Conversations.ConversationServer do
       # The tenant's enabled bindings by key (gate 1b), loaded once per
       # provision; what the broker's services are built from.
       broker_bindings: %{},
-      # The env var names of the tenant's connections brokered into this
-      # conversation (#1178): their access tokens rotate hourly, so each turn
-      # kick re-reads them and rewrites the session's rules when one has
-      # changed.
-      connection_keys: [],
       # Where the tenant's own brokered secrets came from and which keys they
       # were (#1736); `Egress.refresh_before_turn/1` reads the rows again.
       secret_sources: nil,
@@ -462,15 +457,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
         bindings = Egress.bindings(conv.user_id)
 
-        {merged, bindings, connection_keys} =
-          Egress.add_connection_secrets(conv.user_id, tenant_secrets, bindings, agent)
-
-        {secrets, brokered} = Egress.split_brokered(merged, bindings)
+        {secrets, brokered} = Egress.split_brokered(tenant_secrets, bindings)
 
         # The tenant's own brokered keys: what the environment and vault
-        # rows contributed, less the connection tokens (#1736). Read again
-        # before each turn by `broker_refresh/1`.
-        tenant_keys = (brokered |> Map.keys() |> Enum.sort()) -- connection_keys
+        # rows contributed (#1736). Read again before each turn by
+        # `broker_refresh/1`.
+        tenant_keys = brokered |> Map.keys() |> Enum.sort()
 
         {env_creds, brokered, bindings} =
           Egress.split_inference(inference_creds, brokered, bindings)
@@ -494,7 +486,6 @@ defmodule Fountain.Conversations.ConversationServer do
               env_credentials: env_creds,
               brokered: brokered,
               broker_bindings: bindings,
-              connection_keys: connection_keys,
               secret_sources: %{environment_id: env && env.id, vault_id: vault && vault.id},
               tenant_keys: tenant_keys,
               broker_network: Fountain.Broker.network_for(env)
@@ -648,7 +639,11 @@ defmodule Fountain.Conversations.ConversationServer do
                 sandbox_started_at: Lifecycle.clock_start(sandbox)
             }
 
-            new_state = Reattachment.reattach_running_turn(%{new_state | current_turn: nil})
+            new_state =
+              case Reattachment.reattach_running_turn(%{new_state | current_turn: nil}) do
+                {:relaunch, state, turn} -> relaunch_unsent(state, turn)
+                state -> state
+              end
 
             new_state =
               Reattachment.finish_runner_reconnect(
@@ -1639,6 +1634,7 @@ defmodule Fountain.Conversations.ConversationServer do
            meta
          ) do
       {:ok, conv, turn} ->
+        TurnMachine.store_images(turn, images)
         {:noreply, run_turn(state, conv, turn, prompt, agent, images)}
 
       refused when refused in [:at_capacity, :no_command] ->
@@ -1679,8 +1675,6 @@ defmodule Fountain.Conversations.ConversationServer do
     why = Connection.stale_reason(state, replaced?, conv, agent)
     state = if why, do: drop_connection(state, why), else: state
 
-    TurnMachine.store_images(turn, images)
-
     # An idle peer carries the next turn without spawn, handshake or resume
     # (#817). It applies the model before prompting; background tasks and
     # Codex session grants survive.
@@ -1689,6 +1683,15 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       run_fresh_turn(state, conv, turn, prompt, agent, images)
     end
+  end
+
+  # A turn whose prompt never reached the agent, found on reattach: run it again
+  # on this server, with the images it was admitted with.
+  defp relaunch_unsent(state, turn) do
+    # ownership: the turn reattach found running on this server's own conversation.
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    images = Conversations._unsafe_list_turn_images(turn.id)
+    run_turn(state, conv, turn, turn.prompt, TurnMachine.agent_for(conv), images)
   end
 
   # The launch itself lives in `TurnLaunch` (see its moduledoc): this module's

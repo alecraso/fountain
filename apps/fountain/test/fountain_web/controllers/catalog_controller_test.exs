@@ -14,20 +14,12 @@ defmodule FountainWeb.CatalogControllerTest do
     assert data["sandbox_api_access"] == ["owner", "none"]
     assert data["runtimes"] == Fountain.Agents.Agent.runtimes()
     assert data["models"]["claude"] == Fountain.Agents.ModelCatalog.suggestions("claude")
-    assert Enum.all?(data["models"]["opencode"], &String.contains?(&1, "/"))
+    refute Map.has_key?(data["models"], "opencode")
     assert data["model_providers"] == Fountain.Agents.ModelCatalog.providers()
     assert is_list(data["sandbox_providers"]["enabled"])
     assert data["sandbox_providers"]["default"] in Fountain.SandboxProviders.known_providers()
     assert data["package_managers"] == ["apt", "npm"]
-
-    assert length(data["mcp_servers"]) ==
-             length(Fountain.Connections.McpServerCatalog.entries())
-
-    linear = Enum.find(data["mcp_servers"], &(&1["slug"] == "linear"))
-    assert linear["name"] == "Linear"
-    assert linear["url"] == "https://mcp.linear.app/mcp"
-    assert linear["dcr"] == true
-    assert {:ok, _} = Date.from_iso8601(linear["verified_on"])
+    refute Map.has_key?(data, "mcp_servers")
   end
 
   # ADR 0038: the landing, the manual and `fountain auth register` print the

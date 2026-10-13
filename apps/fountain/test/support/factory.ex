@@ -30,11 +30,10 @@ defmodule Fountain.Factory do
   end
 
   @doc """
-  A verified user, with everything verification gives an account: the $5
-  opening credit (ADR 0031) and the `starter` agent (ADR 0038). Both are real
-  rows, because both are what a verified account really has — see
-  `insert_empty_user/1` and `insert_user_without_agents/1` for the tests that
-  need one of them gone.
+  A verified user, with everything verification gives an account: the
+  `starter` agent (ADR 0038). It is a real row, because it is what a verified
+  account really has — see `insert_user_without_agents/1` for the tests that
+  need it gone.
   """
   def insert_verified_user(overrides \\ %{}) do
     user = insert_user(overrides)
@@ -89,27 +88,6 @@ defmodule Fountain.Factory do
     user
   end
 
-  @doc """
-  A verified user with an empty ledger: the opening credit every verified
-  account gets (ADR 0031) wiped and the balance recomputed to zero. For the
-  tests that assert exact ledger arithmetic from a blank slate; such an
-  account cannot spend until a test grants it something.
-  """
-  def insert_empty_user(overrides \\ %{}) do
-    user = insert_verified_user(overrides)
-    uid = user.id
-    Repo.delete_all(Ecto.Query.from(e in Fountain.Credits.LedgerEntry, where: e.user_id == ^uid))
-
-    Repo.delete_all(
-      Ecto.Query.from(a in Fountain.Audit.Event,
-        where: a.user_id == ^uid and like(a.action, "credit.%")
-      )
-    )
-
-    Fountain.Credits.recompute_balance(user.id)
-    Repo.reload!(user)
-  end
-
   def insert_api_key(user, name \\ nil, opts \\ []) do
     name = name || "key-#{uniq()}"
     {:ok, {key_record, raw_key}} = Fountain.Accounts.create_api_key(user.id, name, opts)
@@ -152,66 +130,6 @@ defmodule Fountain.Factory do
     else
       client
     end
-  end
-
-  # ── connections (#1178) ───────────────────────────────────────────────────
-
-  @doc """
-  A stored platform connection with a refresh token and a fresh access token,
-  as `Fountain.Connections.connect/4` would persist after a consent. No
-  network: the grant map is what `OAuth.exchange_code/4` returns. The
-  provider defaults to the fixture extension's (`fixture-svc`), the one
-  platform provider every suite has since Google, Microsoft and Slack became
-  extensions of their own (#2152); pass `provider: "google"` (a slug, or a
-  `%Provider{}` for a tenant's own) where a suite has that extension loaded.
-  """
-  def insert_connection(user, overrides \\ %{}) do
-    overrides = Map.new(overrides, fn {k, v} -> {to_string(k), v} end)
-    provider = overrides["provider"] || "fixture-svc"
-
-    grant = %{
-      refresh_token: Map.get(overrides, "refresh_token", "refresh-#{uniq()}"),
-      access_token: overrides["access_token"] || "access-#{uniq()}",
-      expires_at:
-        overrides["expires_at"] ||
-          DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.truncate(:second),
-      scopes: overrides["scopes"] || ["read"],
-      account_email: overrides["account_email"] || "user-#{uniq()}@example.com"
-    }
-
-    {:ok, conn} = Fountain.Connections.connect(user.id, provider, grant)
-    conn
-  end
-
-  @doc """
-  A tenant `oauth2` provider (#1186): the tenant's own app registration at
-  a service, with its endpoints on the Req.Test host.
-  """
-  def insert_provider(user, overrides \\ %{}) do
-    {:ok, provider} = Fountain.Connections.create_provider(user.id, provider_attrs(overrides))
-    provider
-  end
-
-  def provider_attrs(overrides \\ %{}) do
-    overrides = to_string_map(overrides)
-    n = uniq()
-
-    Map.merge(
-      %{
-        "slug" => "svc-#{n}",
-        "name" => "Service #{n}",
-        "kind" => "oauth2",
-        "authorize_url" => "https://svc.example/oauth/authorize",
-        "token_url" => "https://svc.example/oauth/token",
-        "userinfo_url" => "https://svc.example/user",
-        "account_label_path" => "login",
-        "scopes" => ["read"],
-        "client_id" => "client-#{n}",
-        "client_secret" => "secret-#{n}",
-        "token_hosts" => ["api.svc.example"]
-      },
-      overrides
-    )
   end
 
   # ── environments ──────────────────────────────────────────────────────────

@@ -14,8 +14,9 @@ defmodule Fountain.Agents.Agent do
   # `acp` is the odd one (#1634): not a coding-agent CLI but a command the
   # agent names, launched inside the sandbox and spoken to over the same
   # protocol. It takes a `runtime_command` and needs no model, and the other
-  # four are the reverse of both. See `Fountain.RuntimeDispatch`.
-  @runtimes ~w(claude codex gemini opencode acp)
+  # three are the reverse of both. See `Fountain.RuntimeDispatch`, which also
+  # refuses `opencode`: removed in 2026-10, still on old agent rows.
+  @runtimes ~w(claude codex gemini acp)
 
   @typedoc "A persisted agent."
   @type t :: %__MODULE__{}
@@ -375,11 +376,8 @@ defmodule Fountain.Agents.Agent do
   # entirely, so `openai/gpt-5` on a claude agent looked configured and
   # silently ran the CLI's own default.
   #
-  # opencode takes any *known* prefix. It is multi-provider but not
-  # open-ended: it reads the prefix to pick which API key to export, and
-  # Fountain only holds three (`InferenceCredentials.Credential`). A
-  # misspelled provider used to fall through to no credentials at all and
-  # fail as an auth error inside the sprite, so reject it here too (#554).
+  # `acp` drives no single provider, so a model on it need only name one
+  # Fountain knows (#554).
   #
   # The model id itself is never checked — a model released since the last
   # deploy has to work the day it ships.
@@ -478,8 +476,7 @@ defmodule Fountain.Agents.Agent do
           verdicts = PermissionPolicy.verdicts(policy)
 
           Enum.flat_map(verdicts, fn {tool, verdict} -> policy_errors(tool, verdict) end) ++
-            reserved_errors(policy) ++
-            runtime_errors(changeset, verdicts)
+            reserved_errors(policy)
       end
     end)
   end
@@ -488,26 +485,6 @@ defmodule Fountain.Agents.Agent do
     Enum.map(PermissionPolicy.reserved_errors(policy), fn {key, message} ->
       {:permission_policy, "#{key}: #{message}"}
     end)
-  end
-
-  # A policy the runtime will never consult is refused rather than stored. The
-  # verdicts are carried by `session/request_permission`, and opencode does not
-  # send it — measured live, see `Managoat.Runtimes.ACP.asks_permission?/1`. An
-  # accepted-but-inert `auto_deny` is the worst of the three outcomes: it reads
-  # like protection on every screen that shows it.
-  defp runtime_errors(changeset, policy) do
-    runtime = Ecto.Changeset.get_field(changeset, :runtime)
-
-    if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
-         Fountain.RuntimeDispatch.asks_permission?(runtime) do
-      []
-    else
-      [
-        permission_policy:
-          "the #{runtime} runtime never asks before it runs a tool, so a policy " <>
-            "stricter than auto_allow cannot be enforced on it"
-      ]
-    end
   end
 
   defp policy_errors(tool, verdict) do
@@ -530,24 +507,16 @@ defmodule Fountain.Agents.Agent do
     end
   end
 
-  # An entry may name a connection instead of a server (#1178):
-  # `%{"connection" => "<id>"}`, which an installed extension serves at each
-  # turn (ADR 0043, #2152). Only the shape is checked here — a connection that is gone or
-  # revoked by the time a conversation runs fails at the tool call with a
-  # reason, which is the contract; a changeset cannot know the future.
+  # Connections were removed (2026-10-12), and with them every entry that
+  # named one instead of a server (`%{"connection" => "<id>"}`). One sent now
+  # would reach the runtime as a server with nothing to start, so it is
+  # refused here rather than failing the session.
   defp validate_mcp_servers(changeset) do
     validate_change(changeset, :mcp_servers, fn :mcp_servers, servers ->
       if is_map(servers) do
-        servers
-        |> Enum.filter(fn {_name, entry} ->
-          is_map(entry) and Map.has_key?(entry, "connection")
-        end)
-        |> Enum.reject(fn {_name, %{"connection" => id}} ->
-          is_binary(id) and match?({:ok, _}, Ecto.UUID.dump(id))
-        end)
-        |> Enum.map(fn {name, _} ->
-          {:mcp_servers, "#{name}: connection must be a connection id"}
-        end)
+        for {name, %{"connection" => _}} <- servers do
+          {:mcp_servers, "#{name}: connections were removed; give the server a command or a url"}
+        end
       else
         [mcp_servers: "must be a map of server name to server config"]
       end

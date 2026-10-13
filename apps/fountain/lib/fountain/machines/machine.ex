@@ -203,8 +203,7 @@ defmodule Fountain.Machines.Machine do
   # not abandoned — `Machines.Renewal` keeps its lease alive and the owner
   # finishes it — so the caller is told `sandbox_unavailable` with a
   # `Retry-After`, and the retry finds the machine up. Holding an HTTP request
-  # open for a Daytona machine coming back from archived storage is the
-  # alternative, and it is worse.
+  # open for a slow resume is the alternative, and it is worse.
   # `machine_bounds_test.exs` pins the ordering.
   @resume_timeout 20_000
 
@@ -387,7 +386,7 @@ defmodule Fountain.Machines.Machine do
   machine underneath its owner: `Wake.maybe_reuse_sandbox/1`,
   `Machines.Binding.attachable/6` and `Rehydrator`'s boot sweep. Each turns `true`
   into the refusal the system already has, `:sandbox_unavailable` — 503 with a
-  `Retry-After: 30`, `NotReadyError` in all four SDKs, snoozed by the launch
+  `Retry-After: 30`, `NotReadyError` in the SDK, snoozed by the launch
   queue and the schedule runner. Thirty seconds is an honest number precisely
   because this is a *live* operation: one provider round trip, and the machine
   settles.
@@ -453,7 +452,7 @@ defmodule Fountain.Machines.Machine do
   looked at what a new word would buy and decided it was nothing: a wake or an
   attach that meets a machine mid-operation means exactly what a refused
   destroy means — come back shortly — and `:sandbox_unavailable` is already
-  503 with a `Retry-After`, `NotReadyError` in all four SDKs, and snoozed by
+  503 with a `Retry-After`, `NotReadyError` in the SDK, and snoozed by
   the launch queue and the schedule runner. A second word would have to be
   taught to five clients (#2304, written and closed unmerged) to say the same
   thing. What stage 6a did add is the vocabulary sites this one was still
@@ -575,12 +574,11 @@ defmodule Fountain.Machines.Machine do
     * `:sandbox_resume_failed` — the provider was asked and would not. `main`'s
       word, and the protocol's `:resume_failed` is translated to it here so the
       surfaces that already know it do not have to learn a second.
-    * the admission's own refusals — `{:sandbox_quota_exceeded, _}`,
-      `:fleet_full`, `:insufficient_credits` — which are the tenant's cap, the
-      fleet ceiling and the credit gate, exactly as
-      `Quotas.with_sandbox_reservation/3` has always answered them on this path.
-      They are 429, 503 and 402, and flattening any of them to
-      `:sandbox_unavailable` would tell somebody out of credit to retry.
+    * the admission's own refusals — `{:sandbox_quota_exceeded, _}` and
+      `:fleet_full` — which are the tenant's cap and the fleet ceiling, exactly
+      as `Quotas.with_sandbox_reservation/3` has always answered them on this
+      path. They are 429 and 503, and flattening either to
+      `:sandbox_unavailable` would hide which limit was hit.
 
   Everything else is a refusal to act on right now — contention for the lease, a
   database fault, an unreachable owner — and reads as `:sandbox_unavailable`.
@@ -602,7 +600,6 @@ defmodule Fountain.Machines.Machine do
              | :provisioning
              | :sandbox_resume_failed
              | :fleet_full
-             | :insufficient_credits
              | {:sandbox_quota_exceeded, map()}}
   def ensure_up(sandbox_id, opts) when is_binary(sandbox_id) and is_list(opts) do
     cond do
@@ -974,7 +971,7 @@ defmodule Fountain.Machines.Machine do
   #
   # Everything not named in the verb's own list is "this machine could not be
   # reached right now", which is what `:sandbox_unavailable` already means
-  # (503, `retry-after: 30`, retryable in all four SDKs). Contention, a
+  # (503, `retry-after: 30`, retryable in the SDK). Contention, a
   # database fault out of `Lease` and an unreachable owner are all that shape.
   # The precise reason goes to the log, where an operator can find it; it does
   # not go on the wire.
@@ -1054,7 +1051,7 @@ defmodule Fountain.Machines.Machine do
   end
 
   # For `ensure_up`: the fence, the two states there is nothing to resume from,
-  # the provider's refusal, and the admission's three. See `ensure_up/2`.
+  # the provider's refusal, and the admission's. See `ensure_up/2`.
   defp travelling(:ensure_up) do
     [
       :not_found,
@@ -1063,8 +1060,7 @@ defmodule Fountain.Machines.Machine do
       :sandbox_reset_pending,
       :provisioning,
       :sandbox_resume_failed,
-      :fleet_full,
-      :insufficient_credits
+      :fleet_full
     ]
   end
 

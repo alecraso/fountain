@@ -1,6 +1,6 @@
 defmodule Fountain.OpsGaugesTest do
   # #321: conversation/sandbox count gauges and Oban queue metrics. The
-  # poller is off in test (funnel_poller_enabled: false), so these call
+  # poller is off in test (gauge_poller_enabled: false), so these call
   # emit_telemetry/0 directly — the same function the poller invokes.
   use Fountain.DataCase, async: false
 
@@ -47,7 +47,7 @@ defmodule Fountain.OpsGaugesTest do
     end
 
     # Every configured queue × watched state, zeros included.
-    for queue <- ~w(maintenance credits exports),
+    for queue <- ~w(maintenance notifications),
         state <- ~w(available scheduled executing retryable discarded) do
       assert_receive {:telemetry, [:fountain, :oban_queue], %{depth: _},
                       %{queue: ^queue, state: ^state}}
@@ -125,12 +125,12 @@ defmodule Fountain.OpsGaugesTest do
     attach([[:fountain, :sandboxes_by_provider]])
 
     user = insert_verified_user()
-    insert_sandbox(user_id: user.id, provider: "daytona", status: "terminated")
+    insert_sandbox(user_id: user.id, provider: "e2b", status: "terminated")
 
     assert :ok = OpsGauges.emit_telemetry()
 
     refute_receive {:telemetry, [:fountain, :sandboxes_by_provider], _,
-                    %{provider: "daytona", status: "terminated"}}
+                    %{provider: "e2b", status: "terminated"}}
   end
 
   test "counts queued Oban jobs by queue and state" do
@@ -138,7 +138,7 @@ defmodule Fountain.OpsGaugesTest do
 
     Repo.insert!(%Oban.Job{queue: "maintenance", worker: "Test.Worker", state: "available"})
     Repo.insert!(%Oban.Job{queue: "maintenance", worker: "Test.Worker", state: "available"})
-    Repo.insert!(%Oban.Job{queue: "exports", worker: "Test.Worker", state: "discarded"})
+    Repo.insert!(%Oban.Job{queue: "notifications", worker: "Test.Worker", state: "discarded"})
 
     assert :ok = OpsGauges.emit_telemetry()
 
@@ -146,7 +146,7 @@ defmodule Fountain.OpsGaugesTest do
                     %{queue: "maintenance", state: "available"}}
 
     assert_receive {:telemetry, [:fountain, :oban_queue], %{depth: 1},
-                    %{queue: "exports", state: "discarded"}}
+                    %{queue: "notifications", state: "discarded"}}
   end
 
   test "a raising tick is skipped, not propagated — the poller trap (#365)" do

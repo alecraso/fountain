@@ -17,12 +17,7 @@ defmodule Fountain.Workers.RetentionPruner do
   different number before it ever removes anything.
 
   The rest are operational and safe to expire sooner: a revoked API key can
-  never be used again, and `stripe_events` only has to outlive Stripe's
-  three-day redelivery window to do its job.
-
-  `webhook_deliveries` is one row per HTTP attempt at one event, and every
-  attempt of a failing endpoint writes another. It is a debugging aid, not an
-  event store, so it gets the shortest window of the lot.
+  never be used again.
 
   `sandbox_requests` is the same shape of bookkeeping (ADR 0042): a finished
   request holds no prompt, because every terminal transition erases `attrs`.
@@ -33,8 +28,8 @@ defmodule Fountain.Workers.RetentionPruner do
   claimed one by the drain reclaiming an abandoned claim rather than by any
   expiry, so neither is the pruner's to reason about.
 
-  `usage_events` gets the longest window because it is the input to billing
-  history, and `turn_images` is deliberately absent — those rows are owned by
+  `usage_events` gets the longest window because it is the input to the
+  usage history, and `turn_images` is deliberately absent — those rows are owned by
   their turn and go when the conversation does.
 
   `agent_versions` is absent on purpose too: a version shares its agent's
@@ -43,7 +38,7 @@ defmodule Fountain.Workers.RetentionPruner do
   and the table only grows by one row per config edit.
 
   `admin_audit_events` is also absent, **on purpose** (#452): it is the
-  privilege trail — who suspended, comped, deleted or looked at whose account
+  privilege trail — who suspended, deleted or looked at whose account
   — and it only gains a row per manual admin action, so it stays small for
   years. Unbounded retention is the decision, not an oversight; do not "fix"
   it by adding a window here without revisiting that decision.
@@ -51,9 +46,9 @@ defmodule Fountain.Workers.RetentionPruner do
   Every window is configurable, and setting one to `nil` disables pruning for
   that table entirely.
 
-  Two tables are swept here on their own, fixed terms rather than a window:
-  expired account exports, and `chatgpt_link_attempts` (ADR 0060 stage 4),
-  whose ended rows hold no secret and are deleted a week after they ended.
+  One table is swept here on its own, fixed term rather than a window:
+  `chatgpt_link_attempts` (ADR 0060 stage 4), whose ended rows hold no secret
+  and are deleted a week after they ended.
   """
 
   use Oban.Worker, queue: :maintenance, max_attempts: 3
@@ -69,10 +64,8 @@ defmodule Fountain.Workers.RetentionPruner do
   @defaults [
     log_events: 90,
     audit_events: 365,
-    stripe_events: 90,
     revoked_api_keys: 30,
     usage_events: 400,
-    webhook_deliveries: 30,
     sandbox_requests: 30
   ]
 
@@ -81,7 +74,6 @@ defmodule Fountain.Workers.RetentionPruner do
     results =
       Enum.map(@defaults, fn {table, _} -> {table, prune(table)} end) ++
         [
-          {:exports, Fountain.Exports.purge_expired()},
           {:chatgpt_link_attempts, Fountain.ChatGPTAccounts.purge_ended_attempts()}
         ]
 
@@ -165,20 +157,8 @@ defmodule Fountain.Workers.RetentionPruner do
     delete_where("audit_events", dynamic([r], r.inserted_at < ^cutoff))
   end
 
-  defp do_prune(:stripe_events, cutoff) do
-    delete_where("stripe_events", dynamic([r], r.inserted_at < ^cutoff))
-  end
-
   defp do_prune(:usage_events, cutoff) do
     delete_where("usage_events", dynamic([r], r.inserted_at < ^cutoff))
-  end
-
-  # One row per HTTP attempt, so this grows with conversation volume times
-  # endpoint count. 30 days is longer than any "why did my integration miss
-  # that" investigation and short enough that the table stays a debugging
-  # aid rather than a second event store (#700).
-  defp do_prune(:webhook_deliveries, cutoff) do
-    delete_where("webhook_deliveries", dynamic([r], r.inserted_at < ^cutoff))
   end
 
   # Terminal rows only. A `queued` or `starting` row is live work, and the

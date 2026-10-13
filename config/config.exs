@@ -5,23 +5,14 @@ import Config
 # the problem the Rehydrator solves by hand.
 config :fountain, Oban,
   repo: Fountain.Repo,
-  # exports is its own queue so a user-requested data export is never stuck
-  # behind a maintenance sweep; concurrency 1 because each job reads every row
-  # an account owns and two at once doubles that memory.
-  # webhooks is its own queue so a tenant's slow receiver never sits in front
-  # of a maintenance sweep or an email, and so its concurrency can be tuned
-  # against outbound HTTP rather than against database work (#700).
   # notifications carries work whose whole value is being prompt — a turn
-  # outcome reaching a live subscriber. It is not on webhooks, because that
-  # queue is for outbound HTTP to tenants and a deadline storm would compete
-  # with real deliveries; and not on maintenance, because that one is
-  # concurrency 1 behind eight sweeps, so a notification would queue single
-  # file behind whichever one is mid-run. Same argument as exports and
-  # webhooks above, one more time.
+  # outcome reaching a live subscriber. It is not on maintenance, because that
+  # one is concurrency 1 behind eight sweeps, so a notification would queue
+  # single file behind whichever one is mid-run.
   # chatgpt carries the pollers of users' ChatGPT sign-ins (ADR 0060 stage 4):
   # one short HTTP call to the auth server every few seconds per open attempt,
   # for at most fifteen minutes. Its own queue so a burst of sign-ins never
-  # sits in front of a schedule or a webhook. Ten, because the queue serves
+  # sits in front of a schedule or an email. Ten, because the queue serves
   # every account at once and a run is one or two HTTP calls and a short
   # write: it waits on the auth server, never on a CPU. Each call is bounded
   # at eighteen seconds (`OAuth.refresh_timeout_ceiling_ms/0`), so an auth
@@ -37,12 +28,9 @@ config :fountain, Oban,
     maintenance: 1,
     chatgpt: 10,
     chatgpt_refresh: 2,
-    credits: 5,
-    exports: 1,
     mailer: 5,
     notifications: 5,
-    schedules: 5,
-    webhooks: 10
+    schedules: 5
   ],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
@@ -93,16 +81,6 @@ config :fountain, Oban,
        # server stops while such a request waits. One indexed query, usually
        # empty.
        {"* * * * *", Fountain.Workers.DetachedRequestSweeper},
-       # Every 5 minutes: expire claimable principals nobody claimed (ADR
-       # 0044). Latency here is money — an expired principal is a sprite still
-       # running for a visitor who has gone — so the sweep runs on the same
-       # grain as the turn reaper rather than daily with the other pruners.
-       {"*/5 * * * *", Fountain.Workers.ClaimablePrincipalSweep},
-       # An installed extension may add entries here at boot
-       # (`Fountain.Extensions.oban_options/1`, ADR 0043). They are not listed
-       # in this file, so a core-only release never names a worker module it
-       # does not carry — which would be a crash on start, not a missing
-       # feature.
        # 05:41 UTC — after the 03:17 backup and the 04:23 retention prune, so
        # a backup always captures the accounts before the sweep removes them.
        {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner},
@@ -125,14 +103,6 @@ config :fountain, Oban,
        # indexed query, usually empty — and a minute is the cron grain the
        # schedules are written in.
        {"* * * * *", Fountain.Workers.TeamScheduler},
-       # Every 10 minutes: price closed turns into the credit ledger
-       # (ADR 0030) and sweep expired grants. Idempotent per turn and per
-       # grant, so the cadence only sets how stale a balance can read. No-ops
-       # with billing off.
-       {"*/10 * * * *", Fountain.Workers.CreditPricer},
-       # 06:23 UTC daily: the expiry sweep on its own, as a backstop for the
-       # pricer's tick (ADR 0030 decision 2). Idempotent per grant.
-       {"23 6 * * *", Fountain.Workers.CreditExpirer},
        # Five-minute backstop for the event-driven sandbox queue (ADR 0042).
        # Normal drains come from a sandbox leaving a cap-counting status; this
        # catches a lost poke and expires work that waited too long.
@@ -140,13 +110,8 @@ config :fountain, Oban,
      ]}
   ]
 
-# Self-hosting switches. In dev and prod, runtime.exs overrides credits from
-# CREDITS_ENABLED — off unless set (#336); the hosted deployment opts in via
-# the hosted overlay. The `true` here reaches only :test (runtime.exs skips
-# the override there), where config/test.exs also pins it, so the suite
-# exercises the gate as enforced and flips it off per-test.
+# Self-hosting switches. runtime.exs overrides them from the environment.
 config :fountain,
-  credits_enabled: true,
   registration_enabled: true,
   registration_allowed_email_domains: [],
   registration_access_code: nil,
@@ -156,20 +121,11 @@ config :fountain,
   # true and tests flip it off per-test. See Fountain.Marketing.
   marketing_site: false
 
-# Concurrency (ADR 0031). A tenant may run as many sandboxes at once as
-# their balance funds: clamp(balance / reserve_cents, cap_floor, cap_ceiling),
-# with users.sandbox_limit_override winning when set. fleet_ceiling bounds
-# the sum across every tenant to what the providers allow. runtime.exs
-# overrides from SANDBOX_*.
-# Hosted Buzz agents a tenant may run at once. Each enabled identity is a
-# supervised `buzz-acp` OS process on Fountain's own pods (ADR 0020), so the
-# cost is standing rather than metered — no sandbox meter sees it. An abuse
-# ceiling, not an allowance (#1017).
-config :fountain_buzz, :buzz_identity_ceiling, 10
-
+# Concurrency (ADR 0005, 0042). A tenant may run cap_ceiling sandboxes at
+# once, or users.sandbox_limit_override when set. fleet_ceiling bounds the
+# sum across every tenant to what the providers allow. runtime.exs overrides
+# from SANDBOX_*.
 config :fountain, :sandboxes,
-  reserve_cents: 200,
-  cap_floor: 2,
   cap_ceiling: 20,
   fleet_ceiling: 20
 
@@ -184,30 +140,6 @@ config :fountain,
 # It stops a runaway client; it does not price anything. Nothing links one
 # yet, so there is no environment variable for it yet either.
 config :fountain, :chatgpt_grant_ceiling, 5
-
-# Prepaid credits (ADR 0030). Cents. `turn_hour_cents` is the customer price
-# of one hour of turn time. runtime.exs overrides from CREDIT_*.
-config :fountain, :credits,
-  # The opening grant a new account gets (ADR 0031 decision 3), and how
-  # long it lasts.
-  opening_cents: 500,
-  opening_days: 14,
-  turn_hour_cents: 25,
-  packs_cents: [1_000, 2_500, 10_000]
-
-# Claimable principals (ADR 0044): the anonymous tenant an application opens
-# for a visitor who has no account yet. Every number here bounds a leaked
-# application key; the application's own credit balance is the backstop
-# underneath them, since it funds each principal it opens. These are fixed
-# here, not read from the environment: a deployment that wants a different
-# bound changes the number in a fork, and nobody has.
-config :fountain, Fountain.Principals,
-  default_ttl_seconds: 86_400,
-  max_ttl_seconds: 604_800,
-  max_grant_cents: 500,
-  max_outstanding_per_application: 500,
-  max_created_per_hour: 500,
-  purge_after_days: 7
 
 # Sandbox lifetime bounds. Crossing the idle bound SUSPENDS the sandbox — the
 # sprite stays (scaled to zero) and the next prompt resumes the agent with its
@@ -264,6 +196,11 @@ config :phoenix, :filter_parameters, ["password", "token", "access_code"]
 # Swoosh mailer
 config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Local
 
+# The API adapters (Resend) call out over Req. Swoosh defaults to hackney,
+# which only stripity_stripe used to pull in; without this the release dies
+# at boot on "missing hackney dependency". dev and test turn it off.
+config :swoosh, :api_client, Swoosh.ApiClient.Req
+
 # Whether this instance can deliver email at all. Flipped to false only by
 # EMAIL_DELIVERY=none in runtime.exs; registration auto-verifies accounts when
 # it is false, because a verification link that cannot be delivered gates
@@ -295,9 +232,10 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 # clients by default; dev/test/runtime set them.
 config :fountain, Fountain.OAuth, repo: Fountain.Repo, clients: []
 
-# The sandbox adapter map (Managoat.Sandbox, decisions/0037): the three
-# adapters the sandbox library ships plus the self-hosted runner's, from the
-# runner library (ADR 0022). Static, so it lives here rather than in
+# The sandbox adapter map (Managoat.Sandbox, decisions/0037): the Sprites
+# and E2B adapters the sandbox library ships (Fountain no longer uses its
+# Daytona one) plus the self-hosted runner's, from the runner library
+# (ADR 0022). Static, so it lives here rather than in
 # runtime.exs. Which of these a deployment may *use* is
 # Fountain.SandboxProviders' question; the library answers only which module
 # serves a provider atom.
@@ -305,7 +243,6 @@ config :managoat_sandbox,
   adapters: %{
     sprites: Managoat.Sandbox.Sprites,
     e2b: Managoat.Sandbox.E2B,
-    daytona: Managoat.Sandbox.Daytona,
     runner: Managoat.Runner.Adapter
   }
 

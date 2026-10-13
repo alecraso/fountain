@@ -103,19 +103,6 @@ are no longer accepted. Reassess the whole account and supply the new
 or the existing manifest's `recovery` object. Renaming an old note without
 the broader investigation does not establish the required evidence.
 
-If the Buzz inventory is unavailable, also review:
-
-- `buzz_absence_evidence`: leave empty when `GET /api/buzz/agents` returns
-  its identity inventory. If the extension route returns the host's 404,
-  record the deployment operator's evidence that no stored Buzz identities
-  reference the recovery fixtures. A fresh core-only database that never had
-  Buzz storage is one such case. The same 404 also covers a disabled extension;
-  disabling or removing its code does not remove stored foreign-key references.
-  Deployment/database history or a scoped operator inspection must establish
-  absence; the HTTP response alone cannot. Without that evidence, escalate.
-  The note cannot bypass an available inventory, authentication failures,
-  malformed replies, or server errors.
-
 For each conversation, retain explicit `agent_id`, `environment_id`,
 `vault_id` (UUID or `null`), `sandbox_id` (UUID or `null`), and `sandbox_mode`.
 Read `GET /api/conversations/:id` and `GET /api/sandboxes/:id` to corroborate
@@ -180,11 +167,7 @@ inventory before mutation. Unrecorded agents referencing a fixture through
 their environment/vault allowlists, and child conversations linked through
 `parent_conversation_id` even when using different resources, block the whole
 pass. So do other foreign conversations, sandbox co-tenants, unrecorded
-sandboxes, changed parent names and agent schedules. The public Buzz identity
-inventory is also checked on reconstruction and every replay: any identity
-referencing a recovered agent, environment or vault refuses cleanup, even with
-no conversation or sandbox. Buzz identities are not adopted or deleted by
-this tool. The public waiting queue is checked on every reconstruction and
+sandboxes, changed parent names and agent schedules. The public waiting queue is checked on every reconstruction and
 replay, including source-only inventories. Any waiting request blocks the
 pass: its hidden launch attributes may reference a recovered environment,
 vault or parent conversation even when its agent differs. Queue requests are
@@ -215,12 +198,11 @@ its parents retained; keep evidence and retry after resolving the cause.
 ## Other profiles and escalation
 
 Surviving manifests retain their existing profile coverage. Schedules must be
-disabled/deleted before generated conversations and parent fixtures; webhooks
-must be disabled/deleted before conversation teardown can queue more events.
+disabled/deleted before generated conversations and parent fixtures.
 The existing cleanup path does this and retries receiver cleanup from its
 sidecar. Keep receiver admin configuration and sidecars with the manifest.
 
-Missing-journal reconstruction intentionally refuses `schedules`, `webhooks`,
+Missing-journal reconstruction intentionally refuses `schedules`,
 `secrets`, `mcp`, `browser` and rollout `recovery` profiles. Their journals
 carry evidence not recoverable from ordinary fixture names alone: generated
 conversations, receiver sessions/nonces, credential IDs, or disrupted
@@ -231,7 +213,7 @@ these profiles as `execution` or drop sidecars to get a passing verdict.
 For an unsupported profile, unknown ownership, unknown submitted intents,
 unrecorded child/co-tenant, or persistent provider failure, retain the exact
 IDs and a read-only snapshot and involve the deployment operator. First
-identify and stop each proven run-owned schedule/webhook and active execution
+identify and stop each proven run-owned schedule and active execution
 through its public API; revoke or confirm expiration of its exact receiver
 session through that receiver's admin API. Reconstruct relationships before
 removing any parent. Do not reset an arbitrary sandbox, sweep by prefix,

@@ -5,13 +5,9 @@ defmodule Fountain.Emails.UserEmails do
   Sends:
   - Email verification (24 h token, from `Workers.VerificationEmail`)
   - Password reset (1 h token)
+  - Welcome (once, on the verification transition, from `Workers.WelcomeEmail`)
   - Account suspended / unsuspended / deleted (from `Workers.AccountEmail`)
   - Email-change confirmation + notice (from `Workers.EmailChangeEmail`)
-
-  The welcome and the credit emails (credits low, exhausted) live
-  in `Fountain.Emails.CreditsEmails` under ee/ (#475) — it borrows
-  `from_address/0` and `support_phrase/0` from here so the whole mail
-  surface keeps one sender and one support-contact policy.
   """
 
   import Swoosh.Email
@@ -61,6 +57,28 @@ defmodule Fountain.Emails.UserEmails do
   end
 
   @doc """
+  Welcome a just-verified user (#449): what to do next, which is the verified
+  landing (ADR 0038) — a key, one request, the reply.
+  """
+  @spec deliver_welcome_email(User.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_welcome_email(%User{} = user) do
+    base_url = Fountain.PublicUrl.base()
+    start_url = "#{base_url}/start"
+    # The same request the landing shows and the manual prints, with its
+    # placeholders left in. The key is never in an email; the email says
+    # where the key is.
+    request = Fountain.Onboarding.curl(base_url: base_url)
+
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject("Welcome to #{brand()}")
+    |> html_body(welcome_html(start_url, request))
+    |> text_body(welcome_text(start_url, request))
+    |> Mailer.deliver()
+  end
+
+  @doc """
   Tell a user their account was suspended (#450).
 
   Before this the only signal was a generic "account currently unavailable"
@@ -90,28 +108,6 @@ defmodule Fountain.Emails.UserEmails do
     |> subject("Your #{brand()} account is available again")
     |> html_body(account_unsuspended_html(login_url))
     |> text_body(account_unsuspended_text(login_url))
-    |> Mailer.deliver()
-  end
-
-  @doc """
-  Tell an owner that a webhook endpoint was switched off (#700).
-
-  Sent once, by `Workers.WebhookEmail`, when consecutive delivery failures
-  cross the threshold. Names the host and the reason and nothing else: the
-  URL path is tenant-chosen and the response body is in the delivery log,
-  behind the console's auth, where it belongs.
-  """
-  @spec deliver_webhook_disabled_email(User.t(), String.t(), String.t()) ::
-          {:ok, term()} | {:error, term()}
-  def deliver_webhook_disabled_email(%User{} = user, host, reason) do
-    url = "#{Fountain.PublicUrl.base()}/account/webhooks"
-
-    new()
-    |> from(from_address())
-    |> to({user.email, user.email})
-    |> subject("Your #{brand()} webhook to #{host} was switched off")
-    |> html_body(webhook_disabled_html(host, reason, url))
-    |> text_body(webhook_disabled_text(host, reason, url))
     |> Mailer.deliver()
   end
 
@@ -155,8 +151,7 @@ defmodule Fountain.Emails.UserEmails do
   Confirm an account deletion (#450).
 
   Takes a raw address, not a `User` — by send time the row is gone. Honest
-  about the two things that survive: Stripe keeps the invoices (financial
-  records), and backups age out on their own schedule.
+  about the thing that survives: backups age out on their own schedule.
 
   `chatgpt_subscriptions: n` is how many ChatGPT subscriptions the account
   had linked (ADR 0060). Above zero, the email is honest about a third
@@ -293,12 +288,10 @@ defmodule Fountain.Emails.UserEmails do
   end
 
   # The deployment's brand (PRODUCT_NAME), which is what every subject line and
-  # body calls the service. Public: CreditsEmails (ee/) shares it too.
+  # body calls the service.
   @doc false
   def brand, do: Fountain.Brand.name()
 
-  # Public (not defp): Fountain.Emails.CreditsEmails (ee/) shares the sender
-  # and support-contact policy rather than duplicating it.
   @doc false
   def from_address do
     # The fallback only ever renders in dev/test (the Local mailbox) and under
@@ -318,49 +311,6 @@ defmodule Fountain.Emails.UserEmails do
       addr when is_binary(addr) and addr != "" -> "contact us at #{addr}"
       _ -> "contact support"
     end
-  end
-
-  defp webhook_disabled_html(host, reason, url) do
-    """
-    <!DOCTYPE html>
-    <html>
-    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>A webhook endpoint was switched off</h2>
-      <p>
-        #{brand()} stopped delivering events to <strong>#{host}</strong> after
-        repeated failures. The last one was: #{reason}.
-      </p>
-      <p>
-        Nothing else changed. Your agents and conversations carry on; only the
-        callbacks to this URL have stopped. Fix the receiver, then switch the
-        endpoint back on and send a test event.
-      </p>
-      <p><a href="#{url}">#{url}</a></p>
-      <p style="color: #71717a; font-size: 13px;">
-        Every attempt, with its status and response, is on that page. If this
-        looks wrong, #{support_phrase()}.
-      </p>
-    </body>
-    </html>
-    """
-  end
-
-  defp webhook_disabled_text(host, reason, url) do
-    """
-    A webhook endpoint was switched off
-
-    #{brand()} stopped delivering events to #{host} after repeated failures.
-    The last one was: #{reason}.
-
-    Nothing else changed. Your agents and conversations carry on; only the
-    callbacks to this URL have stopped. Fix the receiver, then switch the
-    endpoint back on and send a test event.
-
-    #{url}
-
-    Every attempt, with its status and response, is on that page.
-    If this looks wrong, #{support_phrase()}.
-    """
   end
 
   defp secrets_expiring_html(entries, url) do
@@ -420,6 +370,54 @@ defmodule Fountain.Emails.UserEmails do
   end
 
   defp expiry_date(%DateTime{} = dt), do: dt |> DateTime.to_date() |> Date.to_iso8601()
+
+  defp welcome_html(start_url, request) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Welcome to #{brand()}</h2>
+      <p>
+        Your account is verified. One request gets you a reply from an agent
+        running in its own sandbox — no repository, no token, no install.
+      </p>
+      <pre style="background: #f4f4f5; border-radius: 6px; padding: 12px; font-size: 12px; overflow-x: auto;"><code>#{Phoenix.HTML.html_escape(request) |> Phoenix.HTML.safe_to_string()}</code></pre>
+      <p>
+        Your API key and your agent's id are on your start page, already
+        filled into that request. Keys are shown once, so open it when you are
+        ready to paste.
+      </p>
+      <p style="margin: 32px 0;">
+        <a href="#{start_url}"
+           style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+          Get your key
+        </a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        Or copy this link into your browser:<br/>
+        <a href="#{start_url}" style="color: #3b82f6;">#{start_url}</a>
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp welcome_text(start_url, request) do
+    """
+    Welcome to #{brand()}
+
+    Your account is verified. One request gets you a reply from an agent
+    running in its own sandbox — no repository, no token, no install.
+
+    #{request}
+
+    Your API key and your agent's id are on your start page, already filled
+    into that request. Keys are shown once, so open it when you are ready to
+    paste:
+
+    #{start_url}
+    """
+  end
 
   defp account_suspended_html do
     """
@@ -504,12 +502,10 @@ defmodule Fountain.Emails.UserEmails do
       <p>
         This confirms your #{brand()} account and its data — agents,
         environments, vaults, conversations and stored secrets — have been
-        permanently deleted. Nothing recurs, so nothing was cancelled; you
-        will not be charged again.
+        permanently deleted.
       </p>
       #{chatgpt_sign_ins_html(subscriptions)}
       <p style="color: #71717a; font-size: 13px;">
-        Past invoices remain available from Stripe, as financial records.
         Database backups that predate the deletion age out on their own
         retention schedule.
       </p>
@@ -527,10 +523,9 @@ defmodule Fountain.Emails.UserEmails do
 
     This confirms your #{brand()} account and its data — agents, environments,
     vaults, conversations and stored secrets — have been permanently deleted.
-    Nothing recurs, so nothing was cancelled; you will not be charged again.
     #{chatgpt_sign_ins_text(subscriptions)}
-    Past invoices remain available from Stripe, as financial records. Database
-    backups that predate the deletion age out on their own retention schedule.
+    Database backups that predate the deletion age out on their own retention
+    schedule.
 
     If you did not request this, #{support_phrase()} immediately.
     """

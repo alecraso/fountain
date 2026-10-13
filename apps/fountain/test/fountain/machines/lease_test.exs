@@ -278,7 +278,7 @@ defmodule Fountain.Machines.LeaseTest do
     test "a terminal status carries its own terminated_at", ctx do
       assert {:ok, epoch} = Lease.claim(ctx.sandbox.id, ctx.node, @ttl_ms)
 
-      # `Billing.SandboxUsage` reads `terminated_at` as the end of the billed
+      # `Machines.Usage` reads `terminated_at` as the end of the billed
       # interval, and a writer that fails a machine never passes one. Without
       # this stamp `cas_update/3` would leave a retired sandbox reading as
       # still running, which is the bug `stamp_terminated_at/1` was written for.
@@ -493,7 +493,7 @@ defmodule Fountain.Machines.LeaseTest do
       root = Path.expand("../../../../..", __DIR__)
 
       files =
-        ([Path.join(root, "apps/fountain/lib"), Path.join(root, "ee/lib")] ++
+        ([Path.join(root, "apps/fountain/lib")] ++
            Path.wildcard(Path.join(root, "apps/fountain_*/lib")))
         |> Enum.filter(&File.dir?/1)
         |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.ex")))
@@ -886,8 +886,7 @@ defmodule Fountain.Machines.LeaseTest do
   defp committed_tenant do
     user =
       Repo.insert!(%User{
-        email: "machine-lease-#{Ecto.UUID.generate()}@example.test",
-        credit_balance_cents: 0
+        email: "machine-lease-#{Ecto.UUID.generate()}@example.test"
       })
 
     sandbox =

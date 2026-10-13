@@ -170,6 +170,57 @@ defmodule Fountain.Accounts do
 
   defp audited_registration(other, _opts), do: other
 
+  @doc """
+  Open an account on behalf of `admin` (ADR 0064): verified, with no
+  password, and with one full-scope API key, returned in plaintext here and
+  never again.
+
+  This is the operator's door, so registration's own gates
+  (`REGISTRATION_ENABLED`, the access code, the domain list) do not apply;
+  the admin pipeline in front of it is the gate. Audited as
+  `account.created_by_admin` and `api_key.created`, both naming the admin.
+
+  Options: `:key_name` (default `"platform"`).
+
+  Returns `{:ok, {user, raw_key}}` or `{:error, changeset}`.
+  """
+  @spec create_account_by_admin(User.t(), String.t(), keyword()) ::
+          {:ok, {User.t(), String.t()}} | {:error, Ecto.Changeset.t()}
+  def create_account_by_admin(%User{role: "admin"} = admin, email, opts \\ [])
+      when is_binary(email) do
+    actor = "admin:#{admin.id}"
+
+    result =
+      Repo.transaction(fn ->
+        with {:ok, user} <- Repo.insert(User.admin_created_changeset(%User{}, %{email: email})),
+             {:ok, _udk} <- create_user_data_key(user.id),
+             {changeset, raw} = build_api_key(user.id, Keyword.get(opts, :key_name, "platform")),
+             {:ok, key} <- Repo.insert(changeset) do
+          {user, key, raw}
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+    with {:ok, {user, key, raw}} <- result do
+      # After the commit: a failed audit insert inside the transaction would
+      # roll back the account it describes (see audited_registration/2).
+      record_api_key_created(key, actor: actor, request_ip: Keyword.get(opts, :request_ip))
+
+      Audit.record(%{
+        user_id: user.id,
+        action: "account.created_by_admin",
+        resource_type: "user",
+        resource_id: user.id,
+        actor: actor,
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{"email" => user.email}
+      })
+
+      {:ok, {user, raw}}
+    end
+  end
+
   defp do_register_user(attrs) do
     Repo.transaction(fn ->
       with {:ok, user} <- insert_user(attrs),
@@ -204,10 +255,9 @@ defmodule Fountain.Accounts do
   verification route — the emailed link, `Fountain.Release.verify_email/1`,
   and the `EMAIL_DELIVERY=none` auto-verify — behaves the same.
 
-  It is also where an account gets the two things it is meant to have before
-  it has built anything: the opening credit (ADR 0031) and the starter agent
-  (ADR 0038, `Fountain.Agents.Starter`). Both are best-effort and neither can
-  fail a verification.
+  It is also where an account gets what it is meant to have before it has
+  built anything: the starter agent (ADR 0038, `Fountain.Agents.Starter`).
+  That is best-effort and cannot fail a verification.
 
   Returns `{:ok, user}` or `{:error, changeset}`.
   """
@@ -223,7 +273,6 @@ defmodule Fountain.Accounts do
         email_verified_at: DateTime.utc_now() |> DateTime.truncate(:second)
       )
       |> Repo.update()
-      |> tap(&grant_opening_credit/1)
       |> audited_account("auth.email.verified", "user", opts, fn _ -> %{} end)
 
     with {:ok, verified} <- result do
@@ -234,22 +283,9 @@ defmodule Fountain.Accounts do
     end
   end
 
-  # The opening credit (ADR 0031 decision 3) lands on the verification
-  # transition, whichever door finished it: the browser route, the API, or
-  # an OAuth signup that arrives verified. Best-effort by rescuing — a ledger
-  # hiccup must not fail a verification — and idempotent per account.
-  defp grant_opening_credit({:ok, %User{} = user}) do
-    Fountain.Credits.grant_opening(user)
-    :ok
-  rescue
-    e -> Logger.warning("opening credit for #{user.id} failed: #{inspect(e)}")
-  end
-
-  defp grant_opening_credit(_), do: :ok
-
-  # The default agent (ADR 0038 decision 4) is planted beside the opening
-  # credit, for the same reason and on the same transition: a verified account
-  # must have something to send a first request to without building anything.
+  # The default agent (ADR 0038 decision 4) is planted on the verification
+  # transition, whichever door finished it: a verified account must have
+  # something to send a first request to without building anything.
   #
   # Guarded on the *transition* rather than on the agent's existence, so that
   # re-running a verification route on an already-verified account — the
@@ -257,7 +293,7 @@ defmodule Fountain.Accounts do
   # agent the tenant deleted. `Starter.create_for/2` is idempotent by name on
   # top of that, which covers two doors finishing the same verification at once.
   #
-  # Best-effort by rescuing, exactly like the credit: no failure to make an
+  # Best-effort by rescuing: no failure to make an
   # agent is worth refusing someone their account.
   defp plant_starter_agent(%User{} = user, true) do
     Fountain.Agents.Starter.create_for(user.id)
@@ -683,7 +719,7 @@ defmodule Fountain.Accounts do
   Options:
 
     * `:scopes` — defaults to `["full"]`
-    * `:expires_at` — required for principal scope; other scopes default to no expiry
+    * `:expires_at` — defaults to no expiry
     * `:actor` — who minted it, for the audit trail. Defaults to `"self"`;
       pass `FountainWeb.Audited.attribution/2` from a web surface, or a
       `"system:<worker>"` string from a background one.
@@ -834,13 +870,7 @@ defmodule Fountain.Accounts do
           # invariant depended on, and a fifth would have reopened the gap in
           # silence. Keys predating #314, when `POST /api/auth/token` would mint
           # for an unverified account, stop working here: that is the point.
-          #
-          # A claimable principal (ADR 0044) is the one row that authenticates
-          # without ever verifying: it has no email to verify and never will.
-          # The flag is read off the already-preloaded user rather than from
-          # `claimable_users`, because this is the hottest auth path in the
-          # system and a join here would be paid by every request.
-          is_nil(key.user.email_verified_at) and not key.user.principal ->
+          is_nil(key.user.email_verified_at) ->
             {:error, :unverified}
 
           true ->
@@ -914,42 +944,6 @@ defmodule Fountain.Accounts do
     |> Repo.insert()
   end
 
-  @doc """
-  Insert a claimable principal's `users` row (ADR 0044).
-
-  An identity-less tenant: no email, no password, `principal: true`, and its
-  own wrapped DEK so that environment and vault secrets encrypt exactly as
-  they do for an ordinary account. `Fountain.Principals` owns the grant that
-  makes it temporary; this only makes the tenant.
-
-  `:sandbox_limit_override` is the principal's live-sandbox cap and is always
-  set by the caller — which is why `Fountain.Quotas` needs no knowledge of
-  principals at all: the override branch answers before the balance rule is
-  ever consulted.
-
-  Deliberately not audited here. A principal's creation is recorded once, as
-  `claimable_user.created` against the application that opened it; a second
-  `account.registered` under the principal's own id would be a trail nobody
-  can reach, on a tenant with no human behind it.
-
-  Returns `{:ok, user}` or `{:error, changeset}`. Runs in a transaction: a row
-  without a data key cannot hold a secret, so the two land together or not
-  at all.
-  """
-  @spec create_principal_user(keyword()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
-  def create_principal_user(opts \\ []) do
-    attrs = %{sandbox_limit_override: Keyword.get(opts, :sandbox_limit_override)}
-
-    Repo.transaction(fn ->
-      with {:ok, user} <- %User{} |> User.principal_changeset(attrs) |> Repo.insert(),
-           {:ok, _udk} <- create_user_data_key(user.id) do
-        user
-      else
-        {:error, changeset} -> Repo.rollback(changeset)
-      end
-    end)
-  end
-
   defp create_user_data_key(user_id) do
     dek = Crypto.generate_dek()
     wrapped = Crypto.wrap_dek(dek)
@@ -978,56 +972,6 @@ defmodule Fountain.Accounts do
     |> Repo.all()
   end
 
-  @doc "Active keys the account manages: its own keys and its claimed principals' credentials."
-  def list_managed_api_keys(user_id) when is_binary(user_id) do
-    user_id
-    |> managed_api_keys()
-    |> where([k], is_nil(k.revoked_at))
-    |> order_by([k], desc: k.inserted_at)
-    |> Repo.all()
-  end
-
-  @doc "Revoke an owned or claimed-principal credential, with a trail the managing owner can read."
-  def revoke_managed_api_key(user_id, key_id, opts \\ []) do
-    case user_id |> managed_api_keys() |> where([k], k.id == ^key_id) |> Repo.one() do
-      nil ->
-        {:error, :not_found}
-
-      key ->
-        with {:ok, revoked} <- revoke_api_key(key.user_id, key.id, opts) do
-          if key.user_id != user_id do
-            Audit.record(%{
-              user_id: user_id,
-              action: "api_key.revoked",
-              resource_type: "api_key",
-              resource_id: key.id,
-              actor: Keyword.get(opts, :actor, "self"),
-              request_ip: Keyword.get(opts, :request_ip),
-              metadata: %{
-                "name" => key.name,
-                "key_prefix" => key.key_prefix,
-                "principal_user_id" => key.user_id
-              }
-            })
-          end
-
-          {:ok, revoked}
-        end
-    end
-  end
-
-  defp managed_api_keys(user_id) do
-    principals =
-      from o in Fountain.Principals.Owner,
-        where: o.owner_user_id == ^user_id,
-        select: o.principal_user_id
-
-    from k in ApiKey,
-      where:
-        k.user_id == ^user_id or
-          ("principal" in k.scopes and k.user_id in subquery(principals))
-  end
-
   @doc "List all users, ordered by insertion date."
   def list_users do
     from(u in User, order_by: [asc: u.inserted_at]) |> Repo.all()
@@ -1045,7 +989,6 @@ defmodule Fountain.Accounts do
   Options:
 
   - `:search` — case-insensitive email substring
-  - `:comped` — `true` for free accounts
   - `:role` — `"admin"` or `"user"`
   - `:verified` — `true`/`false` (whether `email_verified_at` is set)
   - `:sort` — `"email"`, `"joined"`, or `"last_activity"`
@@ -1086,9 +1029,6 @@ defmodule Fountain.Accounts do
       {:search, term}, q when is_binary(term) and term != "" ->
         where(q, [u], ilike(u.email, ^"%#{sanitize_like(term)}%"))
 
-      {:comped, comped}, q when is_boolean(comped) ->
-        where(q, [u], u.comped == ^comped)
-
       {:role, role}, q when role in ~w(admin user) ->
         where(q, [u], u.role == ^role)
 
@@ -1104,7 +1044,7 @@ defmodule Fountain.Accounts do
   end
 
   defp last_activity_query do
-    from(e in Fountain.Billing.UsageEvent,
+    from(e in Fountain.Usage.Event,
       group_by: e.user_id,
       select: %{user_id: e.user_id, last_at: max(e.inserted_at)}
     )
@@ -1141,11 +1081,10 @@ defmodule Fountain.Accounts do
   @doc """
   Override a user's concurrent-sandbox cap (ADR 0005). Admin-only.
 
-  The cap normally follows the credit balance (`Fountain.Quotas.sandbox_limit/1`,
-  ADR 0031). This is the operator's override for the two things the balance
-  rule cannot express: raising the cap for a trusted tenant, and dropping it
-  to zero during abuse. `nil` clears the override and hands the cap back to
-  the balance.
+  The cap is normally the configured ceiling (`Fountain.Quotas.sandbox_limit/1`).
+  This is the operator's override for raising the cap for a trusted tenant, and
+  for dropping it to zero during abuse. `nil` clears the override and hands the
+  cap back to the ceiling.
   """
   def update_sandbox_limit(%User{} = user, limit, opts \\ []) do
     user
@@ -1196,10 +1135,7 @@ defmodule Fountain.Accounts do
   termination logs and moves on rather than failing the suspend; `SandboxReaper`
   sweeps stragglers. Login and API-key auth refuse while `suspended_at` is set.
 
-  Billing is deliberately untouched: the credit ledger keeps its balance and
-  the pricer keeps burning whatever was already running (like comped,
-  inverted — the balance is accurate, the gate is elsewhere). A suspension is
-  short-lived or becomes a deletion.
+  A suspension is short-lived or becomes a deletion.
 
   Returns `{:ok, user, reaped_count}`.
   """
@@ -1284,7 +1220,7 @@ defmodule Fountain.Accounts do
   def suspended?(%User{suspended_at: suspended_at}), do: not is_nil(suspended_at)
 
   @doc """
-  Provisioning-path backstop, shaped like `Billing.check_spend/1`: sessions
+  Provisioning-path backstop: sessions
   and API keys already refuse suspended accounts, but every route to a sprite
   should fail even if a surface slips. An unknown id fails closed.
   """
